@@ -2,11 +2,18 @@ package changelog
 
 import (
   "errors"
+  "fmt"
+  "os"
+  "regexp"
+  "strconv"
+
+  "revision.aeip.apigee.net/greg/changeagent/log"
 )
 
 type Log struct {
   dir string
   name string
+  extents []extentInfo
   requestCh chan appendRequest
   stopCh chan bool
 }
@@ -19,15 +26,27 @@ type LogRecord struct {
   data []byte
 }
 
-func CreateChangeLog(dir string, name string) *Log {
+type extentInfo struct {
+  index int
+  startSequence uint64
+}
+
+func CreateChangeLog(dir string, name string) (*Log, error) {
   l := &Log{
     dir: dir,
     name: name,
+    extents: make([]extentInfo, 0),
     requestCh: make(chan appendRequest),
     stopCh: make(chan bool),
   }
+
+  err := l.readExtents()
+  if err != nil {
+    return nil, err
+  }
+
   go l.runLoop()
-  return l
+  return l, nil
 }
 
 func (l* Log) Close() {
@@ -63,4 +82,33 @@ func (l* Log) runLoop() {
   }
 
   // Close files here
+}
+
+func (l* Log) readExtents() error {
+  log.Infof("Reading log extents from %s", l.dir)
+  dir, err := os.Open(l.dir)
+  if err != nil {
+    return err
+  }
+  defer dir.Close()
+
+  re, err := regexp.Compile(fmt.Sprintf("^%s-([0-9]+)$", l.name))
+  if err != nil {
+    return err
+  }
+
+  names, err := dir.Readdirnames(-1)
+  if err != nil {
+    return err
+  }
+
+  for _, n := range(names) {
+    matches := re.FindStringSubmatch(n)
+    if matches != nil {
+      extentId, _ := strconv.Atoi(matches[1])
+      log.Infof("Found matching log extent %d", extentId)
+    }
+  }
+  // TODO now put information in the extent table about this!
+  return nil
 }

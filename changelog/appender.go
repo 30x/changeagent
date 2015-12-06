@@ -22,7 +22,9 @@ type logAppender struct {
   position int64
   baseDir string
   baseName string
+  fileSeq int
   appendCh chan appendRequest
+  switchCh chan bool
   stopCh chan bool
 }
 
@@ -37,11 +39,16 @@ type appendRequest struct {
   ch chan appendResponse
 }
 
+/*
+ * Open the file specified by "startSeq" and be ready for appending.
+ */
 func startAppender(baseDir string, baseName string, startSeq int) (*logAppender, error) {
   a := &logAppender{
     baseDir: baseDir,
     baseName: baseName,
+    fileSeq: startSeq,
     appendCh: make(chan appendRequest, appendQueueSize),
+    switchCh: make(chan bool),
     stopCh: make(chan bool),
     position: 0,
   }
@@ -56,10 +63,17 @@ func startAppender(baseDir string, baseName string, startSeq int) (*logAppender,
   return a, nil
 }
 
+/*
+ * Stop the appender.
+ */
 func (a *logAppender) stop() {
   a.stopCh <- true
 }
 
+/*
+ * Append a single log file. Return three values: The position at which
+ * the record was appended; the number of bytes appended; and an error
+ */
 func (a *logAppender) append(rec *LogRecord) (int64, int, error) {
   respCh := make(chan appendResponse)
   req := appendRequest{
@@ -71,12 +85,23 @@ func (a *logAppender) append(rec *LogRecord) (int64, int, error) {
   return resp.position, resp.length, resp.err
 }
 
+/*
+ * Switch to a new log file. Every time this is called, we switch once.
+ */
+
+
+/*
+ * Internal code -- the main append loop.
+ */
+
 func (a *logAppender) appendLoop() {
   running := true
   for running {
     select {
     case req := <- a.appendCh:
       a.doAppend(req)
+    case <- a.switchCh:
+      a.switchFiles()
     case <- a.stopCh:
       running = false
     }
@@ -84,6 +109,11 @@ func (a *logAppender) appendLoop() {
 
   log.Info("Done appending to log. Closing file.")
   a.curFile.Close()
+}
+
+func (a* logAppender) switchFiles() {
+  a.fileSeq++
+  a.openFile(a.fileSeq)
 }
 
 func (a* logAppender) openFile(fileSeq int) error {

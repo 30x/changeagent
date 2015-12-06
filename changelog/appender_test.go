@@ -19,40 +19,47 @@ func TestAppender(t *testing.T) {
     t.Fatalf("Error starting appender: %v", err)
   }
 
-  lr1 := &LogRecord{
-    sequence: 1,
-    key: "one",
-    tenantId: "A",
-    data: []byte("Record 1"),
+  _, len := appendOne(t, app, 1, "one", "Record one", 0)
+  newPos := int64(len)
+  appendOne(t, app, 2, "two", "Second record", newPos)
+
+  app.stop()
+}
+
+func TestAppenderSwitch(t *testing.T) {
+  os.Mkdir(appenderTestDir, 0777)
+  defer os.RemoveAll(appenderTestDir)
+
+  app, err := startAppender(appenderTestDir, fileBase, 0)
+  if err != nil {
+    t.Fatalf("Error starting appender: %v", err)
   }
-  pos, len, err := app.append(lr1)
+
+  _, len := appendOne(t, app, 1, "one", "Record one", 0)
+  newPos := int64(len)
+  appendOne(t, app, 2, "two", "Second record", newPos)
+  app.switchFiles()
+  appendOne(t, app, 2, "two", "Second record", 0)
+
+  app.stop()
+}
+
+func appendOne(t *testing.T, app *logAppender, seq uint64, key string, msg string, expectedPos int64) (int64, int) {
+  lr := &LogRecord{
+    sequence: seq,
+    key: key,
+    tenantId: "A",
+    data: []byte(msg),
+  }
+  pos, len, err := app.append(lr)
   if err != nil {
     t.Fatalf("Error on append")
   }
-  if pos != 0 {
-    t.Fatalf("Position %d should be 0 because it's the first record", pos)
+  if pos != expectedPos {
+    t.Fatalf("Position %d doesn't match expected %d", pos, expectedPos)
   }
   if len <= 0 {
     t.Fatalf("Expected a positive length")
   }
-
-  lr2 := &LogRecord{
-    sequence: 2,
-    key: "two",
-    tenantId: "A",
-    data: []byte("Record 2"),
-  }
-  newPos, newLen, err := app.append(lr2)
-  exPos := int64(len) + pos
-  if err != nil {
-    t.Fatalf("Error on append")
-  }
-  if newPos != exPos {
-    t.Fatalf("Position %d should be %d because it's the first record", newPos, exPos)
-  }
-  if newLen <= 0 {
-    t.Fatalf("Expected a positive length")
-  }
-
-  app.stop()
+  return pos, len
 }
