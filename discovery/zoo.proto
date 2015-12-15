@@ -1,0 +1,7 @@
+package discovery;
+
+message NodePb {
+  required uint64 id = 1;
+  required string address = 2;
+  required int32 state = 3;
+}
