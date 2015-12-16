@@ -38,6 +38,7 @@ func CreateSqliteStorage(dbFile string) (*SqliteStorage, error) {
 
   success := false
   flags := C.SQLITE_OPEN_READWRITE | C.SQLITE_OPEN_CREATE | C.SQLITE_OPEN_FULLMUTEX
+  log.Debugf("Opening Sqlite database in %s", dbFile)
   e := C.sqlite3_open_v2(cName, &db, C.int(flags), nil)
   if e != 0 {
     // Generate the first error manually because we can't lock the DB yet

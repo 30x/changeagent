@@ -3,6 +3,7 @@ package communication
 import (
   "bytes"
   "fmt"
+  "time"
   "io/ioutil"
   "net/http"
   "github.com/golang/protobuf/proto"
@@ -16,7 +17,12 @@ const (
   ContentType = "application/changeagent+protobuf"
   RequestVoteUri = "/raft/requestvote"
   AppendUri = "/raft/append"
+  RequestTimeout = 10 * time.Second
 )
+
+var httpClient *http.Client = &http.Client{
+  Timeout: RequestTimeout,
+}
 
 type HttpCommunication struct {
   raft Raft
@@ -66,12 +72,13 @@ func (h *HttpCommunication) sendVoteRequest(addr string, req *VoteRequest, ch ch
     return
   }
 
-  resp, err := http.Post(uri, ContentType, bytes.NewReader(reqBody))
+  resp, err := httpClient.Post(uri, ContentType, bytes.NewReader(reqBody))
   if err != nil {
     vr := VoteResponse{Error: err}
     ch <- &vr
     return
   }
+  defer resp.Body.Close()
 
   log.Infof("Got back %d", resp.StatusCode)
   if resp.StatusCode != 200 {
@@ -88,7 +95,6 @@ func (h *HttpCommunication) sendVoteRequest(addr string, req *VoteRequest, ch ch
     ch <- &vr
     return
   }
-  resp.Body.Close()
 
   var respPb VoteResponsePb
   err = proto.Unmarshal(respBody, &respPb)
@@ -144,12 +150,13 @@ func (h *HttpCommunication) sendAppend(addr string, req *AppendRequest, ch chan 
     return
   }
 
-  resp, err := http.Post(uri, ContentType, bytes.NewReader(reqBody))
+  resp, err := httpClient.Post(uri, ContentType, bytes.NewReader(reqBody))
   if err != nil {
     vr := AppendResponse{Error: err}
     ch <- &vr
     return
   }
+  defer resp.Body.Close()
 
   log.Infof("Got back %d", resp.StatusCode)
   if resp.StatusCode != 200 {
@@ -166,7 +173,6 @@ func (h *HttpCommunication) sendAppend(addr string, req *AppendRequest, ch chan 
     ch <- &vr
     return
   }
-  resp.Body.Close()
 
   var respPb AppendResponsePb
   err = proto.Unmarshal(respBody, &respPb)
@@ -185,6 +191,7 @@ func (h *HttpCommunication) sendAppend(addr string, req *AppendRequest, ch chan 
 
 
 func (h *HttpCommunication) handleRequestVote(c *gin.Context) {
+  defer c.Request.Body.Close()
   if c.ContentType() != ContentType {
     c.AbortWithStatus(415)
     return
@@ -194,7 +201,6 @@ func (h *HttpCommunication) handleRequestVote(c *gin.Context) {
     c.AbortWithError(500, err)
     return
   }
-  c.Request.Body.Close()
 
   var reqpb VoteRequestPb
   err = proto.Unmarshal(body, &reqpb)
@@ -233,6 +239,7 @@ func (h *HttpCommunication) handleRequestVote(c *gin.Context) {
 }
 
 func (h *HttpCommunication) handleAppend(c *gin.Context) {
+  defer c.Request.Body.Close()
   if c.ContentType() != ContentType {
     c.AbortWithStatus(415)
     return
@@ -242,7 +249,6 @@ func (h *HttpCommunication) handleAppend(c *gin.Context) {
     c.AbortWithError(500, err)
     return
   }
-  c.Request.Body.Close()
 
   var reqpb AppendRequestPb
   err = proto.Unmarshal(body, &reqpb)

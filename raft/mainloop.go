@@ -2,8 +2,6 @@ package raft
 
 import (
   "time"
-  "revision.aeip.apigee.net/greg/changeagent/communication"
-  "revision.aeip.apigee.net/greg/changeagent/storage"
   "revision.aeip.apigee.net/greg/changeagent/log"
 )
 
@@ -12,188 +10,132 @@ const (
   HeartbeatTimeout = 2 * time.Second
 )
 
+type voteResult struct {
+  index uint64
+  result bool
+  err error
+}
+
+type raftState struct {
+  currentTerm uint64
+  votedFor uint64
+  commitIndex uint64
+  lastApplied uint64
+  voteIndex uint64              // Keep track of the voting channel in case something takes a long time
+  voteResults chan voteResult
+}
+
 func (r *RaftImpl) mainLoop() {
-  for r.state != StateStopped {
-    switch r.state {
+  state := &raftState{
+    voteIndex: 0,
+    voteResults: make(chan voteResult),
+    currentTerm: r.readCurrentTerm(),
+    votedFor: r.readLastVote(),
+    commitIndex: r.readLastCommit(),
+    lastApplied: r.readLastApplied(),
+  }
+
+  var stopDone chan bool
+  for {
+    switch r.GetState() {
     case StateFollower:
-      r.followerLoop()
+      log.Infof("Node %d entering follower mode", r.id)
+      stopDone = r.followerLoop(false, state)
     case StateCandidate:
-      r.candidateLoop()
+      log.Infof("Node %d entering candidate mode", r.id)
+      stopDone = r.followerLoop(true, state)
     case StateLeader:
-      r.leaderLoop()
+      log.Infof("Node %d entering leader mode", r.id)
+      stopDone = r.leaderLoop(state)
+    case StateStopping:
+      r.cleanup()
+      if stopDone != nil {
+        stopDone <- true
+      }
+      return
+    case StateStopped:
+      return
     }
   }
-  log.Info("Main loop exiting")
 }
 
-func (r *RaftImpl) followerLoop() {
-  log.Infof("Node %d entering follower mode", r.id)
+func (r *RaftImpl) followerLoop(isCandidate bool, state *raftState) chan bool {
+  if isCandidate {
+    log.Debugf("Node %d starting an election", r.id)
+    state.voteIndex++
+    // Update term and vote for myself
+    state.currentTerm++
+    r.writeCurrentTerm(state.currentTerm)
+    state.votedFor = r.id
+    r.writeLastVote(r.id)
+    go r.sendVotes(state, state.voteIndex, state.voteResults)
+  }
 
   timeout := time.NewTimer(ElectionTimeout)
   for {
     select {
     case <- timeout.C:
-      if r.votedFor == 0 {
-        r.state = StateCandidate
+      log.Debugf("Node %d: election timeout", r.id)
+      r.setState(StateCandidate)
+      return nil
+
+    case voteCmd := <- r.voteCommands:
+      r.handleFollowerVote(state, voteCmd)
+
+    case appendCmd := <- r.appendCommands:
+      // 5.1: If RPC request or response contains term T > currentTerm:
+      // set currentTerm = T, convert to follower
+      if appendCmd.ar.Term > state.currentTerm {
+        state.currentTerm = appendCmd.ar.Term
+        r.writeCurrentTerm(state.currentTerm)
+        state.votedFor = 0
+        r.writeLastVote(0)
+        r.setState(StateFollower)
       }
-      return
-    case <- r.receivedAppendChan:
-      log.Debugf("Node %d received an append", r.id)
+      r.handleFollowerAppend(state, appendCmd)
       timeout.Reset(ElectionTimeout)
-    case <- r.stopChan:
-      r.state = StateStopped
-      return
-    }
-  }
-}
 
-func (r *RaftImpl) candidateLoop() {
-  log.Infof("Node %d entering candidate mode", r.id)
-
-  electionResult := make(chan bool, 1)
-  r.startElection(electionResult)
-
-  timeout := time.NewTimer(ElectionTimeout)
-  for {
-    select {
-    case result := <- electionResult:
-      if result {
-        r.state = StateLeader
-        return
+    case vr := <- state.voteResults:
+      if vr.index == state.voteIndex {
+        // Avoid vote results that come back way too late
+        state.votedFor = 0
+        r.writeLastVote(0)
+        log.Debugf("Node %d received the election result: %v", r.id, vr.result)
+        if vr.result {
+          r.setState(StateLeader)
+          return nil
+        }
+        // Voting failed. Try again after timeout.
+        timeout.Reset(ElectionTimeout)
       }
-    case <- timeout.C:
-      // Should we keep trying here?
-      r.state = StateFollower
-      return
-    case <- r.receivedAppendChan:
-      log.Debugf("Node %d received an append in candidate mode", r.id)
-      r.state = StateFollower
-      return
-    case <- r.stopChan:
-      r.state = StateStopped
-      return
+
+    case stopDone := <- r.stopChan:
+      r.setState(StateStopping)
+      return stopDone
     }
   }
 }
 
-func (r *RaftImpl) startElection(electionResult chan bool) {
-  r.updateCurrentTerm(r.currentTerm + 1, r.id)
-  go r.sendVotes(electionResult)
-}
-
-func (r *RaftImpl) leaderLoop() {
-  log.Infof("Node %d entering leader mode", r.id)
-
-  resultChan := make(chan bool)
-  r.sendEntries(nil, resultChan)
-  <-resultChan
+func (r *RaftImpl) leaderLoop(state *raftState) chan bool {
+  r.sendEntries(state, nil)
 
   timeout := time.NewTimer(HeartbeatTimeout)
   for {
     select {
     case <- timeout.C:
-      r.sendEntries(nil, resultChan)
-      <-resultChan
+      r.sendEntries(state, nil)
       timeout.Reset(HeartbeatTimeout)
-    case <- r.stopChan:
-      r.state = StateStopped
-      return
-    }
-  }
-}
 
-func (r *RaftImpl) sendVotes(resultChan chan<- bool) {
-  lastIndex, lastTerm, err := r.stor.GetLastIndex()
-  if err != nil {
-    log.Infof("Error reading database to start election: %v", err)
-    resultChan <- false
-    return
-  }
+    case voteCmd := <- r.voteCommands:
+      r.voteNo(state, voteCmd)
 
-  vr := communication.VoteRequest{
-    Term: r.currentTerm,
-    CandidateId: r.id,
-    LastLogIndex: lastIndex,
-    LastLogTerm: lastTerm,
-  }
-
-  nodes := r.disco.GetNodes()
-  votes := 0
-  log.Debugf("Node %d sending vote request to %d nodes for term %d",
-    r.id, len(nodes), r.currentTerm)
-
-  var responses []chan *communication.VoteResponse
-
-  for _, node := range(nodes) {
-    if node.Id == r.id {
-      votes++
+    case <- r.appendCommands:
+      // Nothing to do, at least for now!
       continue
-    }
-    rc := make(chan *communication.VoteResponse)
-    responses = append(responses, rc)
-    r.comm.RequestVote(node.Id, &vr, rc)
-  }
 
-  for _, respChan := range(responses) {
-    vresp := <- respChan
-    if vresp.Error != nil {
-      log.Debugf("Error receiving vote: from %d", vresp.NodeId, vresp.Error)
-    } else if vresp.VoteGranted {
-      log.Debugf("Node %d received a yes vote from %d",
-        r.id, vresp.NodeId)
-      votes++
-    } else {
-      log.Debugf("Node %d received a no vote from %d",
-        r.id, vresp.NodeId)
+    case stopDone := <- r.stopChan:
+      r.setState(StateStopping)
+      return stopDone
     }
   }
-
-  granted := votes >= ((len(nodes) / 2) + 1)
-  log.Infof("Node %d: election request complete for term %d: %d votes for %d notes. Granted = %v",
-    r.id, vr.Term, votes, len(nodes), granted)
-
-  resultChan <- granted
-}
-
-func (r *RaftImpl) sendEntries(entries []storage.Entry, resultChan chan<- bool) {
-  lastIndex, lastTerm, err := r.stor.GetLastIndex()
-  if err != nil {
-    log.Infof("Error reading database to send new entries: %v", err)
-    resultChan <- false
-    return
-  }
-
-  ar := communication.AppendRequest{
-    Term: r.currentTerm,
-    LeaderId: r.id,
-    PrevLogIndex: lastIndex,
-    PrevLogTerm: lastTerm,
-    LeaderCommit: r.commitIndex,
-    Entries: entries,
-  }
-
-  nodes := r.disco.GetNodes()
-  log.Debugf("Sending append request to %d nodes for term %d", len(nodes), r.currentTerm)
-
-  var responses []chan *communication.AppendResponse
-
-  for _, node := range(nodes) {
-    if node.Id == r.id {
-      continue
-    }
-    rc := make(chan *communication.AppendResponse)
-    responses = append(responses, rc)
-    r.comm.Append(node.Id, &ar, rc)
-  }
-
-  for _, respChan := range(responses) {
-    resp := <- respChan
-    if resp.Error != nil {
-      log.Debugf("Error on append: %v", resp.Error)
-    } else {
-      log.Debugf("Node %d append success = %v", r.id, resp.Success)
-    }
-  }
-
-  resultChan <- true
 }

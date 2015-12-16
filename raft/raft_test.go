@@ -1,103 +1,80 @@
 package raft
 
 import (
-  "fmt"
-  "os"
   "testing"
   "time"
-  "github.com/gin-gonic/gin"
-  "revision.aeip.apigee.net/greg/changeagent/communication"
-  "revision.aeip.apigee.net/greg/changeagent/discovery"
-  "revision.aeip.apigee.net/greg/changeagent/storage"
-  "revision.aeip.apigee.net/greg/changeagent/log"
 )
 
 const (
-  Port1 = 44444
-  Port2 = 44445
-  Port3 = 44446
+  MaxWaitTime = 60 * time.Second
 )
 
-func TestMain(m *testing.M) {
-  os.Exit(runMain(m))
+func TestWaitForLeader(t *testing.T) {
+  waitForLeader(t)
 }
 
-func runMain(m *testing.M) int {
-  log.InitDebug(true)
+func TestStopFollower(t *testing.T) {
+  waitForLeader(t)
 
-  addrs := []string{
-    fmt.Sprintf("localhost:%d", Port1),
-    fmt.Sprintf("localhost:%d", Port2),
-    fmt.Sprintf("localhost:%d", Port3),
+  var follower *RaftImpl = nil
+  //var i int
+  var r *RaftImpl
+  for _, r = range(testRafts) {
+    if r.GetState() == StateFollower {
+      follower = r
+    }
   }
 
-  disco := discovery.CreateStaticDiscovery(addrs)
-
-  raft1, err := startRaft(1, disco, Port1, "testraft1")
-  if err != nil {
-    fmt.Printf("Error starting raft 1: %v", err)
-    return 2
-  }
-  defer cleanRaft(raft1, "testraft1")
-
-  // TODO Raft never converges if each node starts at exactly the same time!
+  follower.Close()
+  //testRafts[i] = nil
   time.Sleep(time.Second)
+  waitForLeader(t)
+}
 
-  raft2, err := startRaft(2, disco, Port2, "testraft2")
-  if err != nil {
-    fmt.Printf("Error starting raft 2: %v", err)
-    return 3
+/*
+func TestStopLeader(t *testing.T) {
+  waitForLeader(t)
+
+  var leader *RaftImpl = nil
+  for _, r := range(testRafts) {
+    if r.GetState() == StateLeader {
+      leader = r
+    }
   }
-  defer cleanRaft(raft2, "testraft2")
 
+  leader.Close()
   time.Sleep(time.Second)
+  waitForLeader(t)
+}
+*/
 
-  raft3, err := startRaft(3, disco, Port3, "testraft3")
-  if err != nil {
-    fmt.Printf("Error starting raft 3: %v", err)
-    return 4
+func waitForLeader(t *testing.T) {
+  for i := 0; i < 40; i++ {
+    _, leaders := countRafts(t)
+    if leaders == 0 {
+      time.Sleep(time.Second)
+    } else if leaders == 1 {
+      return
+    } else {
+      t.Fatalf("Expected only one leader but found %d", leaders)
+    }
   }
-  defer cleanRaft(raft3, "testraft3")
-
-  // For now, just see what happens!
-  time.Sleep(40 * time.Second)
-
-  return m.Run()
+  t.Fatal("Waited too long for a leader to emerge")
 }
 
-func startRaft(id uint64, disco discovery.Discovery, port int, dir string) (*RaftImpl, error) {
-  api := gin.Default()
-  comm, err := communication.StartHttpCommunication(api, disco)
-  if err != nil { return nil, err }
-  stor, err := storage.CreateSqliteStorage(dir)
-  sm := createTestState()
+func countRafts(t *testing.T) (int, int) {
+  var followers, leaders int
 
-  raft, err := StartRaft(id, comm, disco, stor, sm)
-  if err != nil { return nil, err }
-  comm.SetRaft(raft)
-  go api.Run(fmt.Sprintf(":%d", port))
+  for _, r := range(testRafts) {
+    switch r.GetState() {
+    case StateFollower:
+      followers++
+    case StateLeader:
+      leaders++
+    }
+  }
 
-  return raft, nil
-}
+  t.Logf("total = %d followers = %d leaders = %d", len(testRafts), followers, leaders)
 
-func cleanRaft(raft *RaftImpl, dir string) {
-  raft.Close()
-  raft.stor.Close()
-  raft.stor.Delete()
-}
-
-type TestStateMachine struct {
-}
-
-func createTestState() *TestStateMachine {
-  return &TestStateMachine{}
-}
-
-func (s *TestStateMachine) ApplyEntry(data []byte) error {
-  log.Infof("Applying %d bytes of data", len(data))
-  return nil
-}
-
-func (s *TestStateMachine) GetLastIndex() (uint64, error) {
-  return 0, nil
+  return followers, leaders
 }
