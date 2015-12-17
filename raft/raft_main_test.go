@@ -75,7 +75,7 @@ func runMain(m *testing.M) int {
 }
 
 func startRaft(id uint64, disco discovery.Discovery, port int, dir string) (*RaftImpl, error) {
-  api := gin.Default()
+  api := gin.New()
   comm, err := communication.StartHttpCommunication(api, disco)
   if err != nil { return nil, err }
   stor, err := storage.CreateSqliteStorage(dir)

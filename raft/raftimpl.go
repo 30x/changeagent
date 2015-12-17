@@ -40,6 +40,11 @@ type RaftImpl struct {
   appendCommands chan appendCommand
   latch sync.Mutex
   followerOnly bool
+  currentTerm uint64
+  commitIndex uint64
+  lastApplied uint64
+  lastIndex uint64
+  lastTerm uint64
 }
 
 type voteCommand struct {
@@ -87,6 +92,13 @@ func StartRaft(id uint64,
     return nil, fmt.Errorf("Id %d cannot be found in discovery data", r.id)
   }
 
+  r.lastIndex, r.lastTerm, err = r.stor.GetLastIndex()
+  if err != nil { return nil, err }
+
+  r.currentTerm = r.readCurrentTerm()
+  r.commitIndex = r.readLastCommit()
+  r.lastApplied = r.readLastApplied()
+
   go r.mainLoop()
 
   return r, nil
@@ -131,6 +143,56 @@ func (r *RaftImpl) GetState() int {
   r.latch.Lock()
   defer r.latch.Unlock()
   return r.state
+}
+
+func (r *RaftImpl) GetCurrentTerm() uint64 {
+  r.latch.Lock()
+  defer r.latch.Unlock()
+  return r.currentTerm
+}
+
+func (r *RaftImpl) setCurrentTerm(t uint64) {
+  r.latch.Lock()
+  defer r.latch.Unlock()
+  r.currentTerm = t
+  r.writeCurrentTerm(t)
+}
+
+func (r *RaftImpl) GetCommitIndex() uint64 {
+  r.latch.Lock()
+  defer r.latch.Unlock()
+  return r.commitIndex
+}
+
+func (r *RaftImpl) setCommitIndex(t uint64) {
+  r.latch.Lock()
+  defer r.latch.Unlock()
+  r.commitIndex = t
+}
+
+func (r *RaftImpl) GetLastApplied() uint64 {
+  r.latch.Lock()
+  defer r.latch.Unlock()
+  return r.lastApplied
+}
+
+func (r *RaftImpl) setLastApplied(t uint64) {
+  r.latch.Lock()
+  defer r.latch.Unlock()
+  r.lastApplied = t
+}
+
+func (r *RaftImpl) GetLastIndex() (uint64, uint64) {
+  r.latch.Lock()
+  defer r.latch.Unlock()
+  return r.lastIndex, r.lastTerm
+}
+
+func (r *RaftImpl) setLastIndex(ix uint64, term uint64) {
+  r.latch.Lock()
+  defer r.latch.Unlock()
+  r.lastIndex = ix
+  r.lastTerm = term
 }
 
 // Used only in unit testing. Forces us to never become a leader.

@@ -43,5 +43,5 @@ type AppendResponse struct {
 type Communication interface {
   SetRaft(raft Raft)
   RequestVote(id uint64, req *VoteRequest, ch chan *VoteResponse)
-  Append(id uint64, req *AppendRequest, ch chan *AppendResponse)
+  Append(id uint64, req *AppendRequest) (*AppendResponse, error)
 }

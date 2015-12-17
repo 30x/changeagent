@@ -1,3 +1,7 @@
+/*
+ * Methods in this file handle the voting logic.
+ */
+
 package raft
 
 import (
@@ -8,13 +12,15 @@ import (
 func (r *RaftImpl) handleFollowerVote(state *raftState, cmd voteCommand) {
   log.Debugf("Node %d got vote request from %d at term %d",
     r.id, cmd.vr.CandidateId, cmd.vr.Term)
+  currentTerm := r.GetCurrentTerm()
+
   resp := communication.VoteResponse{
     NodeId: r.id,
-    Term: state.currentTerm,
+    Term: currentTerm,
   }
 
   // 5.1: Reply false if term < currentTerm
-  if cmd.vr.Term < state.currentTerm {
+  if cmd.vr.Term < currentTerm {
     resp.VoteGranted = false
     cmd.rc <- &resp
     return
@@ -22,8 +28,9 @@ func (r *RaftImpl) handleFollowerVote(state *raftState, cmd voteCommand) {
 
   // 5.2, 5.2: If votedFor is null or candidateId, and candidate’s log is at
   // least as up-to-date as receiver’s log, grant vote
+  commitIndex := r.GetCommitIndex()
   if (state.votedFor == 0 || state.votedFor == cmd.vr.CandidateId) &&
-     cmd.vr.LastLogIndex >= state.commitIndex {
+     cmd.vr.LastLogIndex >= commitIndex {
      err := r.stor.SetMetadata(VotedForKey, cmd.vr.CandidateId)
      if err != nil {
        resp.Error = err
@@ -44,7 +51,7 @@ func (r *RaftImpl) handleFollowerVote(state *raftState, cmd voteCommand) {
 func (r *RaftImpl) voteNo(state *raftState, cmd voteCommand) {
   resp := communication.VoteResponse{
     NodeId: r.id,
-    Term: state.currentTerm,
+    Term: r.GetCurrentTerm(),
     VoteGranted: false,
   }
   cmd.rc <- &resp
@@ -62,8 +69,9 @@ func (r *RaftImpl) sendVotes(state *raftState, index uint64, rc chan<- voteResul
     return
   }
 
+  currentTerm := r.GetCurrentTerm()
   vr := communication.VoteRequest{
-    Term: state.currentTerm,
+    Term: currentTerm,
     CandidateId: r.id,
     LastLogIndex: lastIndex,
     LastLogTerm: lastTerm,
@@ -72,7 +80,7 @@ func (r *RaftImpl) sendVotes(state *raftState, index uint64, rc chan<- voteResul
   nodes := r.disco.GetNodes()
   votes := 0
   log.Debugf("Node %d sending vote request to %d nodes for term %d",
-    r.id, len(nodes), state.currentTerm)
+    r.id, len(nodes), currentTerm)
 
   var responses []chan *communication.VoteResponse
 

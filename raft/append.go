@@ -1,3 +1,7 @@
+/*
+ * Methods in this file handle the append logic for a raft instance.
+ */
+
 package raft
 
 import (
@@ -8,12 +12,15 @@ import (
 
 func (r *RaftImpl) handleAppend(state *raftState, cmd appendCommand) {
   log.Debugf("Got append request for term %d", cmd.ar.Term)
+  currentTerm := r.GetCurrentTerm()
+  commitIndex := r.GetCommitIndex()
+
   resp := communication.AppendResponse{
-    Term: state.currentTerm,
+    Term: currentTerm,
   }
 
   // 5.1: Reply false if term doesn't match current term
-  if cmd.ar.Term < state.currentTerm {
+  if cmd.ar.Term < r.currentTerm {
     resp.Success = false
     cmd.rc <- &resp
     return
@@ -43,73 +50,60 @@ func (r *RaftImpl) handleAppend(state *raftState, cmd appendCommand) {
 
     // If leaderCommit > commitIndex, set commitIndex =
     // min(leaderCommit, index of last new entry)
+
     log.Debugf("leader commit: %d commitIndex: %d",
-      cmd.ar.LeaderCommit, state.commitIndex)
-    if cmd.ar.LeaderCommit > state.commitIndex {
+      cmd.ar.LeaderCommit, commitIndex)
+    if cmd.ar.LeaderCommit > commitIndex {
       lastIndex := cmd.ar.Entries[len(cmd.ar.Entries) - 1].Index
       if cmd.ar.LeaderCommit < lastIndex {
-        state.commitIndex = cmd.ar.LeaderCommit
+        commitIndex = cmd.ar.LeaderCommit
       } else {
-        state.commitIndex = lastIndex
+        commitIndex = lastIndex
       }
-      log.Debugf("Node %d: Commit index now %d", r.id, state.commitIndex)
+      r.setCommitIndex(commitIndex)
+      log.Debugf("Node %d: Commit index now %d", r.id, commitIndex)
 
       // 5.3: If commitIndex > lastApplied: increment lastApplied,
       // apply log[lastApplied] to state machine
+      lastApplied := r.GetLastApplied()
       for _, e := range(cmd.ar.Entries) {
-        if e.Index > state.lastApplied && e.Index < state.commitIndex {
+        if e.Index > lastApplied && e.Index < commitIndex {
           r.mach.ApplyEntry(e.Data)
-          state.lastApplied++
+          lastApplied++
         }
-        log.Debugf("Node %d: Last applied now %d", r.id, state.lastApplied)
+        r.setLastApplied(lastApplied)
+        log.Debugf("Node %d: Last applied now %d", r.id, lastApplied)
       }
     }
   }
 
-  resp.Term = state.currentTerm
+  resp.Term = currentTerm
   resp.Success = true
-  resp.CommitIndex = state.commitIndex
+  resp.CommitIndex = commitIndex
 
   cmd.rc <- &resp
 }
 
-func (r *RaftImpl) sendEntries(state *raftState, entries []storage.Entry) {
-  lastIndex, lastTerm, err := r.stor.GetLastIndex()
-  if err != nil {
-    log.Infof("Error reading database to send new entries: %v", err)
-    return
-  }
+func (r *RaftImpl) sendAppend(id uint64, entries []storage.Entry) {
+  lastIndex, lastTerm := r.GetLastIndex()
 
-  ar := communication.AppendRequest{
-    Term: state.currentTerm,
+  ar := &communication.AppendRequest{
+    Term: r.GetCurrentTerm(),
     LeaderId: r.id,
     PrevLogIndex: lastIndex,
     PrevLogTerm: lastTerm,
-    LeaderCommit: state.commitIndex,
+    LeaderCommit: r.GetCommitIndex(),
     Entries: entries,
   }
 
-  nodes := r.disco.GetNodes()
-  log.Debugf("Sending append request to %d nodes for term %d", len(nodes), state.currentTerm)
+  log.Debugf("Sending append request to node %d for term %d", id, ar.Term)
 
-  var responses []chan *communication.AppendResponse
+  resp, err := r.comm.Append(id, ar)
 
-  for _, node := range(nodes) {
-    if node.Id == r.id {
-      continue
-    }
-    rc := make(chan *communication.AppendResponse)
-    responses = append(responses, rc)
-    r.comm.Append(node.Id, &ar, rc)
-  }
-
-  for _, respChan := range(responses) {
-    resp := <- respChan
-    if resp.Error != nil {
-      log.Debugf("Error on append: %v", resp.Error)
-    } else {
-      log.Debugf("Node %d append success = %v", r.id, resp.Success)
-    }
+  if err != nil {
+    log.Debugf("Node %d error on append: %v", id, err)
+  } else {
+    log.Debugf("Node %d append success = %v", id, resp.Success)
   }
 }
 
@@ -139,5 +133,12 @@ func (r *RaftImpl) appendEntries(entries []storage.Entry) error {
       if err != nil { return err }
     }
   }
+
+  // Update cached state so we don't have to read every time we send a heartbeat
+  if len(entries) > 0 {
+    last := entries[len(entries) - 1]
+    r.setLastIndex(last.Index, last.Term)
+  }
+
   return nil
 }

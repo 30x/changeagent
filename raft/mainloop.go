@@ -1,3 +1,8 @@
+/*
+ * This file contains the main loops for leaders and followers. This loop
+ * runs in a single goroutine per Raft.
+ */
+
 package raft
 
 import (
@@ -12,22 +17,18 @@ type voteResult struct {
 }
 
 type raftState struct {
-  currentTerm uint64
   votedFor uint64
-  commitIndex uint64
-  lastApplied uint64
   voteIndex uint64              // Keep track of the voting channel in case something takes a long time
   voteResults chan voteResult
+  peers map[uint64]*raftPeer
 }
 
 func (r *RaftImpl) mainLoop() {
   state := &raftState{
     voteIndex: 0,
     voteResults: make(chan voteResult),
-    currentTerm: r.readCurrentTerm(),
     votedFor: r.readLastVote(),
-    commitIndex: r.readLastCommit(),
-    lastApplied: r.readLastApplied(),
+    peers: make(map[uint64]*raftPeer),
   }
 
   var stopDone chan bool
@@ -59,8 +60,7 @@ func (r *RaftImpl) followerLoop(isCandidate bool, state *raftState) chan bool {
     log.Debugf("Node %d starting an election", r.id)
     state.voteIndex++
     // Update term and vote for myself
-    state.currentTerm++
-    r.writeCurrentTerm(state.currentTerm)
+    r.setCurrentTerm(r.GetCurrentTerm() + 1)
     state.votedFor = r.id
     r.writeLastVote(r.id)
     go r.sendVotes(state, state.voteIndex, state.voteResults)
@@ -82,9 +82,8 @@ func (r *RaftImpl) followerLoop(isCandidate bool, state *raftState) chan bool {
     case appendCmd := <- r.appendCommands:
       // 5.1: If RPC request or response contains term T > currentTerm:
       // set currentTerm = T, convert to follower
-      if appendCmd.ar.Term > state.currentTerm {
-        state.currentTerm = appendCmd.ar.Term
-        r.writeCurrentTerm(state.currentTerm)
+      if appendCmd.ar.Term > r.GetCurrentTerm() {
+        r.setCurrentTerm(appendCmd.ar.Term)
         state.votedFor = 0
         r.writeLastVote(0)
         r.setState(StateFollower)
@@ -114,34 +113,40 @@ func (r *RaftImpl) followerLoop(isCandidate bool, state *raftState) chan bool {
 }
 
 func (r *RaftImpl) leaderLoop(state *raftState) chan bool {
-  r.sendEntries(state, nil)
+  for _, n := range(r.disco.GetNodes()) {
+    state.peers[n.Id] = startPeer(n.Id, r)
+  }
 
-  timeout := time.NewTimer(HeartbeatTimeout)
   for {
     select {
-    case <- timeout.C:
-      r.sendEntries(state, nil)
-      timeout.Reset(HeartbeatTimeout)
-
     case voteCmd := <- r.voteCommands:
       r.voteNo(state, voteCmd)
 
     case appendCmd := <- r.appendCommands:
       // 5.1: If RPC request or response contains term T > currentTerm:
       // set currentTerm = T, convert to follower
-      if appendCmd.ar.Term > state.currentTerm {
-        state.currentTerm = appendCmd.ar.Term
-        r.writeCurrentTerm(state.currentTerm)
+      if appendCmd.ar.Term > r.GetCurrentTerm() {
+        // Potential race condition averted because only this goroutine updates term
+        r.setCurrentTerm(appendCmd.ar.Term)
         state.votedFor = 0
         r.writeLastVote(0)
         r.setState(StateFollower)
+        stopPeers(state)
+        r.handleAppend(state, appendCmd)
+        return nil
       }
       r.handleAppend(state, appendCmd)
-      return nil
 
     case stopDone := <- r.stopChan:
       r.setState(StateStopping)
+      stopPeers(state)
       return stopDone
     }
+  }
+}
+
+func stopPeers(state *raftState) {
+  for _, p := range(state.peers) {
+    p.stop()
   }
 }

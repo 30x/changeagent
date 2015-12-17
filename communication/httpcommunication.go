@@ -112,20 +112,12 @@ func (h *HttpCommunication) sendVoteRequest(addr string, req *VoteRequest, ch ch
   ch <- &voteResp
 }
 
-func (h *HttpCommunication) Append(id uint64, req *AppendRequest, ch chan *AppendResponse) {
+func (h *HttpCommunication) Append(id uint64, req *AppendRequest) (*AppendResponse, error) {
   addr := h.discovery.GetAddress(id)
   if addr == "" {
-    vr := AppendResponse{
-      Error: fmt.Errorf("Invalid peer ID %d", id),
-    }
-    ch <- &vr
-    return
+    return nil, fmt.Errorf("Invalid peer ID %d", id)
   }
 
-  go h.sendAppend(addr, req, ch)
-}
-
-func (h *HttpCommunication) sendAppend(addr string, req *AppendRequest, ch chan *AppendResponse) {
   uri := fmt.Sprintf("http://%s%s", addr, AppendUri)
 
   reqPb := AppendRequestPb{
@@ -145,48 +137,36 @@ func (h *HttpCommunication) sendAppend(addr string, req *AppendRequest, ch chan 
 
   reqBody, err := proto.Marshal(&reqPb)
   if err != nil {
-    vr := AppendResponse{Error: err}
-    ch <- &vr
-    return
+    return nil, err
   }
 
   resp, err := httpClient.Post(uri, ContentType, bytes.NewReader(reqBody))
   if err != nil {
-    vr := AppendResponse{Error: err}
-    ch <- &vr
-    return
+    return nil, err
   }
   defer resp.Body.Close()
 
   log.Infof("Got back %d", resp.StatusCode)
   if resp.StatusCode != 200 {
-    vr := AppendResponse{
-      Error: fmt.Errorf("HTTP status %d %s", resp.StatusCode, resp.Status),
-    }
-    ch <- &vr
-    return
+    return nil, fmt.Errorf("HTTP status %d %s", resp.StatusCode, resp.Status)
   }
 
   respBody, err := ioutil.ReadAll(resp.Body)
   if err != nil {
-    vr := AppendResponse{Error: err}
-    ch <- &vr
-    return
+    return nil, err
   }
 
   var respPb AppendResponsePb
   err = proto.Unmarshal(respBody, &respPb)
   if err != nil {
-    vr := AppendResponse{Error: err}
-    ch <- &vr
-    return
+    return nil, err
   }
 
-  appResp := AppendResponse{
+  appResp := &AppendResponse{
     Term: respPb.GetTerm(),
     Success: respPb.GetSuccess(),
   }
-  ch <- &appResp
+  return appResp, nil
 }
 
 
