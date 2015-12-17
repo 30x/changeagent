@@ -5,7 +5,6 @@ import (
   "os"
   "path"
   "testing"
-  "time"
   "github.com/gin-gonic/gin"
   "revision.aeip.apigee.net/greg/changeagent/communication"
   "revision.aeip.apigee.net/greg/changeagent/discovery"
@@ -51,17 +50,12 @@ func runMain(m *testing.M) int {
   }
   testRafts = append(testRafts, raft1)
 
-  // TODO Raft never converges if each node starts at exactly the same time!
-  time.Sleep(time.Second)
-
   raft2, err := startRaft(2, disco, Port2, path.Join(DataDir, "test2"))
   if err != nil {
     fmt.Printf("Error starting raft 2: %v", err)
     return 3
   }
   testRafts = append(testRafts, raft2)
-
-  time.Sleep(time.Second)
 
   raft3, err := startRaft(3, disco, Port3, path.Join(DataDir, "test3"))
   if err != nil {

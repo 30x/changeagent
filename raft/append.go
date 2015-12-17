@@ -6,7 +6,7 @@ import (
   "revision.aeip.apigee.net/greg/changeagent/log"
 )
 
-func (r *RaftImpl) handleFollowerAppend(state *raftState, cmd appendCommand) {
+func (r *RaftImpl) handleAppend(state *raftState, cmd appendCommand) {
   log.Debugf("Got append request for term %d", cmd.ar.Term)
   resp := communication.AppendResponse{
     Term: state.currentTerm,

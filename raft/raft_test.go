@@ -13,6 +13,7 @@ func TestWaitForLeader(t *testing.T) {
   waitForLeader(t)
 }
 
+/*
 func TestStopFollower(t *testing.T) {
   waitForLeader(t)
 
@@ -30,9 +31,9 @@ func TestStopFollower(t *testing.T) {
   time.Sleep(time.Second)
   waitForLeader(t)
 }
+*/
 
-// TODO current problem: Once the leader is down, two nodes will not self-elect one or the other
-/*
+// After stopping the leader, a new one is elected
 func TestStopLeader(t *testing.T) {
   waitForLeader(t)
 
@@ -47,7 +48,6 @@ func TestStopLeader(t *testing.T) {
   time.Sleep(time.Second)
   waitForLeader(t)
 }
-*/
 
 func waitForLeader(t *testing.T) {
   for i := 0; i < 40; i++ {

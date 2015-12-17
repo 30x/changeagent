@@ -5,11 +5,6 @@ import (
   "revision.aeip.apigee.net/greg/changeagent/log"
 )
 
-const (
-  ElectionTimeout = 10 * time.Second
-  HeartbeatTimeout = 2 * time.Second
-)
-
 type voteResult struct {
   index uint64
   result bool
@@ -60,8 +55,6 @@ func (r *RaftImpl) mainLoop() {
 }
 
 func (r *RaftImpl) followerLoop(isCandidate bool, state *raftState) chan bool {
-  // TODO election timeout must be randomized
-
   if isCandidate {
     log.Debugf("Node %d starting an election", r.id)
     state.voteIndex++
@@ -73,7 +66,7 @@ func (r *RaftImpl) followerLoop(isCandidate bool, state *raftState) chan bool {
     go r.sendVotes(state, state.voteIndex, state.voteResults)
   }
 
-  timeout := time.NewTimer(ElectionTimeout)
+  timeout := time.NewTimer(r.randomElectionTimeout())
   for {
     select {
     case <- timeout.C:
@@ -96,8 +89,8 @@ func (r *RaftImpl) followerLoop(isCandidate bool, state *raftState) chan bool {
         r.writeLastVote(0)
         r.setState(StateFollower)
       }
-      r.handleFollowerAppend(state, appendCmd)
-      timeout.Reset(ElectionTimeout)
+      r.handleAppend(state, appendCmd)
+      timeout.Reset(r.randomElectionTimeout())
 
     case vr := <- state.voteResults:
       if vr.index == state.voteIndex {
@@ -110,7 +103,7 @@ func (r *RaftImpl) followerLoop(isCandidate bool, state *raftState) chan bool {
           return nil
         }
         // Voting failed. Try again after timeout.
-        timeout.Reset(ElectionTimeout)
+        timeout.Reset(r.randomElectionTimeout())
       }
 
     case stopDone := <- r.stopChan:
@@ -121,7 +114,6 @@ func (r *RaftImpl) followerLoop(isCandidate bool, state *raftState) chan bool {
 }
 
 func (r *RaftImpl) leaderLoop(state *raftState) chan bool {
-  // TODO if we get appendEntries from a different term, stop being leader
   r.sendEntries(state, nil)
 
   timeout := time.NewTimer(HeartbeatTimeout)
@@ -134,9 +126,18 @@ func (r *RaftImpl) leaderLoop(state *raftState) chan bool {
     case voteCmd := <- r.voteCommands:
       r.voteNo(state, voteCmd)
 
-    case <- r.appendCommands:
-      // Nothing to do, at least for now!
-      continue
+    case appendCmd := <- r.appendCommands:
+      // 5.1: If RPC request or response contains term T > currentTerm:
+      // set currentTerm = T, convert to follower
+      if appendCmd.ar.Term > state.currentTerm {
+        state.currentTerm = appendCmd.ar.Term
+        r.writeCurrentTerm(state.currentTerm)
+        state.votedFor = 0
+        r.writeLastVote(0)
+        r.setState(StateFollower)
+      }
+      r.handleAppend(state, appendCmd)
+      return nil
 
     case stopDone := <- r.stopChan:
       r.setState(StateStopping)

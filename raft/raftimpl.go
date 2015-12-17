@@ -4,6 +4,8 @@ import (
   "errors"
   "fmt"
   "sync"
+  "time"
+  "math/rand"
   "revision.aeip.apigee.net/greg/changeagent/communication"
   "revision.aeip.apigee.net/greg/changeagent/discovery"
   "revision.aeip.apigee.net/greg/changeagent/storage"
@@ -14,6 +16,8 @@ const (
   CurrentTermKey = "currentTerm"
   VotedForKey = "votedFor"
   LocalIdKey = "localid"
+  ElectionTimeout = 10 * time.Second
+  HeartbeatTimeout = 2 * time.Second
 )
 
 const (
@@ -47,6 +51,8 @@ type appendCommand struct {
   ar *communication.AppendRequest
   rc chan *communication.AppendResponse
 }
+
+var raftRand *rand.Rand = makeRand()
 
 func StartRaft(id uint64,
                comm communication.Communication,
@@ -203,4 +209,16 @@ func (r *RaftImpl) readLastApplied() uint64 {
   la, err := r.mach.GetLastIndex()
   if err != nil { panic("Fatal error reading state from state machine") }
   return la
+}
+
+// Election timeout is the default timeout, plus or minus one heartbeat interval
+func (r *RaftImpl) randomElectionTimeout() time.Duration {
+  rge := int64(HeartbeatTimeout * 2)
+  min := int64(ElectionTimeout - HeartbeatTimeout)
+  return time.Duration(raftRand.Int63n(rge) + min)
+}
+
+func makeRand() *rand.Rand {
+  s := rand.NewSource(time.Now().UnixNano())
+  return rand.New(s)
 }
