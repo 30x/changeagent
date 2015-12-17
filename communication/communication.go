@@ -36,6 +36,7 @@ type AppendRequest struct {
 type AppendResponse struct {
   Term uint64
   Success bool
+  CommitIndex uint64
   Error error
 }
 

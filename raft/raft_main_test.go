@@ -17,10 +17,12 @@ const (
   Port1 = 44444
   Port2 = 44445
   Port3 = 44446
+  UTPort = 44447
   DataDir = "./rafttestdata"
 )
 
 var testRafts []*RaftImpl
+var unitTestRaft *RaftImpl
 
 func TestMain(m *testing.M) {
   os.Exit(runMain(m))
@@ -35,8 +37,11 @@ func runMain(m *testing.M) int {
     fmt.Sprintf("localhost:%d", Port2),
     fmt.Sprintf("localhost:%d", Port3),
   }
-
   disco := discovery.CreateStaticDiscovery(addrs)
+
+  unitAddr := []string{fmt.Sprintf("localhost:%d", UTPort)}
+  unitDisco := discovery.CreateStaticDiscovery(unitAddr)
+
   defer cleanRafts()
 
   raft1, err := startRaft(1, disco, Port1, path.Join(DataDir, "test1"))
@@ -65,6 +70,13 @@ func runMain(m *testing.M) int {
   }
   testRafts = append(testRafts, raft3)
 
+  unitTestRaft, err = startRaft(1, unitDisco, UTPort, path.Join(DataDir, "unit"))
+  if err != nil {
+    fmt.Printf("Error starting unit test raft: %v", err)
+    return 4
+  }
+  initUnitTests(unitTestRaft)
+
   return m.Run()
 }
 
@@ -91,6 +103,46 @@ func cleanRafts() {
       r.stor.Close()
       r.stor.Delete()
     }
+  }
+  unitTestRaft.Close()
+  unitTestRaft.stor.Close()
+  unitTestRaft.stor.Delete()
+}
+
+// Set up the state machine so that we can properly do some unit tests
+func initUnitTests(raft *RaftImpl) {
+  raft.setFollowerOnly(true)
+
+  ar := &communication.AppendRequest{
+    Term: 2,
+    LeaderId: 1,
+    PrevLogIndex: 0,
+    PrevLogTerm: 0,
+    LeaderCommit: 3,
+    Entries: []storage.Entry{
+      storage.Entry{
+        Index: 1,
+        Term: 1,
+      },
+      storage.Entry{
+        Index: 2,
+        Term: 2,
+      },
+      storage.Entry{
+        Index: 3,
+        Term: 2,
+      },
+    },
+  }
+  resp, err := raft.Append(ar)
+  if err != nil {
+    panic("expected successful append at startup")
+  }
+  if !resp.Success {
+    panic("Expected append at startup to work")
+  }
+  if resp.CommitIndex != 3 {
+    panic("Expected commit index to be 3 at startup")
   }
 }
 

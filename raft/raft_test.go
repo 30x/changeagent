@@ -31,6 +31,7 @@ func TestStopFollower(t *testing.T) {
   waitForLeader(t)
 }
 
+// TODO current problem: Once the leader is down, two nodes will not self-elect one or the other
 /*
 func TestStopLeader(t *testing.T) {
   waitForLeader(t)

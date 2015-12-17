@@ -10,6 +10,7 @@ type Storage interface {
   GetMetadata(key string) (uint64, error)
   SetMetadata(key string, val uint64) error
   AppendEntry(index uint64, term uint64, data []byte) error
+  // Get term and data for entry. Return term 0 if not found.
   GetEntry(index uint64) (uint64, []byte, error)
   GetLastIndex() (uint64, uint64, error)
   // Return index and term of everything from index to the end

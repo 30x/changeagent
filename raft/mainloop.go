@@ -60,6 +60,8 @@ func (r *RaftImpl) mainLoop() {
 }
 
 func (r *RaftImpl) followerLoop(isCandidate bool, state *raftState) chan bool {
+  // TODO election timeout must be randomized
+
   if isCandidate {
     log.Debugf("Node %d starting an election", r.id)
     state.voteIndex++
@@ -76,8 +78,10 @@ func (r *RaftImpl) followerLoop(isCandidate bool, state *raftState) chan bool {
     select {
     case <- timeout.C:
       log.Debugf("Node %d: election timeout", r.id)
-      r.setState(StateCandidate)
-      return nil
+      if !r.followerOnly {
+        r.setState(StateCandidate)
+        return nil
+      }
 
     case voteCmd := <- r.voteCommands:
       r.handleFollowerVote(state, voteCmd)
@@ -117,6 +121,7 @@ func (r *RaftImpl) followerLoop(isCandidate bool, state *raftState) chan bool {
 }
 
 func (r *RaftImpl) leaderLoop(state *raftState) chan bool {
+  // TODO if we get appendEntries from a different term, stop being leader
   r.sendEntries(state, nil)
 
   timeout := time.NewTimer(HeartbeatTimeout)

@@ -43,6 +43,8 @@ func (r *RaftImpl) handleFollowerAppend(state *raftState, cmd appendCommand) {
 
     // If leaderCommit > commitIndex, set commitIndex =
     // min(leaderCommit, index of last new entry)
+    log.Debugf("leader commit: %d commitIndex: %d",
+      cmd.ar.LeaderCommit, state.commitIndex)
     if cmd.ar.LeaderCommit > state.commitIndex {
       lastIndex := cmd.ar.Entries[len(cmd.ar.Entries) - 1].Index
       if cmd.ar.LeaderCommit < lastIndex {
@@ -66,6 +68,7 @@ func (r *RaftImpl) handleFollowerAppend(state *raftState, cmd appendCommand) {
 
   resp.Term = state.currentTerm
   resp.Success = true
+  resp.CommitIndex = state.commitIndex
 
   cmd.rc <- &resp
 }

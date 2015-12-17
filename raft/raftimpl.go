@@ -35,6 +35,7 @@ type RaftImpl struct {
   voteCommands chan voteCommand
   appendCommands chan appendCommand
   latch sync.Mutex
+  followerOnly bool
 }
 
 type voteCommand struct {
@@ -62,6 +63,7 @@ func StartRaft(id uint64,
     voteCommands: make(chan voteCommand),
     appendCommands: make(chan appendCommand),
     latch: sync.Mutex{},
+    followerOnly: false,
   }
 
   storedId, err := stor.GetMetadata(LocalIdKey)
@@ -113,7 +115,6 @@ func (r *RaftImpl) cleanup() {
   //close(r.appendCommands)
 
   //close(r.receivedAppendChan)
-  log.Debugf("Node %d: Closed all channels", r.id)
 }
 
 func (r *RaftImpl) MyId() uint64 {
@@ -124,6 +125,11 @@ func (r *RaftImpl) GetState() int {
   r.latch.Lock()
   defer r.latch.Unlock()
   return r.state
+}
+
+// Used only in unit testing. Forces us to never become a leader.
+func (r *RaftImpl) setFollowerOnly(f bool) {
+  r.followerOnly = f
 }
 
 func (r *RaftImpl) setState(newState int) {
