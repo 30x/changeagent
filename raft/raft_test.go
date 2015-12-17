@@ -37,14 +37,15 @@ func TestStopFollower(t *testing.T) {
 func TestStopLeader(t *testing.T) {
   waitForLeader(t)
 
-  var leader *RaftImpl = nil
-  for _, r := range(testRafts) {
+  var leaderIndex int
+  for i, r := range(testRafts) {
     if r.GetState() == StateLeader {
-      leader = r
+      leaderIndex = i
     }
   }
 
-  leader.Close()
+  testRafts[leaderIndex].Close()
+  testListener[leaderIndex].Close()
   time.Sleep(time.Second)
   waitForLeader(t)
 }

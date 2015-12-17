@@ -7,7 +7,6 @@ import (
   "io/ioutil"
   "net/http"
   "github.com/golang/protobuf/proto"
-  "github.com/gin-gonic/gin"
   "revision.aeip.apigee.net/greg/changeagent/discovery"
   "revision.aeip.apigee.net/greg/changeagent/storage"
   "revision.aeip.apigee.net/greg/changeagent/log"
@@ -29,13 +28,13 @@ type HttpCommunication struct {
   discovery discovery.Discovery
 }
 
-func StartHttpCommunication(api *gin.Engine,
+func StartHttpCommunication(mux *http.ServeMux,
                             discovery discovery.Discovery) (*HttpCommunication, error) {
   comm := HttpCommunication{
     discovery: discovery,
   }
-  api.POST(RequestVoteUri, comm.handleRequestVote)
-  api.POST(AppendUri, comm.handleAppend)
+  mux.HandleFunc(RequestVoteUri, comm.handleRequestVote)
+  mux.HandleFunc(AppendUri, comm.handleAppend)
   return &comm, nil
 }
 
@@ -170,74 +169,87 @@ func (h *HttpCommunication) Append(id uint64, req *AppendRequest) (*AppendRespon
 }
 
 
-func (h *HttpCommunication) handleRequestVote(c *gin.Context) {
-  defer c.Request.Body.Close()
-  if c.ContentType() != ContentType {
-    c.AbortWithStatus(415)
+func (h *HttpCommunication) handleRequestVote(resp http.ResponseWriter, req *http.Request) {
+  defer req.Body.Close()
+
+  if req.Method != "POST" {
+    resp.WriteHeader(http.StatusMethodNotAllowed)
     return
   }
-  body, err := ioutil.ReadAll(c.Request.Body)
+
+  if req.Header.Get(http.CanonicalHeaderKey("content-type")) != ContentType {
+    resp.WriteHeader(http.StatusUnsupportedMediaType)
+    return
+  }
+  body, err := ioutil.ReadAll(req.Body)
   if err != nil {
-    c.AbortWithError(500, err)
+    resp.WriteHeader(http.StatusInternalServerError)
     return
   }
 
   var reqpb VoteRequestPb
   err = proto.Unmarshal(body, &reqpb)
   if err != nil {
-    c.AbortWithError(400, err)
+    resp.WriteHeader(http.StatusBadRequest)
     return
   }
 
-  req := VoteRequest{
+  voteReq := VoteRequest{
     Term: reqpb.GetTerm(),
     CandidateId: reqpb.GetCandidateId(),
     LastLogIndex: reqpb.GetLastLogIndex(),
     LastLogTerm: reqpb.GetLastLogTerm(),
   }
 
-  resp, err := h.raft.RequestVote(&req)
+  voteResp, err := h.raft.RequestVote(&voteReq)
   if err != nil {
-    c.AbortWithError(500, err)
+    resp.WriteHeader(http.StatusBadRequest)
     return
   }
 
   nodeId := h.raft.MyId()
   respPb := VoteResponsePb{
     NodeId: &nodeId,
-    Term: &resp.Term,
-    VoteGranted: &resp.VoteGranted,
+    Term: &voteResp.Term,
+    VoteGranted: &voteResp.VoteGranted,
   }
 
   respBody, err := proto.Marshal(&respPb)
   if err != nil {
-    c.AbortWithError(500, err)
+    resp.WriteHeader(http.StatusInternalServerError)
     return
   }
 
-  c.Data(200, ContentType, respBody)
+  resp.Header().Set(http.CanonicalHeaderKey("content-type"), ContentType)
+  resp.Write(respBody)
 }
 
-func (h *HttpCommunication) handleAppend(c *gin.Context) {
-  defer c.Request.Body.Close()
-  if c.ContentType() != ContentType {
-    c.AbortWithStatus(415)
+func (h *HttpCommunication) handleAppend(resp http.ResponseWriter, req *http.Request) {
+  defer req.Body.Close()
+
+  if req.Method != "POST" {
+    resp.WriteHeader(http.StatusMethodNotAllowed)
     return
   }
-  body, err := ioutil.ReadAll(c.Request.Body)
+
+  if req.Header.Get(http.CanonicalHeaderKey("content-type")) != ContentType {
+    resp.WriteHeader(http.StatusUnsupportedMediaType)
+    return
+  }
+  body, err := ioutil.ReadAll(req.Body)
   if err != nil {
-    c.AbortWithError(500, err)
+    resp.WriteHeader(http.StatusInternalServerError)
     return
   }
 
   var reqpb AppendRequestPb
   err = proto.Unmarshal(body, &reqpb)
   if err != nil {
-    c.AbortWithError(400, err)
+    resp.WriteHeader(http.StatusBadRequest)
     return
   }
 
-  req := AppendRequest{
+  apReq := AppendRequest{
     Term: reqpb.GetTerm(),
     LeaderId: reqpb.GetLeaderId(),
     PrevLogIndex: reqpb.GetPrevLogIndex(),
@@ -249,25 +261,26 @@ func (h *HttpCommunication) handleAppend(c *gin.Context) {
       Term: e.GetTerm(),
       Data: e.GetData(),
     }
-    req.Entries = append(req.Entries, ne)
+    apReq.Entries = append(apReq.Entries, ne)
   }
 
-  resp, err := h.raft.Append(&req)
+  appResp, err := h.raft.Append(&apReq)
   if err != nil {
-    c.AbortWithError(500, err)
+    resp.WriteHeader(http.StatusInternalServerError)
     return
   }
 
   respPb := AppendResponsePb{
-    Term: &resp.Term,
-    Success: &resp.Success,
+    Term: &appResp.Term,
+    Success: &appResp.Success,
   }
 
   respBody, err := proto.Marshal(&respPb)
   if err != nil {
-    c.AbortWithError(500, err)
+    resp.WriteHeader(http.StatusInternalServerError)
     return
   }
 
-  c.Data(200, ContentType, respBody)
+  resp.Header().Set(http.CanonicalHeaderKey("content-type"), ContentType)
+  resp.Write(respBody)
 }

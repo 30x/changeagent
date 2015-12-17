@@ -1,23 +1,36 @@
 package communication
 
 import (
+  "fmt"
   "testing"
+  "net"
+  "net/http"
   "time"
-  "github.com/gin-gonic/gin"
   "revision.aeip.apigee.net/greg/changeagent/discovery"
   "revision.aeip.apigee.net/greg/changeagent/storage"
 )
 
 func TestRaftCalls(t *testing.T) {
-  addrs := make([]string, 1)
-  addrs[0] = "localhost:33333"
+  anyPort := &net.TCPAddr{}
+  listener, err := net.ListenTCP("tcp", anyPort)
+  if err != nil { t.Fatal("Can't listen on TCP port") }
+  defer listener.Close()
+
+  _, port, err := net.SplitHostPort(listener.Addr().String())
+  if err != nil { t.Fatal("Error parsing port") }
+  t.Logf("Listening on %s", port)
+  addrs := []string{
+    fmt.Sprintf("localhost:%s", port),
+  }
+
   discovery := discovery.CreateStaticDiscovery(addrs)
   testRaft := makeTestRaft()
-  api := gin.Default()
-  comm, err := StartHttpCommunication(api, discovery)
+  mux := http.NewServeMux()
+  comm, err := StartHttpCommunication(mux, discovery)
   if err != nil { t.Fatalf("Error starting raft: %v", err) }
   comm.SetRaft(testRaft)
-  go api.Run(":33333")
+  go http.Serve(listener, mux)
+  if err != nil { t.Fatal("Error listening on http") }
   time.Sleep(time.Second)
 
   req := VoteRequest{
@@ -37,10 +50,9 @@ func TestRaftCalls(t *testing.T) {
     Term: 1,
     LeaderId: 1,
   }
-  ach := make(chan *AppendResponse, 1)
 
-  comm.Append(1, &ar, ach)
-  aresp := <- ach
+  aresp, err := comm.Append(1, &ar)
+  if err != nil { t.Fatalf("Error from voteResponse: %v", resp.Error) }
   if aresp.Error != nil { t.Fatalf("Error from voteResponse: %v", resp.Error) }
   if aresp.Term != 1 { t.Fatalf("Expected term 1, got %d", resp.Term) }
   if !aresp.Success { t.Fatal("Expected success") }
@@ -56,8 +68,8 @@ func TestRaftCalls(t *testing.T) {
   e.Term = 3
   ar.Entries = append(ar.Entries, e)
 
-  comm.Append(1, &ar, ach)
-  aresp = <- ach
+  aresp, err = comm.Append(1, &ar)
+  if err != nil { t.Fatalf("Error from voteResponse: %v", resp.Error) }
   if aresp.Error != nil { t.Fatalf("Error from voteResponse: %v", aresp.Error) }
   if aresp.Term != 2 { t.Fatalf("Expected term 2, got %d", resp.Term) }
   if aresp.Success { t.Fatal("Expected not success") }

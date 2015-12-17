@@ -3,9 +3,10 @@ package raft
 import (
   "fmt"
   "os"
+  "net"
+  "net/http"
   "path"
   "testing"
-  "github.com/gin-gonic/gin"
   "revision.aeip.apigee.net/greg/changeagent/communication"
   "revision.aeip.apigee.net/greg/changeagent/discovery"
   "revision.aeip.apigee.net/greg/changeagent/storage"
@@ -13,15 +14,13 @@ import (
 )
 
 const (
-  Port1 = 44444
-  Port2 = 44445
-  Port3 = 44446
-  UTPort = 44447
   DataDir = "./rafttestdata"
 )
 
 var testRafts []*RaftImpl
+var testListener []*net.TCPListener
 var unitTestRaft *RaftImpl
+var unitTestListener *net.TCPListener
 
 func TestMain(m *testing.M) {
   os.Exit(runMain(m))
@@ -31,52 +30,65 @@ func runMain(m *testing.M) int {
   os.MkdirAll(DataDir, 0777)
   log.InitDebug(true)
 
-  addrs := []string{
-    fmt.Sprintf("localhost:%d", Port1),
-    fmt.Sprintf("localhost:%d", Port2),
-    fmt.Sprintf("localhost:%d", Port3),
+  // Create three TCP listeners -- we'll use them for a cluster
+  anyPort := &net.TCPAddr{}
+  var addrs []string
+  for li := 0; li < 3; li++ {
+    listener, err := net.ListenTCP("tcp4", anyPort)
+    if err != nil { panic("Can't listen on a TCP port") }
+    _, port, err := net.SplitHostPort(listener.Addr().String())
+    if err != nil { panic("Invalid listen address") }
+    addrs = append(addrs, fmt.Sprintf("localhost:%s", port))
+    testListener = append(testListener, listener)
   }
   disco := discovery.CreateStaticDiscovery(addrs)
 
-  unitAddr := []string{fmt.Sprintf("localhost:%d", UTPort)}
+  // Create one more for unit tests
+  unitTestListener, err := net.ListenTCP("tcp4", anyPort)
+  if err != nil { panic("Can't listen on a TCP port") }
+  _, port, err := net.SplitHostPort(unitTestListener.Addr().String())
+  if err != nil { panic("Invalid listen address") }
+  unitAddr := []string{fmt.Sprintf("localhost:%s", port)}
   unitDisco := discovery.CreateStaticDiscovery(unitAddr)
 
-  defer cleanRafts()
-
-  raft1, err := startRaft(1, disco, Port1, path.Join(DataDir, "test1"))
+  raft1, err := startRaft(1, disco, testListener[0], path.Join(DataDir, "test1"))
   if err != nil {
     fmt.Printf("Error starting raft 1: %v", err)
     return 2
   }
   testRafts = append(testRafts, raft1)
+  defer cleanRaft(raft1, testListener[0])
 
-  raft2, err := startRaft(2, disco, Port2, path.Join(DataDir, "test2"))
+  raft2, err := startRaft(2, disco, testListener[1], path.Join(DataDir, "test2"))
   if err != nil {
     fmt.Printf("Error starting raft 2: %v", err)
     return 3
   }
   testRafts = append(testRafts, raft2)
+  defer cleanRaft(raft2, testListener[1])
 
-  raft3, err := startRaft(3, disco, Port3, path.Join(DataDir, "test3"))
+  raft3, err := startRaft(3, disco, testListener[2], path.Join(DataDir, "test3"))
   if err != nil {
     fmt.Printf("Error starting raft 3: %v", err)
     return 4
   }
   testRafts = append(testRafts, raft3)
+  defer cleanRaft(raft3, testListener[2])
 
-  unitTestRaft, err = startRaft(1, unitDisco, UTPort, path.Join(DataDir, "unit"))
+  unitTestRaft, err = startRaft(1, unitDisco, unitTestListener, path.Join(DataDir, "unit"))
   if err != nil {
     fmt.Printf("Error starting unit test raft: %v", err)
     return 4
   }
+  defer cleanRaft(unitTestRaft, unitTestListener)
   initUnitTests(unitTestRaft)
 
   return m.Run()
 }
 
-func startRaft(id uint64, disco discovery.Discovery, port int, dir string) (*RaftImpl, error) {
-  api := gin.New()
-  comm, err := communication.StartHttpCommunication(api, disco)
+func startRaft(id uint64, disco discovery.Discovery, listener *net.TCPListener, dir string) (*RaftImpl, error) {
+  mux := http.NewServeMux()
+  comm, err := communication.StartHttpCommunication(mux, disco)
   if err != nil { return nil, err }
   stor, err := storage.CreateSqliteStorage(dir)
   if err != nil { return nil, err }
@@ -85,22 +97,16 @@ func startRaft(id uint64, disco discovery.Discovery, port int, dir string) (*Raf
   raft, err := StartRaft(id, comm, disco, stor, sm)
   if err != nil { return nil, err }
   comm.SetRaft(raft)
-  go api.Run(fmt.Sprintf(":%d", port))
+  go http.Serve(listener, mux)
 
   return raft, nil
 }
 
-func cleanRafts() {
-  for _, r := range(testRafts) {
-    if r != nil {
-      r.Close()
-      r.stor.Close()
-      r.stor.Delete()
-    }
-  }
-  unitTestRaft.Close()
-  unitTestRaft.stor.Close()
-  unitTestRaft.stor.Delete()
+func cleanRaft(raft *RaftImpl, l *net.TCPListener) {
+  raft.Close()
+  raft.stor.Close()
+  raft.stor.Delete()
+  l.Close()
 }
 
 // Set up the state machine so that we can properly do some unit tests
