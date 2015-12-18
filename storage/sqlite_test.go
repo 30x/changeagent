@@ -41,6 +41,10 @@ func TestEntries(t *testing.T) {
    if max != 0 { t.Fatalf("Expected 0 max index and got %d", max) }
    if term != 0 { t.Fatalf("Expected 0 max term and got %d", term) }
 
+   entries, err := stor.GetEntries(1, 3)
+   if err != nil { t.Fatalf("error on getEntries: %v", err) }
+   if len(entries) != 0 { t.Fatalf("Expected no entries and got %d", len(entries)) }
+
    hello := []byte("Hello!")
 
    err = stor.AppendEntry(1, 1, nil)
@@ -71,6 +75,16 @@ func TestEntries(t *testing.T) {
    ets, err = stor.GetEntryTerms(3)
    if err != nil { t.Fatalf("error on get terms: %v", err) }
    if len(ets) > 0 { t.Fatalf("Expected nothing") }
+
+   entries, err = stor.GetEntries(1, 2)
+   if err != nil { t.Fatalf("error on getEntries: %v", err) }
+   if len(entries) != 2 { t.Fatalf("Expected 2 entries and got %d", len(entries)) }
+   if entries[0].Index != 1 { t.Fatalf("Expected index 1 and got %d", term) }
+   if entries[0].Term != 1 { t.Fatalf("Expected term 1 and got %d", term) }
+   if entries[0].Data != nil { t.Fatalf("Expected nil data") }
+   if entries[1].Index != 2 { t.Fatalf("Expected index 2 and got %d", term) }
+   if entries[1].Term != 1 { t.Fatalf("Expected term 1 and got %d", term) }
+   if bytes.Compare(hello, entries[1].Data) != 0 { t.Fatal("Expected bytes to match") }
 
    err = stor.DeleteEntries(1)
    if err != nil { t.Fatalf("error on delete: %v", err) }

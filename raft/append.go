@@ -47,34 +47,47 @@ func (r *RaftImpl) handleAppend(state *raftState, cmd appendCommand) {
       cmd.rc <- &resp
       return
     }
+  }
 
-    // If leaderCommit > commitIndex, set commitIndex =
-    // min(leaderCommit, index of last new entry)
+  // If leaderCommit > commitIndex, set commitIndex =
+  // min(leaderCommit, index of last new entry)
 
-    log.Debugf("leader commit: %d commitIndex: %d",
-      cmd.ar.LeaderCommit, commitIndex)
-    if cmd.ar.LeaderCommit > commitIndex {
-      lastIndex := cmd.ar.Entries[len(cmd.ar.Entries) - 1].Index
-      if cmd.ar.LeaderCommit < lastIndex {
-        commitIndex = cmd.ar.LeaderCommit
-      } else {
-        commitIndex = lastIndex
-      }
-      r.setCommitIndex(commitIndex)
-      log.Debugf("Node %d: Commit index now %d", r.id, commitIndex)
-
-      // 5.3: If commitIndex > lastApplied: increment lastApplied,
-      // apply log[lastApplied] to state machine
-      lastApplied := r.GetLastApplied()
-      for _, e := range(cmd.ar.Entries) {
-        if e.Index > lastApplied && e.Index < commitIndex {
-          r.mach.ApplyEntry(e.Data)
-          lastApplied++
-        }
-        r.setLastApplied(lastApplied)
-        log.Debugf("Node %d: Last applied now %d", r.id, lastApplied)
-      }
+  log.Debugf("leader commit: %d commitIndex: %d",
+    cmd.ar.LeaderCommit, commitIndex)
+  if cmd.ar.LeaderCommit > commitIndex {
+    lastIndex, _, err := r.stor.GetLastIndex()
+    if err != nil {
+      resp.Error = err
+      cmd.rc <- &resp
+      return
     }
+
+    if cmd.ar.LeaderCommit < lastIndex {
+      commitIndex = cmd.ar.LeaderCommit
+    } else {
+      commitIndex = lastIndex
+    }
+    r.setCommitIndex(commitIndex)
+    log.Debugf("Node %d: Commit index now %d", r.id, commitIndex)
+
+    // 5.3: If commitIndex > lastApplied: increment lastApplied,
+    // apply log[lastApplied] to state machine
+    lastApplied := r.GetLastApplied()
+    for lastApplied < commitIndex {
+      lastApplied++
+      _, data, err := r.stor.GetEntry(lastApplied)
+      if err != nil {
+        resp.Error = err
+        cmd.rc <- &resp
+        return
+      }
+
+      r.mach.ApplyEntry(data)
+    }
+
+
+    r.setLastApplied(lastApplied)
+    log.Debugf("Node %d: Last applied now %d", r.id, lastApplied)
   }
 
   resp.Term = currentTerm
@@ -84,7 +97,7 @@ func (r *RaftImpl) handleAppend(state *raftState, cmd appendCommand) {
   cmd.rc <- &resp
 }
 
-func (r *RaftImpl) sendAppend(id uint64, entries []storage.Entry) {
+func (r *RaftImpl) sendAppend(id uint64, entries []storage.Entry) (bool, error) {
   lastIndex, lastTerm := r.GetLastIndex()
 
   ar := &communication.AppendRequest{
@@ -99,12 +112,10 @@ func (r *RaftImpl) sendAppend(id uint64, entries []storage.Entry) {
   log.Debugf("Sending append request to node %d for term %d", id, ar.Term)
 
   resp, err := r.comm.Append(id, ar)
-
-  if err != nil {
-    log.Debugf("Node %d error on append: %v", id, err)
-  } else {
-    log.Debugf("Node %d append success = %v", id, resp.Success)
+  if err == nil {
+    return resp.Success, nil
   }
+  return false, err
 }
 
 func (r *RaftImpl) appendEntries(entries []storage.Entry) error {

@@ -38,6 +38,7 @@ type RaftImpl struct {
   stopChan chan chan bool
   voteCommands chan voteCommand
   appendCommands chan appendCommand
+  proposals chan proposalCommand
   latch sync.Mutex
   followerOnly bool
   currentTerm uint64
@@ -57,6 +58,11 @@ type appendCommand struct {
   rc chan *communication.AppendResponse
 }
 
+type proposalCommand struct {
+  data []byte
+  rc chan error
+}
+
 var raftRand *rand.Rand = makeRand()
 
 func StartRaft(id uint64,
@@ -73,6 +79,7 @@ func StartRaft(id uint64,
     stopChan: make(chan chan bool),
     voteCommands: make(chan voteCommand),
     appendCommands: make(chan appendCommand),
+    proposals: make(chan proposalCommand),
     latch: sync.Mutex{},
     followerOnly: false,
   }
@@ -133,6 +140,55 @@ func (r *RaftImpl) cleanup() {
   //close(r.appendCommands)
 
   //close(r.receivedAppendChan)
+}
+
+func (r *RaftImpl) RequestVote(req *communication.VoteRequest) (*communication.VoteResponse, error) {
+  if r.GetState() == StateStopping || r.GetState() == StateStopped {
+    return nil, errors.New("Raft is stopped")
+  }
+
+  rc := make(chan *communication.VoteResponse)
+  cmd := voteCommand{
+    vr: req,
+    rc: rc,
+  }
+  r.voteCommands <- cmd
+  vr := <- rc
+  return vr, vr.Error
+}
+
+func (r *RaftImpl) Append(req *communication.AppendRequest) (*communication.AppendResponse, error) {
+  if r.GetState() == StateStopping || r.GetState() == StateStopped {
+    return nil, errors.New("Raft is stopped")
+  }
+
+  rc := make(chan *communication.AppendResponse)
+  cmd := appendCommand{
+    ar: req,
+    rc: rc,
+  }
+
+  log.Debugf("Gonna append. State is %v", r.GetState())
+  r.appendCommands <- cmd
+  resp := <- rc
+  return resp, resp.Error
+}
+
+func (r *RaftImpl) Propose(data []byte) error {
+  if r.GetState() == StateStopping || r.GetState() == StateStopped {
+    return errors.New("Raft is stopped")
+  }
+
+  rc := make(chan error)
+  cmd := proposalCommand{
+    data: data,
+    rc: rc,
+  }
+
+  log.Debugf("Going to propose a value of %d bytes", len(data))
+  r.proposals <- cmd
+  ret := <- rc
+  return ret
 }
 
 func (r *RaftImpl) MyId() uint64 {
@@ -205,38 +261,6 @@ func (r *RaftImpl) setState(newState int) {
   defer r.latch.Unlock()
   log.Debugf("Node %d: setting state to %d", r.id, newState)
   r.state = newState
-}
-
-func (r *RaftImpl) RequestVote(req *communication.VoteRequest) (*communication.VoteResponse, error) {
-  if r.GetState() == StateStopping || r.GetState() == StateStopped {
-    return nil, errors.New("Raft is stopped")
-  }
-
-  rc := make(chan *communication.VoteResponse)
-  cmd := voteCommand{
-    vr: req,
-    rc: rc,
-  }
-  r.voteCommands <- cmd
-  vr := <- rc
-  return vr, vr.Error
-}
-
-func (r *RaftImpl) Append(req *communication.AppendRequest) (*communication.AppendResponse, error) {
-  if r.GetState() == StateStopping || r.GetState() == StateStopped {
-    return nil, errors.New("Raft is stopped")
-  }
-
-  rc := make(chan *communication.AppendResponse)
-  cmd := appendCommand{
-    ar: req,
-    rc: rc,
-  }
-
-  log.Debugf("Gonna append. State is %v", r.GetState())
-  r.appendCommands <- cmd
-  resp := <- rc
-  return resp, resp.Error
 }
 
 func (r *RaftImpl) readCurrentTerm() uint64 {

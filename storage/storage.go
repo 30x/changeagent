@@ -12,6 +12,7 @@ type Storage interface {
   AppendEntry(index uint64, term uint64, data []byte) error
   // Get term and data for entry. Return term 0 if not found.
   GetEntry(index uint64) (uint64, []byte, error)
+  GetEntries(first uint64, last uint64) ([]Entry, error)
   GetLastIndex() (uint64, uint64, error)
   // Return index and term of everything from index to the end
   GetEntryTerms(index uint64) (map[uint64]uint64, error)

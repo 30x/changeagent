@@ -8,16 +8,18 @@ import (
 
 /*
  * Initial state, set up on raft_main_test.go:
- * term 2, commit index 3.
+ * term 2, commit index 1.
  * Log:
  *  Index 1, term 1
  *  Index 2, term 2
- *  Index 3, term 3
+ *  Index 3, term 2
  */
 
 /*
  * Vote RPC tests, from the spec.
  */
+
+ var lastIndex uint64 = 3
 
 // Reply false if term < currentTerm (§5.1)
 func TestVoteOldTerm(t *testing.T) {
@@ -164,6 +166,7 @@ func TestAppend(t *testing.T) {
   if !resp.Success {
     t.Fatalf("Expected this to be a successful append")
   }
+  lastIndex = 5
 
   term, _, err := unitTestRaft.stor.GetEntry(4)
   if err != nil { t.Fatalf("Error in get: %v", err) }
@@ -197,6 +200,7 @@ func TestAppend(t *testing.T) {
   if !resp.Success {
     t.Fatalf("Expected this to be a successful append")
   }
+  lastIndex = 4
 
   term, _, err = unitTestRaft.stor.GetEntry(4)
   if err != nil { t.Fatalf("Error in get: %v", err) }
@@ -232,6 +236,7 @@ func TestAppend(t *testing.T) {
   if !resp.Success {
     t.Fatalf("Expected this to be a successful append")
   }
+  lastIndex = 6
 
   term, _, err = unitTestRaft.stor.GetEntry(5)
   if err != nil { t.Fatalf("Error in get: %v", err) }
@@ -259,7 +264,7 @@ func TestAppend(t *testing.T) {
     t.Fatalf("Expected this to be a successful append")
   }
   if resp.CommitIndex != 3 {
-    t.Fatalf("Expected unchanged commit index at 3, not %d", resp.CommitIndex)
+    t.Fatalf("Expected new commit index at 3, not %d", resp.CommitIndex)
   }
 
   req = &communication.AppendRequest{
@@ -300,5 +305,82 @@ func TestAppend(t *testing.T) {
   }
   if resp.CommitIndex != 8 {
     t.Fatalf("Expected top commit index at 8, not %d", resp.CommitIndex)
+  }
+  lastIndex = 8
+}
+
+/*
+ * Commit index calculation, from the spec
+ */
+
+func TestNoCommitTooOld(t *testing.T) {
+  matches := map[uint64]uint64{
+    1: 0,
+    2: 0,
+    3: 0,
+  }
+  state := &raftState{
+    peerMatches: matches,
+  }
+  newIndex := unitTestRaft.calculateCommitIndex(state)
+  if newIndex != unitTestRaft.GetCommitIndex() {
+    t.Fatalf("commit index should be %d, not %d",
+      unitTestRaft.GetCommitIndex(), newIndex)
+  }
+}
+
+func TestNoCommitNoConsensus(t *testing.T) {
+  matches := map[uint64]uint64{
+    1: lastIndex,
+    2: 1,
+    3: 1,
+  }
+  state := &raftState{
+    peerMatches: matches,
+  }
+  newIndex := unitTestRaft.calculateCommitIndex(state)
+  if newIndex != unitTestRaft.GetCommitIndex() {
+    t.Fatalf("commit index should be %d, not %d",
+      unitTestRaft.GetCommitIndex(), newIndex)
+  }
+}
+
+func TestCommitConsensus(t *testing.T) {
+  oldIndex := unitTestRaft.GetCommitIndex()
+  defer unitTestRaft.setCommitIndex(oldIndex)
+  unitTestRaft.setCommitIndex(lastIndex - 2)
+
+  matches := map[uint64]uint64{
+    1: lastIndex,
+    2: lastIndex,
+    3: 1,
+  }
+  state := &raftState{
+    peerMatches: matches,
+  }
+  newIndex := unitTestRaft.calculateCommitIndex(state)
+  if newIndex != lastIndex {
+    t.Fatalf("commit index should be %d, not %d",
+      lastIndex, newIndex)
+  }
+}
+
+func TestCommitConsensus2(t *testing.T) {
+  oldIndex := unitTestRaft.GetCommitIndex()
+  defer unitTestRaft.setCommitIndex(oldIndex)
+  unitTestRaft.setCommitIndex(lastIndex - 2)
+  
+  matches := map[uint64]uint64{
+    1: 1,
+    2: lastIndex,
+    3: lastIndex - 1,
+  }
+  state := &raftState{
+    peerMatches: matches,
+  }
+  newIndex := unitTestRaft.calculateCommitIndex(state)
+  if newIndex != lastIndex - 1 {
+    t.Fatalf("commit index should be %d, not %d",
+      lastIndex - 1, newIndex)
   }
 }

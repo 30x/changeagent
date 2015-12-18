@@ -6,8 +6,10 @@
 package raft
 
 import (
+  "errors"
   "time"
   "revision.aeip.apigee.net/greg/changeagent/log"
+  "revision.aeip.apigee.net/greg/changeagent/storage"
 )
 
 type voteResult struct {
@@ -16,11 +18,18 @@ type voteResult struct {
   err error
 }
 
+type peerMatchResult struct {
+  id uint64
+  newMatch uint64
+}
+
 type raftState struct {
   votedFor uint64
   voteIndex uint64              // Keep track of the voting channel in case something takes a long time
   voteResults chan voteResult
   peers map[uint64]*raftPeer
+  peerMatches map[uint64]uint64
+  peerMatchChanges chan peerMatchResult
 }
 
 func (r *RaftImpl) mainLoop() {
@@ -29,6 +38,8 @@ func (r *RaftImpl) mainLoop() {
     voteResults: make(chan voteResult),
     votedFor: r.readLastVote(),
     peers: make(map[uint64]*raftPeer),
+    peerMatches: make(map[uint64]uint64),
+    peerMatchChanges: make(chan peerMatchResult),
   }
 
   var stopDone chan bool
@@ -91,6 +102,9 @@ func (r *RaftImpl) followerLoop(isCandidate bool, state *raftState) chan bool {
       r.handleAppend(state, appendCmd)
       timeout.Reset(r.randomElectionTimeout())
 
+    case prop := <- r.proposals:
+      prop.rc <- errors.New("Cannot accept proposal because we are not the leader")
+
     case vr := <- state.voteResults:
       if vr.index == state.voteIndex {
         // Avoid vote results that come back way too late
@@ -113,8 +127,13 @@ func (r *RaftImpl) followerLoop(isCandidate bool, state *raftState) chan bool {
 }
 
 func (r *RaftImpl) leaderLoop(state *raftState) chan bool {
+  // Upon election: send initial empty AppendEntries RPCs (heartbeat) to
+  // each server; repeat during idle periods to prevent
+  // election timeouts (§5.2)
+  //   We will do this inside the "peers" module
   for _, n := range(r.disco.GetNodes()) {
-    state.peers[n.Id] = startPeer(n.Id, r)
+    state.peers[n.Id] = startPeer(n.Id, r, state.peerMatchChanges)
+    state.peerMatches[n.Id] = 0
   }
 
   for {
@@ -137,6 +156,37 @@ func (r *RaftImpl) leaderLoop(state *raftState) chan bool {
       }
       r.handleAppend(state, appendCmd)
 
+    case prop := <- r.proposals:
+      // If command received from client: append entry to local log,
+      // respond after entry applied to state machine (§5.3)
+      newIndex, term := r.GetLastIndex()
+      newIndex++
+      newEntry := storage.Entry{
+        Index: newIndex,
+        Term: term,
+        Data: prop.data,
+      }
+
+      log.Debugf("Appending %d bytes of data for index %d term %d",
+        len(prop.data), newIndex, term)
+      err := r.appendEntries([]storage.Entry{newEntry})
+      if err != nil {
+        prop.rc <- err
+        continue
+      }
+
+      r.setLastIndex(newIndex, term)
+
+      // Now fire off this change to all of the peers
+      for _, p := range(state.peers) {
+        p.propose(newIndex)
+      }
+
+    case peerMatch := <- state.peerMatchChanges:
+      state.peerMatches[peerMatch.id] = peerMatch.newMatch
+      newIndex := r.  calculateCommitIndex(state)
+      r.setCommitIndex(newIndex)
+
     case stopDone := <- r.stopChan:
       r.setState(StateStopping)
       stopPeers(state)
@@ -149,4 +199,47 @@ func stopPeers(state *raftState) {
   for _, p := range(state.peers) {
     p.stop()
   }
+}
+
+// If there exists an N such that N > commitIndex, a majority
+// of matchIndex[i] ≥ N, and log[N].term == currentTerm: set commitIndex = N (§5.3, §5.4).
+func (r *RaftImpl) calculateCommitIndex(state *raftState) uint64 {
+  // Start with the max possible index and work our way down to the min
+  var max uint64 = 0
+  for _, mi := range(state.peerMatches) {
+    if mi > max {
+      max = mi
+    }
+  }
+
+  // Test each term to see if we have consensus
+  cur := max
+  for ; cur > r.GetCommitIndex(); cur-- {
+    if r.canCommit(cur, state) {
+      log.Debugf("Returning new commit index of %d", cur)
+      return cur
+    }
+  }
+  return r.GetCommitIndex()
+}
+
+// If there exists an N such that N > commitIndex, a majority
+// of matchIndex[i] ≥ N, and log[N].term == currentTerm:
+func (r *RaftImpl) canCommit(ix uint64, state *raftState) bool {
+  votes := 0
+  for _, m := range(state.peerMatches) {
+    if m >= ix {
+      votes++
+    }
+  }
+
+  if votes >= ((len(state.peerMatches) / 2) + 1) {
+    term, _, err := r.stor.GetEntry(ix)
+    if err != nil {
+      log.Debugf("Error reading entry from log: %v", err)
+    } else if term == r.GetCurrentTerm() {
+      return true
+    }
+  }
+  return false
 }

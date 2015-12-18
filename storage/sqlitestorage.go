@@ -117,6 +117,9 @@ func (s *SqliteStorage) prepareStatements() error {
   err = s.addPrepared("selectentry",
     "select term, data from change_entries where ix = ?")
   if err != nil { return err }
+  err = s.addPrepared("selectentryrange",
+    "select ix, term, data from change_entries where ix >= ? and ix <= ? order by ix asc")
+  if err != nil { return err }
   err = s.addPrepared("selectmaxindex",
     "select ix, term from change_entries order by ix desc limit 1")
   if err != nil { return err }
@@ -215,6 +218,41 @@ func (s *SqliteStorage) GetEntry(index uint64) (uint64, []byte, error) {
     return term, nil, nil
   default:
     return 0, nil, s.dbError("getmetadata")
+  }
+}
+
+func (s *SqliteStorage) GetEntries(first uint64, last uint64) ([]Entry, error) {
+  stmt := s.stmts["selectentryrange"]
+  s.bindInt(stmt, 1, first)
+  s.bindInt(stmt, 2, last)
+  defer C.sqlite3_reset(stmt)
+
+  var entries []Entry
+
+  for {
+    e := C.sqlite3_step(stmt)
+    switch e {
+      case C.SQLITE_DONE:
+        return entries, nil
+      case C.SQLITE_ROW:
+        index := uint64(C.sqlite3_column_int64(stmt, 0))
+        term := uint64(C.sqlite3_column_int64(stmt, 1))
+        blen := C.sqlite3_column_bytes(stmt, 2)
+        var bbuf []byte
+        if blen > 0 {
+          blob := C.sqlite3_column_text(stmt, 2)
+          bbuf = make([]byte, blen)
+          copy(bbuf[:], (*[1 << 30]byte)(unsafe.Pointer(blob))[0:blen])
+        }
+        entry := Entry{
+          Index: index,
+          Term: term,
+          Data: bbuf,
+        }
+        entries = append(entries, entry)
+      default:
+        return nil, s.dbError("selectentryrange")
+    }
   }
 }
 

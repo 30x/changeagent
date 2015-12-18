@@ -118,7 +118,7 @@ func initUnitTests(raft *RaftImpl) {
     LeaderId: 1,
     PrevLogIndex: 0,
     PrevLogTerm: 0,
-    LeaderCommit: 3,
+    LeaderCommit: 1,
     Entries: []storage.Entry{
       storage.Entry{
         Index: 1,
@@ -141,7 +141,7 @@ func initUnitTests(raft *RaftImpl) {
   if !resp.Success {
     panic("Expected append at startup to work")
   }
-  if resp.CommitIndex != 3 {
+  if resp.CommitIndex != 1 {
     panic("Expected commit index to be 3 at startup")
   }
 }
