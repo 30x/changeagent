@@ -127,8 +127,11 @@ func (h *HttpCommunication) Append(id uint64, req *AppendRequest) (*AppendRespon
     LeaderCommit: &req.LeaderCommit,
   }
   for _, e := range req.Entries {
+    index := e.Index
+    term := e.Term
     ne := EntryPb{
-      Term: &e.Term,
+      Index: &index,
+      Term: &term,
       Data: e.Data,
     }
     reqPb.Entries = append(reqPb.Entries, &ne)
@@ -258,6 +261,7 @@ func (h *HttpCommunication) handleAppend(resp http.ResponseWriter, req *http.Req
   }
   for _, e := range reqpb.GetEntries() {
     ne := storage.Entry{
+      Index: e.GetIndex(),
       Term: e.GetTerm(),
       Data: e.GetData(),
     }

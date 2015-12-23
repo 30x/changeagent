@@ -9,7 +9,6 @@ import (
   "errors"
   "time"
   "revision.aeip.apigee.net/greg/changeagent/log"
-  "revision.aeip.apigee.net/greg/changeagent/storage"
 )
 
 type voteResult struct {
@@ -94,6 +93,7 @@ func (r *RaftImpl) followerLoop(isCandidate bool, state *raftState) chan bool {
       // 5.1: If RPC request or response contains term T > currentTerm:
       // set currentTerm = T, convert to follower
       if appendCmd.ar.Term > r.GetCurrentTerm() {
+        log.Infof("Append request from new leader at new term %d", appendCmd.ar.Term)
         r.setCurrentTerm(appendCmd.ar.Term)
         state.votedFor = 0
         r.writeLastVote(0)
@@ -132,8 +132,25 @@ func (r *RaftImpl) leaderLoop(state *raftState) chan bool {
   // election timeouts (§5.2)
   //   We will do this inside the "peers" module
   for _, n := range(r.disco.GetNodes()) {
+    if n.Id == r.id {
+      continue
+    }
     state.peers[n.Id] = startPeer(n.Id, r, state.peerMatchChanges)
     state.peerMatches[n.Id] = 0
+  }
+
+  // Upon election: send initial empty AppendEntries RPCs (heartbeat) to
+  // each server; repeat during idle periods to prevent
+  // election timeouts (§5.2)
+  err := r.makeProposal(nil, state)
+  if err != nil {
+    // Not sure what else to do, so abort being the leader
+    log.Infof("Error when initially trying to become leader: %s", err)
+    state.votedFor = 0
+    r.writeLastVote(0)
+    r.setState(StateFollower)
+    stopPeers(state)
+    return nil
   }
 
   for {
@@ -145,6 +162,8 @@ func (r *RaftImpl) leaderLoop(state *raftState) chan bool {
       // 5.1: If RPC request or response contains term T > currentTerm:
       // set currentTerm = T, convert to follower
       if appendCmd.ar.Term > r.GetCurrentTerm() {
+        log.Infof("Append request from new leader at new term %d. No longer leader",
+          appendCmd.ar.Term)
         // Potential race condition averted because only this goroutine updates term
         r.setCurrentTerm(appendCmd.ar.Term)
         state.votedFor = 0
@@ -159,28 +178,8 @@ func (r *RaftImpl) leaderLoop(state *raftState) chan bool {
     case prop := <- r.proposals:
       // If command received from client: append entry to local log,
       // respond after entry applied to state machine (§5.3)
-      newIndex, term := r.GetLastIndex()
-      newIndex++
-      newEntry := storage.Entry{
-        Index: newIndex,
-        Term: term,
-        Data: prop.data,
-      }
-
-      log.Debugf("Appending %d bytes of data for index %d term %d",
-        len(prop.data), newIndex, term)
-      err := r.appendEntries([]storage.Entry{newEntry})
-      if err != nil {
-        prop.rc <- err
-        continue
-      }
-
-      r.setLastIndex(newIndex, term)
-
-      // Now fire off this change to all of the peers
-      for _, p := range(state.peers) {
-        p.propose(newIndex)
-      }
+      err := r.makeProposal(prop.data, state)
+      prop.rc <- err
 
     case peerMatch := <- state.peerMatchChanges:
       state.peerMatches[peerMatch.id] = peerMatch.newMatch

@@ -19,7 +19,7 @@ import (
  * Vote RPC tests, from the spec.
  */
 
- var lastIndex uint64 = 3
+var lastIndex uint64 = 3
 
 // Reply false if term < currentTerm (§5.1)
 func TestVoteOldTerm(t *testing.T) {
@@ -369,7 +369,7 @@ func TestCommitConsensus2(t *testing.T) {
   oldIndex := unitTestRaft.GetCommitIndex()
   defer unitTestRaft.setCommitIndex(oldIndex)
   unitTestRaft.setCommitIndex(lastIndex - 2)
-  
+
   matches := map[uint64]uint64{
     1: 1,
     2: lastIndex,

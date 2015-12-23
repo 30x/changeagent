@@ -1,6 +1,7 @@
 package communication
 
 import (
+  "bytes"
   "fmt"
   "testing"
   "net"
@@ -9,6 +10,8 @@ import (
   "revision.aeip.apigee.net/greg/changeagent/discovery"
   "revision.aeip.apigee.net/greg/changeagent/storage"
 )
+
+var expectedEntries []storage.Entry
 
 func TestRaftCalls(t *testing.T) {
   anyPort := &net.TCPAddr{}
@@ -24,7 +27,7 @@ func TestRaftCalls(t *testing.T) {
   }
 
   discovery := discovery.CreateStaticDiscovery(addrs)
-  testRaft := makeTestRaft()
+  testRaft := makeTestRaft(t)
   mux := http.NewServeMux()
   comm, err := StartHttpCommunication(mux, discovery)
   if err != nil { t.Fatalf("Error starting raft: %v", err) }
@@ -50,6 +53,7 @@ func TestRaftCalls(t *testing.T) {
     Term: 1,
     LeaderId: 1,
   }
+  expectedEntries = nil
 
   aresp, err := comm.Append(1, &ar)
   if err != nil { t.Fatalf("Error from voteResponse: %v", resp.Error) }
@@ -62,11 +66,18 @@ func TestRaftCalls(t *testing.T) {
     LeaderId: 1,
   }
   e := storage.Entry{
+    Index: 1,
     Term: 2,
+    Data: []byte("Hello!"),
   }
   ar.Entries = append(ar.Entries, e)
-  e.Term = 3
-  ar.Entries = append(ar.Entries, e)
+  e2 := storage.Entry{
+    Index: 2,
+    Term: 3,
+    Data: []byte("Goodbye!"),
+  }
+  ar.Entries = append(ar.Entries, e2)
+  expectedEntries = ar.Entries
 
   aresp, err = comm.Append(1, &ar)
   if err != nil { t.Fatalf("Error from voteResponse: %v", resp.Error) }
@@ -76,10 +87,13 @@ func TestRaftCalls(t *testing.T) {
 }
 
 type testRaft struct {
+  t *testing.T
 }
 
-func makeTestRaft() *testRaft {
-  return &testRaft{}
+func makeTestRaft(t *testing.T) *testRaft {
+  return &testRaft{
+    t: t,
+  }
 }
 
 func (r *testRaft) MyId() uint64 {
@@ -98,6 +112,19 @@ func (r *testRaft) Append(req *AppendRequest) (*AppendResponse, error) {
   vr := AppendResponse{
     Term: req.Term,
     Success: req.Term == 1,
+  }
+  r.t.Logf("Expected: %v", expectedEntries)
+  r.t.Logf("Got: %v", req.Entries)
+  for i, e := range(req.Entries) {
+    if e.Index != expectedEntries[i].Index {
+      r.t.Fatalf("%d: Expected index %d and got %d", i, expectedEntries[i].Index, e.Index)
+    }
+    if e.Term != expectedEntries[i].Term {
+      r.t.Fatalf("Expected term %d and got %d", expectedEntries[i].Term, e.Term)
+    }
+    if !bytes.Equal(e.Data, expectedEntries[i].Data) {
+      r.t.Fatal("Bytes do not match")
+    }
   }
   return &vr, nil
 }

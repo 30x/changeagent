@@ -8,6 +8,7 @@ package raft
 
 import (
   "time"
+  "revision.aeip.apigee.net/greg/changeagent/communication"
   "revision.aeip.apigee.net/greg/changeagent/log"
 )
 
@@ -24,7 +25,8 @@ func startPeer(id uint64, r *RaftImpl, changes chan<- peerMatchResult) *raftPeer
   p := &raftPeer{
     id: id,
     r: r,
-    updateChan: make(chan bool),
+    proposals: make(chan uint64),
+    updateChan: make(chan bool, 1),
     changeChan: changes,
     stopChan: make(chan bool),
   }
@@ -46,17 +48,19 @@ func (p *raftPeer) peerLoop() {
   // The index, from storage, that we expect to be sending
   desiredIndex := nextIndex
 
-  // Upon election: send initial empty AppendEntries RPCs (heartbeat) to
-  // each server; repeat during idle periods to prevent
+  // Repaat heartbeats during idle periods to prevent
   // election timeouts (§5.2)
-  p.r.sendAppend(p.id, nil)
 
   timeout := time.NewTimer(HeartbeatTimeout)
 
   for {
     select {
     case <- timeout.C:
-      p.r.sendAppend(p.id, nil)
+      if nextIndex == desiredIndex {
+        p.heartbeatPeer()
+      } else {
+        nextIndex = p.updatePeer(desiredIndex, nextIndex)
+      }
       timeout.Reset(HeartbeatTimeout)
 
     case newIndex := <- p.proposals:
@@ -64,39 +68,59 @@ func (p *raftPeer) peerLoop() {
       p.updateChan <- true
 
     case <- p.updateChan:
-      // Requests to update the peer happen via an internal channel.
-      // This prevents starvation of stops and timeouts.
-      success, err := p.sendUpdates(desiredIndex, nextIndex)
-      if err != nil {
-        log.Debugf("Error sending to %d: %v", p.id, err)
-      } else {
-        log.Debugf("Client sent back %v", success)
-      }
-      if success {
-        // If successful: update nextIndex and matchIndex for
-        // follower (§5.3)
-        log.Debugf("Client %d now up to date with index %d", p.id, desiredIndex)
-        nextIndex = desiredIndex
-        change := peerMatchResult{
-          id: p.id,
-          newMatch: desiredIndex,
-        }
-        p.changeChan <- change
 
-      } else {
-        // If AppendEntries fails because of log inconsistency:
-        // decrement nextIndex and retry (§5.3)
-        if nextIndex > 0 {
-          nextIndex--
-          p.updateChan <- true
-        }
-      }
+      timeout.Reset(HeartbeatTimeout)
 
     case <- p.stopChan:
       log.Debugf("Peer %d stopping", p.id)
       return
     }
   }
+}
+
+func (p *raftPeer) heartbeatPeer() {
+  lastIndex, lastTerm := p.r.GetLastIndex()
+  ar := &communication.AppendRequest{
+    Term: p.r.GetCurrentTerm(),
+    LeaderId: p.r.id,
+    PrevLogIndex: lastIndex,
+    PrevLogTerm: lastTerm,
+    LeaderCommit: p.r.GetCommitIndex(),
+  }
+
+  p.r.sendAppend(p.id, ar)
+}
+
+func (p *raftPeer) updatePeer(desiredIndex uint64, nextIndex uint64) uint64 {
+  newNext := nextIndex
+  // Requests to update the peer happen via an internal channel.
+  // This prevents starvation of stops and timeouts.
+  success, err := p.sendUpdates(desiredIndex, nextIndex)
+  if err != nil {
+    log.Debugf("Error sending to %d: %v", p.id, err)
+  } else {
+    log.Debugf("Client sent back %v", success)
+  }
+  if success {
+    // If successful: update nextIndex and matchIndex for
+    // follower (§5.3)
+    log.Debugf("Client %d now up to date with index %d", p.id, desiredIndex)
+    newNext = desiredIndex
+    change := peerMatchResult{
+      id: p.id,
+      newMatch: desiredIndex,
+    }
+    p.changeChan <- change
+
+  } else {
+    // If AppendEntries fails because of log inconsistency:
+    // decrement nextIndex and retry (§5.3)
+    if newNext > 0 {
+      newNext--
+      p.updateChan <- true
+    }
+  }
+  return newNext
 }
 
 func (p *raftPeer) sendUpdates(desired uint64, next uint64) (bool, error) {
@@ -111,6 +135,22 @@ func (p *raftPeer) sendUpdates(desired uint64, next uint64) (bool, error) {
   log.Debugf("Sending %d entries between %d and %d to %d",
     len(entries), next, desired, p.id)
 
-  success, err := p.r.sendAppend(p.id, entries)
+  lastIndex := next - 1
+  lastTerm, _, err := p.r.stor.GetEntry(lastIndex)
+  if err != nil {
+    log.Debugf("Error sending to peer %d: %v", p.id, err)
+    return false, err
+  }
+
+  ar := &communication.AppendRequest{
+    Term: p.r.GetCurrentTerm(),
+    LeaderId: p.r.id,
+    PrevLogIndex: lastIndex,
+    PrevLogTerm: lastTerm,
+    LeaderCommit: p.r.GetCommitIndex(),
+    Entries: entries,
+  }
+
+  success, err := p.r.sendAppend(p.id, ar)
   return success, err
 }

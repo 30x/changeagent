@@ -45,6 +45,11 @@ func TestEntries(t *testing.T) {
    if err != nil { t.Fatalf("error on getEntries: %v", err) }
    if len(entries) != 0 { t.Fatalf("Expected no entries and got %d", len(entries)) }
 
+   term, data, err := stor.GetEntry(1)
+   if err != nil { t.Fatalf("error on get: %v", err) }
+   if term != 0 { t.Fatalf("Expected term 0 and got %d", term) }
+   if data != nil { t.Fatal("expected nil data") }
+
    hello := []byte("Hello!")
 
    err = stor.AppendEntry(1, 1, nil)
@@ -52,7 +57,7 @@ func TestEntries(t *testing.T) {
    err = stor.AppendEntry(2, 1, hello)
    if err != nil { t.Fatalf("error on append: %v", err) }
 
-   term, data, err := stor.GetEntry(1)
+   term, data, err = stor.GetEntry(1)
    if err != nil { t.Fatalf("error on get: %v", err) }
    if term != 1 { t.Fatalf("Expected term 1 and got %d", term) }
    if data != nil { t.Fatalf("Expected nil data") }

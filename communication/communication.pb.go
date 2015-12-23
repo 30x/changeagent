@@ -99,14 +99,22 @@ func (m *VoteResponsePb) GetVoteGranted() bool {
 }
 
 type EntryPb struct {
-	Term             *uint64 `protobuf:"varint,1,req,name=term" json:"term,omitempty"`
-	Data             []byte  `protobuf:"bytes,2,opt,name=data" json:"data,omitempty"`
+	Index            *uint64 `protobuf:"varint,1,req,name=index" json:"index,omitempty"`
+	Term             *uint64 `protobuf:"varint,2,req,name=term" json:"term,omitempty"`
+	Data             []byte  `protobuf:"bytes,3,opt,name=data" json:"data,omitempty"`
 	XXX_unrecognized []byte  `json:"-"`
 }
 
 func (m *EntryPb) Reset()         { *m = EntryPb{} }
 func (m *EntryPb) String() string { return proto.CompactTextString(m) }
 func (*EntryPb) ProtoMessage()    {}
+
+func (m *EntryPb) GetIndex() uint64 {
+	if m != nil && m.Index != nil {
+		return *m.Index
+	}
+	return 0
+}
 
 func (m *EntryPb) GetTerm() uint64 {
 	if m != nil && m.Term != nil {

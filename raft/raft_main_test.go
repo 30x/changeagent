@@ -15,6 +15,7 @@ import (
 
 const (
   DataDir = "./rafttestdata"
+  PreserveDatabases = false
 )
 
 var testRafts []*RaftImpl
@@ -105,7 +106,9 @@ func startRaft(id uint64, disco discovery.Discovery, listener *net.TCPListener, 
 func cleanRaft(raft *RaftImpl, l *net.TCPListener) {
   raft.Close()
   raft.stor.Close()
-  raft.stor.Delete()
+  if !PreserveDatabases {
+    raft.stor.Delete()
+  }
   l.Close()
 }
 

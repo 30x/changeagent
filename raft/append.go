@@ -11,7 +11,8 @@ import (
 )
 
 func (r *RaftImpl) handleAppend(state *raftState, cmd appendCommand) {
-  log.Debugf("Got append request for term %d", cmd.ar.Term)
+  log.Debugf("Got append request for term %d. prevIndex = %d prevTerm = %d",
+    cmd.ar.Term, cmd.ar.PrevLogIndex, cmd.ar.PrevLogTerm)
   currentTerm := r.GetCurrentTerm()
   commitIndex := r.GetCommitIndex()
 
@@ -21,6 +22,7 @@ func (r *RaftImpl) handleAppend(state *raftState, cmd appendCommand) {
 
   // 5.1: Reply false if term doesn't match current term
   if cmd.ar.Term < r.currentTerm {
+    log.Debugf("Term does not match current term %d", r.currentTerm)
     resp.Success = false
     cmd.rc <- &resp
     return
@@ -28,20 +30,25 @@ func (r *RaftImpl) handleAppend(state *raftState, cmd appendCommand) {
 
   // 5.3: Reply false if log doesn’t contain an entry at prevLogIndex
   // whose term matches prevLogTerm
-  ourTerm, _, err := r.stor.GetEntry(cmd.ar.PrevLogIndex)
-  if err != nil {
-    resp.Error = err
-    cmd.rc <- &resp
-    return
-  }
-  if ourTerm != cmd.ar.PrevLogTerm {
-    resp.Success = false
-    cmd.rc <- &resp
-    return
+  // but of course we have to be able to start from zero!
+  if cmd.ar.PrevLogIndex > 0 {
+    ourTerm, _, err := r.stor.GetEntry(cmd.ar.PrevLogIndex)
+    if err != nil {
+      resp.Error = err
+      cmd.rc <- &resp
+      return
+    }
+    if ourTerm != cmd.ar.PrevLogTerm {
+      log.Debugf("Term %d at index %d does not match %d in request",
+        ourTerm, cmd.ar.PrevLogIndex, cmd.ar.PrevLogTerm)
+      resp.Success = false
+      cmd.rc <- &resp
+      return
+    }
   }
 
   if len(cmd.ar.Entries) > 0 {
-    err = r.appendEntries(cmd.ar.Entries)
+    err := r.appendEntries(cmd.ar.Entries)
     if err != nil {
       resp.Error = err
       cmd.rc <- &resp
@@ -85,7 +92,6 @@ func (r *RaftImpl) handleAppend(state *raftState, cmd appendCommand) {
       r.mach.ApplyEntry(data)
     }
 
-
     r.setLastApplied(lastApplied)
     log.Debugf("Node %d: Last applied now %d", r.id, lastApplied)
   }
@@ -97,18 +103,7 @@ func (r *RaftImpl) handleAppend(state *raftState, cmd appendCommand) {
   cmd.rc <- &resp
 }
 
-func (r *RaftImpl) sendAppend(id uint64, entries []storage.Entry) (bool, error) {
-  lastIndex, lastTerm := r.GetLastIndex()
-
-  ar := &communication.AppendRequest{
-    Term: r.GetCurrentTerm(),
-    LeaderId: r.id,
-    PrevLogIndex: lastIndex,
-    PrevLogTerm: lastTerm,
-    LeaderCommit: r.GetCommitIndex(),
-    Entries: entries,
-  }
-
+func (r *RaftImpl) sendAppend(id uint64, ar *communication.AppendRequest) (bool, error) {
   log.Debugf("Sending append request to node %d for term %d", id, ar.Term)
 
   resp, err := r.comm.Append(id, ar)
@@ -152,4 +147,32 @@ func (r *RaftImpl) appendEntries(entries []storage.Entry) error {
   }
 
   return nil
+}
+
+func (r *RaftImpl) makeProposal(data []byte, state *raftState) error {
+    // If command received from client: append entry to local log,
+    // respond after entry applied to state machine (§5.3)
+    newIndex, _ := r.GetLastIndex()
+    newIndex++
+    term := r.GetCurrentTerm()
+    newEntry := storage.Entry{
+      Index: newIndex,
+      Term: term,
+      Data: data,
+    }
+
+    log.Debugf("Appending %d bytes of data for index %d term %d",
+      len(data), newIndex, term)
+    err := r.appendEntries([]storage.Entry{newEntry})
+    if err != nil {
+      return err
+    }
+
+    r.setLastIndex(newIndex, term)
+
+    // Now fire off this change to all of the peers
+    for _, p := range(state.peers) {
+      p.propose(newIndex)
+    }
+    return nil
 }

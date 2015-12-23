@@ -37,6 +37,7 @@ func CreateSqliteStorage(dbFile string) (*SqliteStorage, error) {
   var db *C.sqlite3
 
   success := false
+  // We may have multiple databases open, so need fullmutex
   flags := C.SQLITE_OPEN_READWRITE | C.SQLITE_OPEN_CREATE | C.SQLITE_OPEN_FULLMUTEX
   log.Debugf("Opening Sqlite database in %s", dbFile)
   e := C.sqlite3_open_v2(cName, &db, C.int(flags), nil)
@@ -146,8 +147,14 @@ func (s *SqliteStorage) Delete() error {
 }
 
 func (s *SqliteStorage) GetMetadata(key string) (uint64, error) {
+  // Lock and unlock on each operation because interface is not fully thread-safe
+  // If this becomes a bottleneck then we can open multiple DB handles.
+  C.sqlite3_mutex_enter(s.dbLock)
+  defer C.sqlite3_mutex_leave(s.dbLock)
+
   stmt := s.stmts["getmetadata"]
   s.bindString(stmt, 1, key)
+  defer C.sqlite3_clear_bindings(stmt)
 
   e := C.sqlite3_step(stmt)
   defer C.sqlite3_reset(stmt)
@@ -162,43 +169,59 @@ func (s *SqliteStorage) GetMetadata(key string) (uint64, error) {
     val, _ := strconv.ParseUint(valStr, 16, 64)
     return val, nil
   default:
-    return 0, s.dbError("getmetadata")
+    return 0, s.dbError(e, "getmetadata")
   }
 }
 
 func (s *SqliteStorage) SetMetadata(key string, val uint64) error {
+  C.sqlite3_mutex_enter(s.dbLock)
+  defer C.sqlite3_mutex_leave(s.dbLock)
+
   stmt := s.stmts["setmetadata"]
   s.bindString(stmt, 1, key)
   strVal := strconv.FormatUint(val, 16)
   s.bindString(stmt, 2, strVal)
+  defer C.sqlite3_clear_bindings(stmt)
 
   e := C.sqlite3_step(stmt)
   defer C.sqlite3_reset(stmt)
   if e == C.SQLITE_DONE {
     return nil
   }
-  return s.dbError("exec")
+  return s.dbError(e, "setMetadata")
 }
 
 func (s *SqliteStorage) AppendEntry(index uint64, term uint64, data []byte) error {
+  C.sqlite3_mutex_enter(s.dbLock)
+  defer C.sqlite3_mutex_leave(s.dbLock)
+
   stmt := s.stmts["insertentry"]
-  s.bindInt(stmt, 1, index)
-  s.bindInt(stmt, 2, term)
+  err := s.bindInt(stmt, 1, index)
+  if err != nil { return err }
+  err = s.bindInt(stmt, 2, term)
+  if err != nil { return err }
   if data != nil {
-    s.bindBlob(stmt, 3, data)
+    err = s.bindBlob(stmt, 3, data)
+    if err != nil { return err }
   }
+  defer C.sqlite3_clear_bindings(stmt)
 
   e := C.sqlite3_step(stmt)
   defer C.sqlite3_reset(stmt)
   if e == C.SQLITE_DONE {
     return nil
   }
-  return s.dbError("exec")
+  return s.dbError(e, "appendEntry")
 }
 
 func (s *SqliteStorage) GetEntry(index uint64) (uint64, []byte, error) {
+  C.sqlite3_mutex_enter(s.dbLock)
+  defer C.sqlite3_mutex_leave(s.dbLock)
+
   stmt := s.stmts["selectentry"]
-  s.bindInt(stmt, 1, index)
+  err := s.bindInt(stmt, 1, index)
+  if err != nil { return 0, nil, err }
+  defer C.sqlite3_clear_bindings(stmt)
 
   e := C.sqlite3_step(stmt)
   defer C.sqlite3_reset(stmt)
@@ -217,14 +240,20 @@ func (s *SqliteStorage) GetEntry(index uint64) (uint64, []byte, error) {
     }
     return term, nil, nil
   default:
-    return 0, nil, s.dbError("getmetadata")
+    return 0, nil, s.dbError(e, "getentry")
   }
 }
 
 func (s *SqliteStorage) GetEntries(first uint64, last uint64) ([]Entry, error) {
+  C.sqlite3_mutex_enter(s.dbLock)
+  defer C.sqlite3_mutex_leave(s.dbLock)
+
   stmt := s.stmts["selectentryrange"]
-  s.bindInt(stmt, 1, first)
-  s.bindInt(stmt, 2, last)
+  err := s.bindInt(stmt, 1, first)
+  if err != nil { return nil, err }
+  err = s.bindInt(stmt, 2, last)
+  if err != nil { return nil, err }
+  defer C.sqlite3_clear_bindings(stmt)
   defer C.sqlite3_reset(stmt)
 
   var entries []Entry
@@ -251,12 +280,15 @@ func (s *SqliteStorage) GetEntries(first uint64, last uint64) ([]Entry, error) {
         }
         entries = append(entries, entry)
       default:
-        return nil, s.dbError("selectentryrange")
+        return nil, s.dbError(e, "getentries")
     }
   }
 }
 
 func (s *SqliteStorage) GetLastIndex() (uint64, uint64, error) {
+  C.sqlite3_mutex_enter(s.dbLock)
+  defer C.sqlite3_mutex_leave(s.dbLock)
+
   stmt := s.stmts["selectmaxindex"]
   e := C.sqlite3_step(stmt)
   defer C.sqlite3_reset(stmt)
@@ -269,13 +301,18 @@ func (s *SqliteStorage) GetLastIndex() (uint64, uint64, error) {
     term := uint64(C.sqlite3_column_int64(stmt, 1))
     return index, term, nil
   default:
-    return 0, 0, s.dbError("getmetadata")
+    return 0, 0, s.dbError(e, "getlastindex")
   }
 }
 
 func (s *SqliteStorage) GetEntryTerms(index uint64) (map[uint64]uint64, error) {
+  C.sqlite3_mutex_enter(s.dbLock)
+  defer C.sqlite3_mutex_leave(s.dbLock)
+
   stmt := s.stmts["selectentryterms"]
-  s.bindInt(stmt, 1, index)
+  err := s.bindInt(stmt, 1, index)
+  if err != nil { return nil, err }
+  defer C.sqlite3_clear_bindings(stmt)
   defer C.sqlite3_reset(stmt)
 
   entries := make(map[uint64]uint64)
@@ -290,37 +327,42 @@ func (s *SqliteStorage) GetEntryTerms(index uint64) (map[uint64]uint64, error) {
       term := uint64(C.sqlite3_column_int64(stmt, 1))
       entries[index] = term
     default:
-      return nil, s.dbError("selectentryterms")
+      return nil, s.dbError(e, "getentryterms")
     }
   }
 }
 
 func (s *SqliteStorage) DeleteEntries(index uint64) error {
+  C.sqlite3_mutex_enter(s.dbLock)
+  defer C.sqlite3_mutex_leave(s.dbLock)
+
   stmt := s.stmts["deleteentries"]
-  s.bindInt(stmt, 1, index)
+  err := s.bindInt(stmt, 1, index)
+  if err != nil { return err }
+  defer C.sqlite3_clear_bindings(stmt)
   defer C.sqlite3_reset(stmt)
 
   e := C.sqlite3_step(stmt)
   if e == C.SQLITE_DONE {
     return nil
   }
-  return s.dbError("deleteentries")
+  return s.dbError(e, "deleteentries")
 }
 
 func (s *SqliteStorage) bindString(stmt *C.sqlite3_stmt, index int, val string) error {
   cVal := C.CString(val)
   defer C.free(unsafe.Pointer(cVal))
   e := C._sqlite3_bind_text(stmt, C.int(index), cVal, -1)
-  if e != 0 {
-    return s.dbError("bind")
+  if e != C.SQLITE_OK {
+    return s.dbError(e, "bindString")
   }
   return nil
 }
 
 func (s *SqliteStorage) bindInt(stmt *C.sqlite3_stmt, index int, val uint64) error {
   e := C.sqlite3_bind_int64(stmt, C.int(index), C.sqlite3_int64(val))
-  if e != 0 {
-    return s.dbError("bind")
+  if e != C.SQLITE_OK {
+    return s.dbError(e, "bindInt")
   }
   return nil
 }
@@ -331,8 +373,8 @@ func (s *SqliteStorage) bindBlob(stmt *C.sqlite3_stmt, index int, val []byte) er
 		bytes = &val[0]
 	}
   e := C._sqlite3_bind_blob(stmt, C.int(index), unsafe.Pointer(bytes), C.int(len(val)))
-  if e != 0 {
-    return s.dbError("bind")
+  if e != C.SQLITE_OK {
+    return s.dbError(e, "bindBlob")
   }
   return nil
 }
@@ -344,7 +386,7 @@ func (s *SqliteStorage) prepare(sql string) (*C.sqlite3_stmt, error) {
 
   e := C.sqlite3_prepare_v2(s.db, cSql, -1, &stmt, nil)
   if e != 0 {
-    return nil, s.dbError("prepare")
+    return nil, s.dbError(e, "prepare")
   }
 
   return stmt, nil
@@ -369,17 +411,18 @@ func (s *SqliteStorage) execSql(sql string) error {
   case C.SQLITE_ROW:
     return nil
   default:
-    return s.dbError(fmt.Sprintf("exec: %s", sql))
+    return s.dbError(e, fmt.Sprintf("exec: %s", sql))
   }
 }
 
-func (s *SqliteStorage) dbError(op string) error {
-  C.sqlite3_mutex_enter(s.dbLock)
-  defer C.sqlite3_mutex_leave(s.dbLock)
+func (s *SqliteStorage) dbError(e C.int, op string) error {
+  log.Debugf("Database error for %s: %d", op, e)
 
   msg := C.GoString(C.sqlite3_errmsg(s.db))
   code := C.sqlite3_errcode(s.db)
   extCode := C.sqlite3_extended_errcode(s.db)
-  return errors.New(
-    fmt.Sprintf("%s: code = %d extended = %d: %s", op, code, extCode, msg))
+  fullMsg :=
+    fmt.Sprintf("%s: code = %d extended = %d: %s", op, code, extCode, msg)
+  log.Debugf("Database error: %s", fullMsg)
+  return errors.New(fullMsg)
 }
