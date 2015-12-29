@@ -310,7 +310,9 @@ func TestAppend(t *testing.T) {
 }
 
 /*
- * Commit index calculation, from the spec
+ * Commit index calculation, from the spec.
+ * Testing it using an even number since this particular algorithm doesn't
+ * account for the state of the leader.
  */
 
 func TestNoCommitTooOld(t *testing.T) {
@@ -318,6 +320,7 @@ func TestNoCommitTooOld(t *testing.T) {
     1: 0,
     2: 0,
     3: 0,
+    4: 0,
   }
   state := &raftState{
     peerMatches: matches,
@@ -334,6 +337,7 @@ func TestNoCommitNoConsensus(t *testing.T) {
     1: lastIndex,
     2: 1,
     3: 1,
+    4: 1,
   }
   state := &raftState{
     peerMatches: matches,
@@ -353,7 +357,8 @@ func TestCommitConsensus(t *testing.T) {
   matches := map[uint64]uint64{
     1: lastIndex,
     2: lastIndex,
-    3: 1,
+    3: lastIndex,
+    4: 1,
   }
   state := &raftState{
     peerMatches: matches,
@@ -374,6 +379,7 @@ func TestCommitConsensus2(t *testing.T) {
     1: 1,
     2: lastIndex,
     3: lastIndex - 1,
+    4: lastIndex - 1,
   }
   state := &raftState{
     peerMatches: matches,

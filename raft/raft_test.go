@@ -12,7 +12,7 @@ const (
 
 func TestWaitForLeader(t *testing.T) {
   waitForLeader(t)
-  appendAndVerify(t, "First test")
+  appendAndVerify(t, "First test", 3)
 }
 
 /*
@@ -50,7 +50,7 @@ func TestStopLeader(t *testing.T) {
   testListener[leaderIndex].Close()
   time.Sleep(time.Second)
   waitForLeader(t)
-  appendAndVerify(t, "Second test. Yay!")
+  appendAndVerify(t, "Second test. Yay!", 2)
 }
 
 func waitForLeader(t *testing.T) {
@@ -67,7 +67,7 @@ func waitForLeader(t *testing.T) {
   t.Fatal("Waited too long for a leader to emerge")
 }
 
-func appendAndVerify(t *testing.T, msg string) {
+func appendAndVerify(t *testing.T, msg string, expectedCount int) {
   data := []byte(msg)
   leader := getLeader(t)
   lastIndex, _ := leader.GetLastIndex()
@@ -75,16 +75,16 @@ func appendAndVerify(t *testing.T, msg string) {
   if err != nil { t.Fatalf("Proposal failed: %v", err) }
   t.Logf("Wrote data at index %d", lastIndex + 1)
 
-  // TODO In loop, call verifyIndex. If it returns false, test fails.
-  // Do it in a loop with delay!
   for i := 0; i < 10; i++ {
-    if verifyIndex(t, lastIndex + 1, data) {
+    if verifyIndex(t, lastIndex + 1, data, expectedCount) {
       t.Log("Index now matches")
-      return
+      if verifyCommit(t, lastIndex + 1, expectedCount) {
+        t.Log("Commit index matches too")
+        return
+      }
     }
     time.Sleep(time.Second)
   }
-  // TODO also check commitIndex.
   t.Fatal("Indices not replicated in time")
 }
 
@@ -115,12 +115,12 @@ func getLeader(t *testing.T) *RaftImpl {
   return nil
 }
 
-func verifyIndex(t *testing.T, ix uint64, expected []byte) bool {
-  verified := true
+func verifyIndex(t *testing.T, ix uint64, expected []byte, expectedCount int) bool {
+  correctCount := 0
   for _, raft := range(testRafts) {
-    term, data, err := raft.stor.GetEntry(ix)
+    verified := true
+    _, data, err := raft.stor.GetEntry(ix)
     if err != nil { t.Fatalf("Error getting entry: %v", err) }
-    t.Logf("Node %d:, Index %d has term %d", raft.id, ix, term)
     if data == nil {
       t.Logf("Index %d not replicated to raft %d", ix, raft.id)
       verified = false
@@ -129,6 +129,23 @@ func verifyIndex(t *testing.T, ix uint64, expected []byte) bool {
       t.Log("Data in log does not match")
       verified = false
     }
+    if verified {
+      correctCount++
+    }
   }
-  return verified
+  t.Logf("%d peers updated out of %d expected", correctCount, expectedCount)
+  return correctCount >= expectedCount
+}
+
+func verifyCommit(t *testing.T, ix uint64, expectedCount int) bool {
+  correctCount := 0
+  for _, raft := range(testRafts) {
+    t.Logf("Node %d has commit index %d", raft.id, raft.GetCommitIndex())
+    if raft.GetCommitIndex() >= ix {
+      correctCount++
+    }
+  }
+  t.Logf("%d peers have right commit index out of %d expected",
+    correctCount, expectedCount)
+  return correctCount >= expectedCount
 }

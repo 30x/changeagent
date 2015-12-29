@@ -183,7 +183,7 @@ func (r *RaftImpl) leaderLoop(state *raftState) chan bool {
 
     case peerMatch := <- state.peerMatchChanges:
       state.peerMatches[peerMatch.id] = peerMatch.newMatch
-      newIndex := r.  calculateCommitIndex(state)
+      newIndex := r.calculateCommitIndex(state)
       r.setCommitIndex(newIndex)
 
     case stopDone := <- r.stopChan:
@@ -232,7 +232,10 @@ func (r *RaftImpl) canCommit(ix uint64, state *raftState) bool {
     }
   }
 
-  if votes >= ((len(state.peerMatches) / 2) + 1) {
+  // Remember that we are also considering our own commit index elsewhere.
+  // So look just for a simple majority and not for a quorum
+  // (N / 2) rather than (N / 2) + 1
+  if votes >= (len(state.peerMatches) / 2) {
     term, _, err := r.stor.GetEntry(ix)
     if err != nil {
       log.Debugf("Error reading entry from log: %v", err)
