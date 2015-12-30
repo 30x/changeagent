@@ -102,16 +102,31 @@ func (s *SqliteStorage) createTables() error {
     "term integer, " +
     "data blob)")
   if err != nil { return err }
+  err = s.execSql(
+    "create table if not exists change_changes (" +
+    "ix integer primary key, " +
+    "tenant string, " +
+    "key string, " +
+    "data blob)")
+  if err != nil { return err }
   return nil
 }
 
 func (s *SqliteStorage) prepareStatements() error {
-  err := s.addPrepared("getmetadata",
+  err := s.addPrepared("begin", "begin transaction")
+  if err != nil { return err }
+  err = s.addPrepared("commit", "commit transaction")
+  if err != nil { return err }
+  err = s.addPrepared("rollback", "rollback transaction")
+  if err != nil { return err }
+
+  err = s.addPrepared("getmetadata",
     "select value from change_metadata where key = ?")
   if err != nil { return err }
   err = s.addPrepared("setmetadata",
     "insert or replace into change_metadata (key, value) values (?, ?)")
   if err != nil { return err }
+
   err = s.addPrepared("insertentry",
     "insert into change_entries (ix, term, data) values (?, ?, ?)")
   if err != nil { return err }
@@ -129,6 +144,16 @@ func (s *SqliteStorage) prepareStatements() error {
   if err != nil { return err }
   err = s.addPrepared("deleteentries",
     "delete from change_entries where ix >= ?")
+  if err != nil { return err }
+
+  err = s.addPrepared("insertchange",
+    "insert into change_changes (ix, tenant, key, data) values (?, ?, ?, ?)")
+  if err != nil { return err }
+  err = s.addPrepared("selectrecentchanges",
+    "select ix, tenant, key, data from change_changes where ix > ? order by ix asc limit ?")
+  if err != nil { return err }
+  err = s.addPrepared("selectmaxchange",
+    "select max(ix) from change_changes")
   if err != nil { return err }
   return nil
 }
@@ -163,9 +188,7 @@ func (s *SqliteStorage) GetMetadata(key string) (uint64, error) {
     // No rows
     return 0, nil
   case C.SQLITE_ROW:
-    slen := C.sqlite3_column_bytes(stmt, 0)
-    str := C.sqlite3_column_text(stmt, 0)
-    valStr := C.GoStringN((*C.char)(unsafe.Pointer(str)), slen)
+    valStr := s.stringColumn(stmt, 0)
     val, _ := strconv.ParseUint(valStr, 16, 64)
     return val, nil
   default:
@@ -231,14 +254,8 @@ func (s *SqliteStorage) GetEntry(index uint64) (uint64, []byte, error) {
     return 0, nil, nil
   case C.SQLITE_ROW:
     term := uint64(C.sqlite3_column_int64(stmt, 0))
-    blen := C.sqlite3_column_bytes(stmt, 1)
-    if blen > 0 {
-      blob := C.sqlite3_column_text(stmt, 1)
-      bbuf := make([]byte, blen)
-      copy(bbuf[:], (*[1 << 30]byte)(unsafe.Pointer(blob))[0:blen])
-      return term, bbuf, nil
-    }
-    return term, nil, nil
+    bbuf := s.blobColumn(stmt, 1)
+    return term, bbuf, nil
   default:
     return 0, nil, s.dbError(e, "getentry")
   }
@@ -266,13 +283,7 @@ func (s *SqliteStorage) GetEntries(first uint64, last uint64) ([]Entry, error) {
       case C.SQLITE_ROW:
         index := uint64(C.sqlite3_column_int64(stmt, 0))
         term := uint64(C.sqlite3_column_int64(stmt, 1))
-        blen := C.sqlite3_column_bytes(stmt, 2)
-        var bbuf []byte
-        if blen > 0 {
-          blob := C.sqlite3_column_text(stmt, 2)
-          bbuf = make([]byte, blen)
-          copy(bbuf[:], (*[1 << 30]byte)(unsafe.Pointer(blob))[0:blen])
-        }
+        bbuf := s.blobColumn(stmt, 2)
         entry := Entry{
           Index: index,
           Term: term,
@@ -349,6 +360,109 @@ func (s *SqliteStorage) DeleteEntries(index uint64) error {
   return s.dbError(e, "deleteentries")
 }
 
+func (s *SqliteStorage) InsertChanges(changes []Change) error {
+  C.sqlite3_mutex_enter(s.dbLock)
+  defer C.sqlite3_mutex_leave(s.dbLock)
+
+  err := s.execStmt("begin")
+  if err != nil { return err }
+
+  success := false
+  defer func(){
+    if !success {
+      s.execStmt("rollback")
+    }
+  }()
+
+  for _, change := range(changes) {
+    err = s.insertOneChange(change.Index, change.Tenant, change.Key, change.Data)
+    if err != nil { return err }
+  }
+  success = true
+
+  return s.execStmt("commit")
+}
+
+func (s *SqliteStorage) InsertChange(index uint64, tenant string, key string, data []byte) error {
+  C.sqlite3_mutex_enter(s.dbLock)
+  defer C.sqlite3_mutex_leave(s.dbLock)
+  return s.insertOneChange(index, tenant, key, data)
+}
+
+func (s *SqliteStorage) insertOneChange(index uint64, tenant string, key string, data []byte) error {
+  stmt := s.stmts["insertchange"]
+  err := s.bindInt(stmt, 1, index)
+  if err != nil { return err }
+  err = s.bindString(stmt, 2, tenant)
+  if err != nil { return err }
+  err = s.bindString(stmt, 3, key)
+  if err != nil { return err }
+  err = s.bindBlob(stmt, 4, data)
+  if err != nil { return err }
+  defer C.sqlite3_clear_bindings(stmt)
+  defer C.sqlite3_reset(stmt)
+
+  e := C.sqlite3_step(stmt)
+  if e == C.SQLITE_DONE {
+    return nil
+  }
+  return s.dbError(e, "insertchange")
+}
+
+func (s *SqliteStorage) GetMaxChange() (uint64, error) {
+  C.sqlite3_mutex_enter(s.dbLock)
+  defer C.sqlite3_mutex_leave(s.dbLock)
+
+  stmt := s.stmts["selectmaxchange"]
+  defer C.sqlite3_reset(stmt)
+
+  e := C.sqlite3_step(stmt)
+  switch e {
+  case C.SQLITE_ROW:
+    index := uint64(C.sqlite3_column_int64(stmt, 0))
+    return index, nil
+  default:
+    return 0, s.dbError(e, "selectmaxchange")
+  }
+}
+
+func (s *SqliteStorage) GetChanges(lastIndex uint64, limit int) ([]Change, error) {
+  C.sqlite3_mutex_enter(s.dbLock)
+  defer C.sqlite3_mutex_leave(s.dbLock)
+
+  stmt := s.stmts["selectrecentchanges"]
+  err := s.bindInt(stmt, 1, lastIndex)
+  if err != nil { return nil, err }
+  err = s.bindSmallInt(stmt, 2, limit)
+  if err != nil { return nil, err }
+  defer C.sqlite3_clear_bindings(stmt)
+  defer C.sqlite3_reset(stmt)
+
+  var changes []Change
+
+  for {
+    e := C.sqlite3_step(stmt)
+    switch e {
+    case C.SQLITE_DONE:
+      return changes, nil
+    case C.SQLITE_ROW:
+      index := uint64(C.sqlite3_column_int64(stmt, 0))
+      tenant := s.stringColumn(stmt, 1)
+      key := s.stringColumn(stmt, 2)
+      data := s.blobColumn(stmt, 3)
+      change := Change{
+        Index: index,
+        Tenant: tenant,
+        Key: key,
+        Data: data,
+      }
+      changes = append(changes, change)
+    default:
+      return nil, s.dbError(e, "selectrecentchanges")
+    }
+  }
+}
+
 func (s *SqliteStorage) bindString(stmt *C.sqlite3_stmt, index int, val string) error {
   cVal := C.CString(val)
   defer C.free(unsafe.Pointer(cVal))
@@ -367,6 +481,14 @@ func (s *SqliteStorage) bindInt(stmt *C.sqlite3_stmt, index int, val uint64) err
   return nil
 }
 
+func (s *SqliteStorage) bindSmallInt(stmt *C.sqlite3_stmt, index int, val int) error {
+  e := C.sqlite3_bind_int(stmt, C.int(index), C.int(val))
+  if e != C.SQLITE_OK {
+    return s.dbError(e, "bindSmallInt")
+  }
+  return nil
+}
+
 func (s *SqliteStorage) bindBlob(stmt *C.sqlite3_stmt, index int, val []byte) error {
   var bytes *byte
 	if len(val) > 0 {
@@ -377,6 +499,21 @@ func (s *SqliteStorage) bindBlob(stmt *C.sqlite3_stmt, index int, val []byte) er
     return s.dbError(e, "bindBlob")
   }
   return nil
+}
+
+func (s *SqliteStorage) stringColumn(stmt *C.sqlite3_stmt, index int) string {
+  str := C.sqlite3_column_text(stmt, C.int(index))
+  slen := C.sqlite3_column_bytes(stmt, C.int(index))
+  return C.GoStringN((*C.char)(unsafe.Pointer(str)), slen)
+}
+
+func (s *SqliteStorage) blobColumn(stmt *C.sqlite3_stmt, index int) []byte {
+  blob := C.sqlite3_column_blob(stmt, C.int(index))
+  if blob == nil { return nil }
+  blen := C.sqlite3_column_bytes(stmt, C.int(index))
+  bbuf := make([]byte, blen)
+  copy(bbuf[:], (*[1 << 30]byte)(unsafe.Pointer(blob))[0:blen])
+  return bbuf
 }
 
 func (s *SqliteStorage) prepare(sql string) (*C.sqlite3_stmt, error) {
@@ -412,6 +549,19 @@ func (s *SqliteStorage) execSql(sql string) error {
     return nil
   default:
     return s.dbError(e, fmt.Sprintf("exec: %s", sql))
+  }
+}
+
+func (s *SqliteStorage) execStmt(stmtName string) error {
+  stmt := s.stmts[stmtName]
+  e := C.sqlite3_step(stmt)
+  switch e {
+  case C.SQLITE_DONE:
+    return nil
+  case C.SQLITE_ROW:
+    return nil
+  default:
+    return s.dbError(e, stmtName)
   }
 }
 

@@ -9,7 +9,7 @@ import (
   "revision.aeip.apigee.net/greg/changeagent/log"
 )
 
-func (r *RaftImpl) handleFollowerVote(state *raftState, cmd voteCommand) {
+func (r *RaftImpl) handleFollowerVote(state *raftState, cmd voteCommand) bool {
   log.Debugf("Node %d got vote request from %d at term %d",
     r.id, cmd.vr.CandidateId, cmd.vr.Term)
   currentTerm := r.GetCurrentTerm()
@@ -23,7 +23,14 @@ func (r *RaftImpl) handleFollowerVote(state *raftState, cmd voteCommand) {
   if cmd.vr.Term < currentTerm {
     resp.VoteGranted = false
     cmd.rc <- &resp
-    return
+    return false
+  }
+
+  // Important to double-check state at this point as well since channels are buffered
+  if r.GetState() != StateFollower {
+    resp.VoteGranted = false
+    cmd.rc <- &resp
+    return false
   }
 
   // 5.2, 5.2: If votedFor is null or candidateId, and candidate’s log is at
@@ -31,13 +38,6 @@ func (r *RaftImpl) handleFollowerVote(state *raftState, cmd voteCommand) {
   commitIndex := r.GetCommitIndex()
   if (state.votedFor == 0 || state.votedFor == cmd.vr.CandidateId) &&
      cmd.vr.LastLogIndex >= commitIndex {
-     err := r.stor.SetMetadata(VotedForKey, cmd.vr.CandidateId)
-     if err != nil {
-       resp.Error = err
-       cmd.rc <- &resp
-       return
-     }
-
      state.votedFor = cmd.vr.CandidateId
      r.writeLastVote(cmd.vr.CandidateId)
      log.Debugf("Node %d voting for candidate %d", r.id, cmd.vr.CandidateId)
@@ -46,6 +46,7 @@ func (r *RaftImpl) handleFollowerVote(state *raftState, cmd voteCommand) {
      resp.VoteGranted = false
    }
   cmd.rc <- &resp
+  return resp.VoteGranted
 }
 
 func (r *RaftImpl) voteNo(state *raftState, cmd voteCommand) {

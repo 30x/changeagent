@@ -1,6 +1,6 @@
 package raft
 
 type StateMachine interface {
-  ApplyEntry(data []byte) error
+  ApplyEntry(index uint64, data []byte) error
   GetLastIndex() (uint64, error)
 }

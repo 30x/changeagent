@@ -34,11 +34,11 @@ type raftState struct {
 func (r *RaftImpl) mainLoop() {
   state := &raftState{
     voteIndex: 0,
-    voteResults: make(chan voteResult),
+    voteResults: make(chan voteResult, 1),
     votedFor: r.readLastVote(),
     peers: make(map[uint64]*raftPeer),
     peerMatches: make(map[uint64]uint64),
-    peerMatchChanges: make(chan peerMatchResult),
+    peerMatchChanges: make(chan peerMatchResult, 1),
   }
 
   var stopDone chan bool
@@ -87,7 +87,11 @@ func (r *RaftImpl) followerLoop(isCandidate bool, state *raftState) chan bool {
       }
 
     case voteCmd := <- r.voteCommands:
-      r.handleFollowerVote(state, voteCmd)
+      granted := r.handleFollowerVote(state, voteCmd)
+      if granted {
+        // After voting yes, wait for a timeout until voting again
+        timeout.Reset(r.randomElectionTimeout())
+      }
 
     case appendCmd := <- r.appendCommands:
       // 5.1: If RPC request or response contains term T > currentTerm:
@@ -185,6 +189,7 @@ func (r *RaftImpl) leaderLoop(state *raftState) chan bool {
       state.peerMatches[peerMatch.id] = peerMatch.newMatch
       newIndex := r.calculateCommitIndex(state)
       r.setCommitIndex(newIndex)
+      r.applyCommittedEntries(newIndex)
 
     case stopDone := <- r.stopChan:
       r.setState(StateStopping)

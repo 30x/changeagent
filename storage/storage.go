@@ -6,9 +6,19 @@ type Entry struct {
   Data []byte
 }
 
+type Change struct {
+  Index uint64
+  Tenant string
+  Key string
+  Data []byte
+}
+
 type Storage interface {
+  // Methods for all kinds of metadat
   GetMetadata(key string) (uint64, error)
   SetMetadata(key string, val uint64) error
+
+  // Methods for the Raft index
   AppendEntry(index uint64, term uint64, data []byte) error
   // Get term and data for entry. Return term 0 if not found.
   GetEntry(index uint64) (uint64, []byte, error)
@@ -20,4 +30,10 @@ type Storage interface {
   DeleteEntries(index uint64) error
   Close()
   Delete() error
+
+  // Methods for the actual change table itself
+  InsertChange(index uint64, tenant string, key string, data []byte) error
+  InsertChanges(changes []Change) error
+  GetChanges(lastIndex uint64, limit int) ([]Change, error)
+  GetMaxChange() (uint64, error)
 }

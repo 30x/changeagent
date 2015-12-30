@@ -16,10 +16,12 @@ import (
 const (
   DataDir = "./rafttestdata"
   PreserveDatabases = false
+  DebugMode = true
 )
 
 var testRafts []*RaftImpl
 var testListener []*net.TCPListener
+var testStates []*TestStateMachine
 var unitTestRaft *RaftImpl
 var unitTestListener *net.TCPListener
 
@@ -29,7 +31,7 @@ func TestMain(m *testing.M) {
 
 func runMain(m *testing.M) int {
   os.MkdirAll(DataDir, 0777)
-  log.InitDebug(true)
+  log.InitDebug(DebugMode)
 
   // Create three TCP listeners -- we'll use them for a cluster
   anyPort := &net.TCPAddr{}
@@ -41,6 +43,8 @@ func runMain(m *testing.M) int {
     if err != nil { panic("Invalid listen address") }
     addrs = append(addrs, fmt.Sprintf("localhost:%s", port))
     testListener = append(testListener, listener)
+    newState := createTestState()
+    testStates = append(testStates, newState)
   }
   disco := discovery.CreateStaticDiscovery(addrs)
 
@@ -52,7 +56,7 @@ func runMain(m *testing.M) int {
   unitAddr := []string{fmt.Sprintf("localhost:%s", port)}
   unitDisco := discovery.CreateStaticDiscovery(unitAddr)
 
-  raft1, err := startRaft(1, disco, testListener[0], path.Join(DataDir, "test1"))
+  raft1, err := startRaft(1, disco, testListener[0], path.Join(DataDir, "test1"), testStates[0])
   if err != nil {
     fmt.Printf("Error starting raft 1: %v", err)
     return 2
@@ -60,7 +64,7 @@ func runMain(m *testing.M) int {
   testRafts = append(testRafts, raft1)
   defer cleanRaft(raft1, testListener[0])
 
-  raft2, err := startRaft(2, disco, testListener[1], path.Join(DataDir, "test2"))
+  raft2, err := startRaft(2, disco, testListener[1], path.Join(DataDir, "test2"), testStates[1])
   if err != nil {
     fmt.Printf("Error starting raft 2: %v", err)
     return 3
@@ -68,7 +72,7 @@ func runMain(m *testing.M) int {
   testRafts = append(testRafts, raft2)
   defer cleanRaft(raft2, testListener[1])
 
-  raft3, err := startRaft(3, disco, testListener[2], path.Join(DataDir, "test3"))
+  raft3, err := startRaft(3, disco, testListener[2], path.Join(DataDir, "test3"), testStates[2])
   if err != nil {
     fmt.Printf("Error starting raft 3: %v", err)
     return 4
@@ -76,7 +80,7 @@ func runMain(m *testing.M) int {
   testRafts = append(testRafts, raft3)
   defer cleanRaft(raft3, testListener[2])
 
-  unitTestRaft, err = startRaft(1, unitDisco, unitTestListener, path.Join(DataDir, "unit"))
+  unitTestRaft, err = startRaft(1, unitDisco, unitTestListener, path.Join(DataDir, "unit"), createTestState())
   if err != nil {
     fmt.Printf("Error starting unit test raft: %v", err)
     return 4
@@ -87,15 +91,14 @@ func runMain(m *testing.M) int {
   return m.Run()
 }
 
-func startRaft(id uint64, disco discovery.Discovery, listener *net.TCPListener, dir string) (*RaftImpl, error) {
+func startRaft(id uint64, disco discovery.Discovery, listener *net.TCPListener, dir string, state StateMachine) (*RaftImpl, error) {
   mux := http.NewServeMux()
   comm, err := communication.StartHttpCommunication(mux, disco)
   if err != nil { return nil, err }
   stor, err := storage.CreateSqliteStorage(dir)
   if err != nil { return nil, err }
-  sm := createTestState()
 
-  raft, err := StartRaft(id, comm, disco, stor, sm)
+  raft, err := StartRaft(id, comm, disco, stor, state)
   if err != nil { return nil, err }
   comm.SetRaft(raft)
   go http.Serve(listener, mux)
@@ -150,17 +153,26 @@ func initUnitTests(raft *RaftImpl) {
 }
 
 type TestStateMachine struct {
+  entries map[uint64][]byte
 }
 
 func createTestState() *TestStateMachine {
-  return &TestStateMachine{}
+  return &TestStateMachine{
+    entries: make(map[uint64][]byte),
+  }
 }
 
-func (s *TestStateMachine) ApplyEntry(data []byte) error {
-  log.Infof("Applying %d bytes of data", len(data))
+func (s *TestStateMachine) ApplyEntry(index uint64, data []byte) error {
+  s.entries[index] = data
   return nil
 }
 
 func (s *TestStateMachine) GetLastIndex() (uint64, error) {
-  return 0, nil
+  var max uint64 = 0
+  for i := range(s.entries) {
+    if i > max {
+      max = i
+    }
+  }
+  return max, nil
 }

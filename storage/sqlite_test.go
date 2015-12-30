@@ -101,3 +101,85 @@ func TestEntries(t *testing.T) {
    err = stor.DeleteEntries(1)
    if err != nil { t.Fatalf("error on delete: %v", err) }
 }
+
+func TestChanges(t *testing.T) {
+  var stor Storage
+  stor, err := CreateSqliteStorage("./changetestdb")
+  if err != nil { t.Fatalf("Create db failed: %v", err) }
+  defer stor.Delete()
+  defer stor.Close()
+
+  change1 := []byte("Hello, World!")
+  change2 := []byte("Goodbye, World!")
+
+  changes, err := stor.GetChanges(0, 100)
+  if err != nil { t.Fatalf("Error: %v", err) }
+  verifyChanges(t, nil, changes)
+
+  max, err := stor.GetMaxChange()
+  if err != nil { t.Fatalf("Error: %v", err) }
+  if max != 0 { t.Fatalf("Expected max 0 and got %d", max) }
+
+  err = stor.InsertChange(1, "", "", change1)
+  if err != nil { t.Fatalf("Error: %v", err) }
+  expected := []Change{
+    {
+      Index: 1,
+      Data: change1,
+    },
+  }
+  changes, err = stor.GetChanges(0, 100)
+  if err != nil { t.Fatalf("Error: %v", err) }
+  verifyChanges(t, expected, changes)
+
+  max, err = stor.GetMaxChange()
+  if err != nil { t.Fatalf("Error: %v", err) }
+  if max != 1 { t.Fatalf("Expected max 1 and got %d", max) }
+
+  expected = []Change{
+    {
+      Index: 2,
+      Data: change1,
+    },
+    {
+      Index: 3,
+      Tenant: "foo",
+      Key: "bar",
+      Data: change2,
+    },
+  }
+  err = stor.InsertChanges(expected)
+  if err != nil { t.Fatalf("Error: %v", err) }
+  changes, err = stor.GetChanges(1, 100)
+  if err != nil { t.Fatalf("Error: %v", err) }
+  verifyChanges(t, expected, changes)
+
+  max, err = stor.GetMaxChange()
+  if err != nil { t.Fatalf("Error: %v", err) }
+  if max != 3 { t.Fatalf("Expected max 3 and got %d", max) }
+}
+
+func verifyChanges(t *testing.T, expected []Change, found []Change) {
+  if len(expected) != len(found) {
+    t.Fatalf("Expected %d changes and got %d", len(expected), len(found))
+  }
+
+  for i := range(expected) {
+    verifyChange(t, i, &expected[i], &found[i])
+  }
+}
+
+func verifyChange(t *testing.T, i int, expected *Change, found *Change) {
+  if expected.Index != found.Index {
+    t.Fatalf("Change %d: index mismatch", i)
+  }
+  if expected.Tenant != found.Tenant {
+    t.Fatalf("Change %d: tenant mismatch", i)
+  }
+  if expected.Key != found.Key {
+    t.Fatalf("Change %d: key mismatch", i)
+  }
+  if !bytes.Equal(expected.Data, found.Data) {
+    t.Fatalf("Change %d: data mismatch", i)
+  }
+}

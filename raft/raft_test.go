@@ -46,6 +46,7 @@ func TestStopLeader(t *testing.T) {
     }
   }
 
+  t.Logf("Stopping leader node %d", testRafts[leaderIndex].id)
   testRafts[leaderIndex].Close()
   testListener[leaderIndex].Close()
   time.Sleep(time.Second)
@@ -54,6 +55,7 @@ func TestStopLeader(t *testing.T) {
 }
 
 func waitForLeader(t *testing.T) {
+  time.Sleep(time.Second)
   for i := 0; i < 40; i++ {
     _, leaders := countRafts(t)
     if leaders == 0 {
@@ -80,7 +82,10 @@ func appendAndVerify(t *testing.T, msg string, expectedCount int) {
       t.Log("Index now matches")
       if verifyCommit(t, lastIndex + 1, expectedCount) {
         t.Log("Commit index matches too")
-        return
+        if verifyApplied(t, lastIndex + 1, data, expectedCount) {
+          t.Log("Applied data matches too")
+          return
+        }
       }
     }
     time.Sleep(time.Second)
@@ -96,6 +101,7 @@ func countRafts(t *testing.T) (int, int) {
     case StateFollower:
       followers++
     case StateLeader:
+      t.Logf("Node %d is a leader", r.id)
       leaders++
     }
   }
@@ -146,6 +152,18 @@ func verifyCommit(t *testing.T, ix uint64, expectedCount int) bool {
     }
   }
   t.Logf("%d peers have right commit index out of %d expected",
+    correctCount, expectedCount)
+  return correctCount >= expectedCount
+}
+
+func verifyApplied(t *testing.T, ix uint64, expectedData []byte, expectedCount int) bool {
+  correctCount := 0
+  for _, state := range(testStates) {
+    if bytes.Equal(expectedData, state.entries[ix]) {
+      correctCount++
+    }
+  }
+  t.Logf("%d peers have right data applied out of %d expected",
     correctCount, expectedCount)
   return correctCount >= expectedCount
 }
