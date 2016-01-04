@@ -1,4 +1,4 @@
-package agent
+package main
 
 import (
   "net/http"
@@ -53,4 +53,8 @@ func (a *ChangeAgent) ApplyEntry(index uint64, data []byte) error {
 func (a *ChangeAgent) GetLastIndex() (uint64, error) {
   ix, err := a.stor.GetMaxChange()
   return ix, err
+}
+
+func (a *ChangeAgent) GetRaftState() int {
+  return a.raft.GetState()
 }

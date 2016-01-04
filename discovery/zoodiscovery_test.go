@@ -1,7 +1,6 @@
 package discovery
 
 import (
-  "fmt"
   "os"
   "testing"
   "revision.aeip.apigee.net/greg/changeagent/log"
@@ -10,7 +9,7 @@ import (
 func TestZKConnect(t *testing.T) {
   zk := connect(t)
   if zk == nil {
-    fmt.Printf("TEST_ZK_SERVER not set: Not testing with zookeeper")
+    t.Skip("TEST_ZK_SERVER not set: Not testing with zookeeper")
     return
   }
 
@@ -20,7 +19,7 @@ func TestZKConnect(t *testing.T) {
 func TestAddRemove(t *testing.T) {
   zk := connect(t)
   if zk == nil {
-    return
+    t.SkipNow()
   }
 
   n1 := Node{
@@ -43,7 +42,7 @@ func TestAddRemove(t *testing.T) {
 func TestGetNodes(t *testing.T) {
   zk := connect(t)
   if zk == nil {
-    return
+    t.SkipNow()
   }
 
   n1 := Node{
@@ -72,7 +71,7 @@ func TestGetNodes(t *testing.T) {
 func TestWatchAdd(t *testing.T) {
   zk := connect(t)
   if zk == nil {
-    return
+    t.SkipNow()
   }
   defer zk.Close()
 

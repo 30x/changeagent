@@ -85,6 +85,15 @@ func (z *ZookeeperDiscovery) GetNodes() []Node {
   return nodes
 }
 
+func (z *ZookeeperDiscovery) GetAddress(id uint64) string {
+  for _, n := range(z.nodes) {
+    if n.Id == id {
+      return n.Address
+    }
+  }
+  return ""
+}
+
 func (z *ZookeeperDiscovery) AddNode(node *Node) error {
   ns := int32(node.State)
   pb := NodePb{
