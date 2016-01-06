@@ -80,3 +80,48 @@ func testEntry(term uint64, data []byte) bool {
   if !bytes.Equal(resultData, data) { return false }
   return true
 }
+
+func TestConvertKeyComp(t *testing.T) {
+  if !testKeyCompare(1, 1, 1, 1) { t.Fatal("Equals comparison failed") }
+  if !testKeyCompare(1, 1, 2, 1) { t.Fatal("Type less comparison failed") }
+  if !testKeyCompare(2, 1, 1, 1) { t.Fatal("Type more comparison failed") }
+  if !testKeyCompare(1, 1, 1, 2) { t.Fatal("val less comparison failed") }
+  if !testKeyCompare(1, 2, 1, 1) { t.Fatal("val more comparison failed") }
+  err := quick.Check(testKeyCompare, nil)
+  if err != nil { t.Fatal(err.Error()) }
+}
+
+func testKeyCompare(kt1 int, k1 uint64, kt2 int, k2 uint64) bool {
+  if kt1 < 0 || kt1 > (1 << 8) {
+    return true
+  }
+  if kt2 < 0 || kt2 > (1 << 8) {
+    return true
+  }
+  keyBytes1, keyLen1 := uintToKey(kt1, k1)
+  if keyLen1 != 9 {
+    return false
+  }
+  defer freePtr(keyBytes1)
+  keyBytes2, keyLen2 := uintToKey(kt2, k2)
+  if keyLen2 != 9 {
+    return false
+  }
+  defer freePtr(keyBytes2)
+
+  cmp := testKeyComparison(keyBytes1, keyLen1, keyBytes2, keyLen2)
+
+  if kt1 < kt2 {
+    return cmp < 0
+  }
+  if kt1 > kt2 {
+    return cmp > 0
+  }
+  if k1 < k2 {
+    return cmp < 0
+  }
+  if k1 > k2 {
+    return cmp > 0
+  }
+  return cmp == 0
+}

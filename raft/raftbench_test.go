@@ -10,12 +10,9 @@ func BenchmarkSlowAppends(b *testing.B) {
   doAppendBenchmark(b, 1)
 }
 
-/*
- * Benchmark can't run for too many iterations yet -- locks up after a few thousand.
 func BenchmarkBatchedAppends(b *testing.B) {
   doAppendBenchmark(b, 100)
 }
-*/
 
 func doAppendBenchmark(b *testing.B, waitFrequency int) {
   waitForLeader()

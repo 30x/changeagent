@@ -3,6 +3,11 @@ package storage
 /*
 #include <stdio.h>
 #include <stdlib.h>
+
+extern int go_compare_bytes(
+  void* state,
+  const void* a, size_t alen,
+  const void* b, size_t blen);
 */
 import "C"
 
@@ -122,4 +127,9 @@ func ptrToEntry(ptr unsafe.Pointer, len C.size_t) (uint64, []byte, error) {
     return rae, nil, nil
   }
   return rae, bb[8:], nil
+}
+
+func testKeyComparison(ptra unsafe.Pointer, lena C.size_t, ptrb unsafe.Pointer, lenb C.size_t) int {
+  cmp := C.go_compare_bytes(nil, ptra, lena, ptrb, lenb);
+  return int(cmp)
 }

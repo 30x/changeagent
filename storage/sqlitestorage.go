@@ -171,14 +171,15 @@ func (s *SqliteStorage) Delete() error {
   return os.Remove(s.fileName)
 }
 
-func (s *SqliteStorage) GetMetadata(key string) (uint64, error) {
+func (s *SqliteStorage) GetMetadata(key uint) (uint64, error) {
   // Lock and unlock on each operation because interface is not fully thread-safe
   // If this becomes a bottleneck then we can open multiple DB handles.
   C.sqlite3_mutex_enter(s.dbLock)
   defer C.sqlite3_mutex_leave(s.dbLock)
 
+  ks := strconv.FormatUint(uint64(key), 10)
   stmt := s.stmts["getmetadata"]
-  s.bindString(stmt, 1, key)
+  s.bindString(stmt, 1, ks)
   defer C.sqlite3_clear_bindings(stmt)
 
   e := C.sqlite3_step(stmt)
@@ -196,12 +197,13 @@ func (s *SqliteStorage) GetMetadata(key string) (uint64, error) {
   }
 }
 
-func (s *SqliteStorage) SetMetadata(key string, val uint64) error {
+func (s *SqliteStorage) SetMetadata(key uint, val uint64) error {
   C.sqlite3_mutex_enter(s.dbLock)
   defer C.sqlite3_mutex_leave(s.dbLock)
 
+  ks := strconv.FormatUint(uint64(key), 10)
   stmt := s.stmts["setmetadata"]
-  s.bindString(stmt, 1, key)
+  s.bindString(stmt, 1, ks)
   strVal := strconv.FormatUint(val, 16)
   s.bindString(stmt, 2, strVal)
   defer C.sqlite3_clear_bindings(stmt)

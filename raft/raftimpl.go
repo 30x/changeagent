@@ -13,9 +13,10 @@ import (
 )
 
 const (
-  CurrentTermKey = "currentTerm"
-  VotedForKey = "votedFor"
-  LocalIdKey = "localid"
+  // Make these hard-coded rather than "iota" because they go in a database!
+  CurrentTermKey = 1
+  VotedForKey = 2
+  LocalIdKey = 3
   ElectionTimeout = 10 * time.Second
   HeartbeatTimeout = 2 * time.Second
 )

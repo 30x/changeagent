@@ -37,6 +37,37 @@ static void go_leveldb_iter_seek(leveldb_iterator_t* it,
     const void* k, size_t klen) {
   leveldb_iter_seek(it, (const char*)k, klen);
 }
+
+int go_compare_bytes(
+  void* state,
+  const char* a, size_t alen,
+  const char* b, size_t blen) {
+  if ((alen != 9) || (blen != 9)) { return 0; }
+  if (a[0] == b[0]) {
+    unsigned long long* av = (unsigned long long*)(&a[1]);
+    unsigned long long* bv = (unsigned long long*)(&b[1]);
+    if (*av > *bv) {
+      return 1;
+    } else if (*av < *bv) {
+      return -1;
+    } else {
+      return 0;
+    }
+  } else if (a[0] > b[0]) {
+    return 1;
+  } else {
+    return -1;
+  }
+}
+
+static const char* go_comparator_name(void* v) {
+  return "ByteComparator";
+}
+
+static leveldb_comparator_t* go_create_comparator() {
+  return leveldb_comparator_create(
+    NULL, NULL, go_compare_bytes, go_comparator_name);
+}
 */
 import "C"
 
@@ -67,11 +98,14 @@ func CreateLevelDBStorage(baseFile string) (*LevelDBStorage, error) {
   opts := C.leveldb_options_create()
   defer C.leveldb_options_destroy(opts)
   C.leveldb_options_set_create_if_missing(opts, 1)
+  C.leveldb_options_set_comparator(opts, C.go_create_comparator())
 
   db, err := stor.openDb(opts)
   if err != nil { return nil, err }
   stor.db = db
-  log.Infof("Opened LevelDB file in %s", stor.baseFile)
+  log.Infof("Opened LevelDB file in %s using LevelDB %d.%d",
+    stor.baseFile,
+    C.leveldb_major_version(), C.leveldb_minor_version())
 
   return stor, nil
 }
@@ -117,11 +151,11 @@ func (s *LevelDBStorage) Delete() error {
   return err
 }
 
-func (s *LevelDBStorage) GetMetadata(key string) (uint64, error) {
+func (s *LevelDBStorage) GetMetadata(key uint) (uint64, error) {
   var valLen C.size_t
   var e *C.char
 
-  keyBuf, keyLen := stringToKey(MetadataKey, key)
+  keyBuf, keyLen := uintToKey(MetadataKey, uint64(key))
   defer C.free(keyBuf)
 
   val := C.go_leveldb_get(
@@ -143,10 +177,10 @@ func (s *LevelDBStorage) GetMetadata(key string) (uint64, error) {
   }
 }
 
-func (s *LevelDBStorage) SetMetadata(key string, val uint64) error {
+func (s *LevelDBStorage) SetMetadata(key uint, val uint64) error {
   var e *C.char
 
-  keyBuf, keyLen := stringToKey(MetadataKey, key)
+  keyBuf, keyLen := uintToKey(MetadataKey, uint64(key))
   defer C.free(keyBuf)
   valBuf, valLen := uintToPtr(val)
   defer C.free(valBuf)
@@ -221,7 +255,6 @@ func (s *LevelDBStorage) GetEntries(first uint64, last uint64) ([]Entry, error) 
   C.go_leveldb_iter_seek(it, firstKeyPtr, firstKeyLen)
 
   for C.leveldb_iter_valid(it) != 0 {
-
     index, keyType, term, data, err := readIterPosition(it)
     if err != nil { return nil, err }
     if (keyType != EntryKey) || (index > last) {
@@ -236,6 +269,10 @@ func (s *LevelDBStorage) GetEntries(first uint64, last uint64) ([]Entry, error) 
     entries = append(entries, ne)
 
     C.leveldb_iter_next(it)
+  }
+  var entryList []uint64
+  for _, e := range(entries) {
+    entryList = append(entryList, e.Index)
   }
   return entries, nil
 }

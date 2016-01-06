@@ -15,8 +15,8 @@ type Change struct {
 
 type Storage interface {
   // Methods for all kinds of metadat
-  GetMetadata(key string) (uint64, error)
-  SetMetadata(key string, val uint64) error
+  GetMetadata(key uint) (uint64, error)
+  SetMetadata(key uint, val uint64) error
 
   // Methods for the Raft index
   AppendEntry(index uint64, term uint64, data []byte) error

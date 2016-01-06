@@ -25,19 +25,19 @@ func TestLevelDBMetadata(t *testing.T) {
 }
 
 func metadataTest(t* testing.T, stor Storage) {
-   err := stor.SetMetadata("one", 123)
+   err := stor.SetMetadata(1, 123)
    if err != nil { t.Fatalf("Error on set: %v", err) }
-   val, err := stor.GetMetadata("one")
+   val, err := stor.GetMetadata(1)
    if err != nil { t.Fatalf("Error on get: %v", err) }
    if val != 123 { t.Fatalf("Received %d instead of %d", val, 123) }
 
-   err = stor.SetMetadata("one", 234)
+   err = stor.SetMetadata(1, 234)
    if err != nil { t.Fatalf("Error on set: %v", err) }
-   val, err = stor.GetMetadata("one")
+   val, err = stor.GetMetadata(1)
    if err != nil { t.Fatalf("Error on get: %v", err) }
    if val != 234 { t.Fatalf("Received %d instead of %d", val, 234) }
 
-   val, err = stor.GetMetadata("notfound")
+   val, err = stor.GetMetadata(999)
    if err != nil { t.Fatalf("Error on get: %v", err) }
    if val != 0 { t.Fatalf("Received %d instead of %d", val, 0) }
 }
