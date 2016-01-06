@@ -107,7 +107,10 @@ func (r *RaftImpl) followerLoop(isCandidate bool, state *raftState) chan bool {
       timeout.Reset(r.randomElectionTimeout())
 
     case prop := <- r.proposals:
-      prop.rc <- errors.New("Cannot accept proposal because we are not the leader")
+      pr := proposalResult{
+        err: errors.New("Cannot accept proposal because we are not the leader"),
+      }
+      prop.rc <- pr
 
     case vr := <- state.voteResults:
       if vr.index == state.voteIndex {
@@ -146,7 +149,7 @@ func (r *RaftImpl) leaderLoop(state *raftState) chan bool {
   // Upon election: send initial empty AppendEntries RPCs (heartbeat) to
   // each server; repeat during idle periods to prevent
   // election timeouts (§5.2)
-  err := r.makeProposal(nil, state)
+  _, err := r.makeProposal(nil, state)
   if err != nil {
     // Not sure what else to do, so abort being the leader
     log.Infof("Error when initially trying to become leader: %s", err)
@@ -182,8 +185,12 @@ func (r *RaftImpl) leaderLoop(state *raftState) chan bool {
     case prop := <- r.proposals:
       // If command received from client: append entry to local log,
       // respond after entry applied to state machine (§5.3)
-      err := r.makeProposal(prop.data, state)
-      prop.rc <- err
+      index, err := r.makeProposal(prop.data, state)
+      pr := proposalResult{
+        index: index,
+        err: err,
+      }
+      prop.rc <- pr
 
     case peerMatch := <- state.peerMatchChanges:
       state.peerMatches[peerMatch.id] = peerMatch.newMatch

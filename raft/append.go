@@ -157,7 +157,7 @@ func (r *RaftImpl) appendEntries(entries []storage.Entry) error {
   return nil
 }
 
-func (r *RaftImpl) makeProposal(data []byte, state *raftState) error {
+func (r *RaftImpl) makeProposal(data []byte, state *raftState) (uint64, error) {
     // If command received from client: append entry to local log,
     // respond after entry applied to state machine (§5.3)
     newIndex, _ := r.GetLastIndex()
@@ -173,7 +173,7 @@ func (r *RaftImpl) makeProposal(data []byte, state *raftState) error {
       len(data), newIndex, term)
     err := r.appendEntries([]storage.Entry{newEntry})
     if err != nil {
-      return err
+      return 0, err
     }
 
     r.setLastIndex(newIndex, term)
@@ -182,5 +182,5 @@ func (r *RaftImpl) makeProposal(data []byte, state *raftState) error {
     for _, p := range(state.peers) {
       p.propose(newIndex)
     }
-    return nil
+    return newIndex, nil
 }

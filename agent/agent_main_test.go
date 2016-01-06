@@ -21,6 +21,7 @@ const (
 
 var testListener []*net.TCPListener
 var testAgents []*ChangeAgent
+var leaderIndex int
 
 func TestMain(m *testing.M) {
   os.Exit(runMain(m))
@@ -70,6 +71,7 @@ func runMain(m *testing.M) int {
   if !waitForLeader() {
     panic("Leader was not elected in time")
   }
+  getLeaderIndex()
 
   return m.Run()
 }
@@ -120,4 +122,33 @@ func waitForLeader() bool {
     }
   }
   return false
+}
+
+func getLeaderIndex() {
+  for i, r := range(testAgents) {
+    switch r.GetRaftState() {
+    case raft.StateLeader:
+      leaderIndex = i
+    }
+  }
+}
+
+func getLeaderURI() string {
+  return getListenerURI(leaderIndex)
+}
+
+func getFollowerURIs() []string {
+  var uris []string
+  for i := range(testListener) {
+    if i != leaderIndex {
+      uris = append(uris, getListenerURI(i))
+    }
+  }
+  return uris
+}
+
+func getListenerURI(index int) string {
+  _, port, err := net.SplitHostPort(testListener[index].Addr().String())
+  if err != nil { panic("Error parsing leader port") }
+  return fmt.Sprintf("http://localhost:%s", port)
 }

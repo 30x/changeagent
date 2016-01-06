@@ -46,6 +46,7 @@ type RaftImpl struct {
   lastApplied uint64
   lastIndex uint64
   lastTerm uint64
+  appliedTracker *ChangeTracker
 }
 
 type voteCommand struct {
@@ -58,9 +59,14 @@ type appendCommand struct {
   rc chan *communication.AppendResponse
 }
 
+type proposalResult struct {
+  index uint64
+  err error
+}
+
 type proposalCommand struct {
   data []byte
-  rc chan error
+  rc chan proposalResult
 }
 
 var raftRand *rand.Rand = makeRand()
@@ -82,6 +88,7 @@ func StartRaft(id uint64,
     proposals: make(chan proposalCommand, 1),
     latch: sync.Mutex{},
     followerOnly: false,
+    appliedTracker: CreateTracker(0),
   }
 
   storedId, err := stor.GetMetadata(LocalIdKey)
@@ -118,6 +125,7 @@ func (r *RaftImpl) Close() {
     r.stopChan <- done
     <- done
   }
+  r.appliedTracker.Close()
 }
 
 func (r *RaftImpl) cleanup() {
@@ -174,12 +182,12 @@ func (r *RaftImpl) Append(req *communication.AppendRequest) (*communication.Appe
   return resp, resp.Error
 }
 
-func (r *RaftImpl) Propose(data []byte) error {
+func (r *RaftImpl) Propose(data []byte) (uint64, error) {
   if r.GetState() == StateStopping || r.GetState() == StateStopped {
-    return errors.New("Raft is stopped")
+    return 0, errors.New("Raft is stopped")
   }
 
-  rc := make(chan error)
+  rc := make(chan proposalResult, 1)
   cmd := proposalCommand{
     data: data,
     rc: rc,
@@ -187,8 +195,9 @@ func (r *RaftImpl) Propose(data []byte) error {
 
   log.Debugf("Going to propose a value of %d bytes", len(data))
   r.proposals <- cmd
-  ret := <- rc
-  return ret
+
+  result := <- rc
+  return result.index, result.err
 }
 
 func (r *RaftImpl) MyId() uint64 {
@@ -234,8 +243,14 @@ func (r *RaftImpl) GetLastApplied() uint64 {
 
 func (r *RaftImpl) setLastApplied(t uint64) {
   r.latch.Lock()
-  defer r.latch.Unlock()
   r.lastApplied = t
+  r.latch.Unlock()
+
+  r.appliedTracker.Update(t)
+}
+
+func (r *RaftImpl) GetAppliedTracker() *ChangeTracker {
+  return r.appliedTracker
 }
 
 func (r *RaftImpl) GetLastIndex() (uint64, uint64) {

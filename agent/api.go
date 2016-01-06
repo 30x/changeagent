@@ -1,7 +1,9 @@
 package main
 
 import (
+  "errors"
   "strconv"
+  "time"
   "net/http"
   "revision.aeip.apigee.net/greg/changeagent/log"
 )
@@ -11,6 +13,7 @@ const (
   ChangesURI = "/changes"
   DefaultSince = uint64(0)
   DefaultLimit = 100
+  CommitTimeoutSeconds = 10
 )
 
 func (a *ChangeAgent) initAPI(mux *http.ServeMux) {
@@ -50,22 +53,26 @@ func (a *ChangeAgent) handlePostChanges(resp http.ResponseWriter, req *http.Requ
     return
   }
 
-  err = a.raft.Propose(proposal)
+  // Send the raft proposal. This happens asynchronously.
+  newIndex, err := a.raft.Propose(proposal)
   if err != nil {
     log.Infof("Fatal error making Raft proposal: %v", err)
     writeError(resp, http.StatusInternalServerError, err)
     return
   }
 
-  // TODO do we want to wait for commit? I think that we do!
-  // TODO we want raft to send back the index of the commit!
-
-  metadata := &JsonData{
-    Id: 123456,
+  // Wait for the new commit to be applied, or time out
+  appliedIndex :=
+    a.raft.GetAppliedTracker().TimedWait(newIndex, time.Second * CommitTimeoutSeconds)
+  if appliedIndex >= newIndex {
+    metadata := &JsonData{
+      Id: newIndex,
+    }
+    resp.Header().Add(http.CanonicalHeaderKey("content-type"), JSONContent)
+    marshalJson(nil, metadata, resp)
+  } else {
+    writeError(resp, 503, errors.New("Commit timeout"))
   }
-
-  resp.Header().Add(http.CanonicalHeaderKey("content-type"), JSONContent)
-  marshalJson(nil, metadata, resp)
 }
 
 /*
@@ -73,12 +80,15 @@ func (a *ChangeAgent) handlePostChanges(resp http.ResponseWriter, req *http.Requ
  * Query params:
  *   limit (integer): Maximum number to return, default 100
  *   since (integer): If set, return all changes HIGHER than this. Default 0.
+ *   block (integer): If set and there are no changes, wait for up to "block" seconds
+ *     until there are some changes to return
  * Result will be an array of objects, with metadata plus original JSON data.
  */
 func (a *ChangeAgent) handleGetChanges(resp http.ResponseWriter, req *http.Request) {
   qps := req.URL.Query()
   limit := DefaultLimit
   since := DefaultSince
+  block := time.Duration(0)
 
   if qps["limit"] != nil {
     il, err := strconv.ParseUint(qps.Get("limit"), 10, 32)
@@ -98,11 +108,30 @@ func (a *ChangeAgent) handleGetChanges(resp http.ResponseWriter, req *http.Reque
     since = ul
   }
 
+  if qps["block"] != nil {
+    bk, err := strconv.ParseUint(qps.Get("block"), 10, 32)
+    if err != nil {
+      http.Error(resp, "Invalid block value", http.StatusBadRequest)
+      return
+    }
+    block = time.Duration(bk)
+  }
+
   changes, err := a.stor.GetChanges(since, limit)
   if err != nil {
     log.Infof("Error getting changes from DB: %v", err)
     writeError(resp, http.StatusInternalServerError, err)
     return
+  }
+
+  if block > 0 && len(changes) == 0 {
+    a.raft.GetAppliedTracker().TimedWait(since + 1, time.Second * block)
+    changes, err = a.stor.GetChanges(since, limit)
+    if err != nil {
+      log.Infof("Error getting changes from DB: %v", err)
+      writeError(resp, http.StatusInternalServerError, err)
+      return
+    }
   }
 
   resp.Header().Add(http.CanonicalHeaderKey("content-type"), JSONContent)

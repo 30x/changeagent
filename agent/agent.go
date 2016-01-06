@@ -31,6 +31,7 @@ func StartChangeAgent(nodeId uint64,
   agent.raft = raft
   comm.SetRaft(raft)
 
+  initDiagnosticApi(mux)
   agent.initAPI(mux)
 
   return agent, nil

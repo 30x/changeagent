@@ -79,7 +79,7 @@ func (h *HttpCommunication) sendVoteRequest(addr string, req *VoteRequest, ch ch
   }
   defer resp.Body.Close()
 
-  log.Infof("Got back %d", resp.StatusCode)
+  log.Debugf("Got back %d", resp.StatusCode)
   if resp.StatusCode != 200 {
     vr := VoteResponse{
       Error: fmt.Errorf("HTTP status %d %s", resp.StatusCode, resp.Status),
@@ -148,7 +148,7 @@ func (h *HttpCommunication) Append(id uint64, req *AppendRequest) (*AppendRespon
   }
   defer resp.Body.Close()
 
-  log.Infof("Got back %d", resp.StatusCode)
+  log.Debugf("Got back %d", resp.StatusCode)
   if resp.StatusCode != 200 {
     return nil, fmt.Errorf("HTTP status %d %s", resp.StatusCode, resp.Status)
   }

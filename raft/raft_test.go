@@ -73,8 +73,11 @@ func appendAndVerify(t *testing.T, msg string, expectedCount int) {
   data := []byte(msg)
   leader := getLeader(t)
   lastIndex, _ := leader.GetLastIndex()
-  err := leader.Propose(data)
+  index, err := leader.Propose(data)
   if err != nil { t.Fatalf("Proposal failed: %v", err) }
+  if index != (lastIndex + 1) {
+    t.Fatalf("Expected index %d and got %d", lastIndex + 1, index)
+  }
   t.Logf("Wrote data at index %d", lastIndex + 1)
 
   for i := 0; i < 10; i++ {
