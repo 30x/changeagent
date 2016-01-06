@@ -5,14 +5,27 @@ import (
   "testing"
 )
 
-func TestMetadata(t *testing.T) {
-   var stor Storage
-   stor, err := CreateSqliteStorage("./metadatatestdb")
-   if err != nil { t.Fatalf("Create db failed: %v", err) }
-   defer stor.Delete()
-   defer stor.Close()
+func TestSqliteMetadata(t *testing.T) {
+  stor, err := CreateSqliteStorage("./metadatatestdb")
+  if err != nil { t.Fatalf("Create db failed: %v", err) }
+  defer stor.Delete()
+  defer stor.Close()
+  metadataTest(t, stor)
+}
 
-   err = stor.SetMetadata("one", 123)
+func TestLevelDBMetadata(t *testing.T) {
+  stor, err := CreateLevelDBStorage("./metadatatestleveldb")
+  if err != nil { t.Fatalf("Create db failed: %v", err) }
+  defer func() {
+    err := stor.Delete()
+    if err != nil { t.Logf("Error deleting database: %v", err) }
+  }()
+  defer stor.Close()
+  metadataTest(t, stor)
+}
+
+func metadataTest(t* testing.T, stor Storage) {
+   err := stor.SetMetadata("one", 123)
    if err != nil { t.Fatalf("Error on set: %v", err) }
    val, err := stor.GetMetadata("one")
    if err != nil { t.Fatalf("Error on get: %v", err) }
@@ -29,13 +42,26 @@ func TestMetadata(t *testing.T) {
    if val != 0 { t.Fatalf("Received %d instead of %d", val, 0) }
 }
 
-func TestEntries(t *testing.T) {
-   var stor Storage
-   stor, err := CreateSqliteStorage("./entrytestdb")
-   if err != nil { t.Fatalf("Create db failed: %v", err) }
-   defer stor.Delete()
-   defer stor.Close()
+func TestSqliteEntries(t *testing.T) {
+  stor, err := CreateSqliteStorage("./entrytestdb")
+  if err != nil { t.Fatalf("Create db failed: %v", err) }
+  defer stor.Delete()
+  defer stor.Close()
+  entriesTest(t, stor)
+}
 
+func TestLevelDBEntries(t *testing.T) {
+  stor, err := CreateLevelDBStorage("./entrytestleveldb")
+  if err != nil { t.Fatalf("Create db failed: %v", err) }
+  defer func() {
+    err := stor.Delete()
+    if err != nil { t.Logf("Error deleting database: %v", err) }
+  }()
+  defer stor.Close()
+  entriesTest(t, stor)
+}
+
+func entriesTest(t *testing.T, stor Storage) {
    max, term, err := stor.GetLastIndex()
    if err != nil { t.Fatalf("error on get max: %v", err) }
    if max != 0 { t.Fatalf("Expected 0 max index and got %d", max) }
@@ -60,7 +86,7 @@ func TestEntries(t *testing.T) {
    term, data, err = stor.GetEntry(1)
    if err != nil { t.Fatalf("error on get: %v", err) }
    if term != 1 { t.Fatalf("Expected term 1 and got %d", term) }
-   if data != nil { t.Fatalf("Expected nil data") }
+   if data != nil { t.Fatalf("Expected nil data and got %v", data) }
 
    term, data, err = stor.GetEntry(2)
    if err != nil { t.Fatalf("error on get: %v", err) }
@@ -69,7 +95,7 @@ func TestEntries(t *testing.T) {
 
    max, term, err = stor.GetLastIndex()
    if err != nil { t.Fatalf("error on get max: %v", err) }
-   if max != 2 { t.Fatalf("Expected 0 max index and got %d", max) }
+   if max != 2 { t.Fatalf("Expected 2 max index and got %d", max) }
    if term != 1 { t.Fatalf("Expected 1 max term and got %d", term) }
 
    ets, err := stor.GetEntryTerms(1)
@@ -102,13 +128,18 @@ func TestEntries(t *testing.T) {
    if err != nil { t.Fatalf("error on delete: %v", err) }
 }
 
-func TestChanges(t *testing.T) {
-  var stor Storage
-  stor, err := CreateSqliteStorage("./changetestdb")
-  if err != nil { t.Fatalf("Create db failed: %v", err) }
-  defer stor.Delete()
-  defer stor.Close()
+func TestSqliteChanges(t *testing.T) {
+    stor, err := CreateSqliteStorage("./changetestdb")
+    if err != nil { t.Fatalf("Create db failed: %v", err) }
+    defer func() {
+      err := stor.Delete()
+      if err != nil { t.Logf("Error deleting database: %v", err) }
+    }()
+    defer stor.Close()
+    changesTest(t, stor)
+}
 
+func changesTest(t *testing.T, stor Storage) {
   change1 := []byte("Hello, World!")
   change2 := []byte("Goodbye, World!")
 
