@@ -16,7 +16,7 @@ import (
 const (
   DataDir = "./rafttestdata"
   PreserveDatabases = false
-  DebugMode = true
+  DebugMode = false
 )
 
 var testRafts []*RaftImpl

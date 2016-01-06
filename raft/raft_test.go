@@ -11,7 +11,7 @@ const (
 )
 
 func TestWaitForLeader(t *testing.T) {
-  waitForLeader(t)
+  assertOneLeader(t)
   appendAndVerify(t, "First test", 3)
 }
 
@@ -37,7 +37,7 @@ func TestStopFollower(t *testing.T) {
 
 // After stopping the leader, a new one is elected
 func TestStopLeader(t *testing.T) {
-  waitForLeader(t)
+  assertOneLeader(t)
 
   var leaderIndex int
   for i, r := range(testRafts) {
@@ -50,28 +50,39 @@ func TestStopLeader(t *testing.T) {
   testRafts[leaderIndex].Close()
   testListener[leaderIndex].Close()
   time.Sleep(time.Second)
-  waitForLeader(t)
+  assertOneLeader(t)
   appendAndVerify(t, "Second test. Yay!", 2)
 }
 
-func waitForLeader(t *testing.T) {
+func waitForLeader() int {
   time.Sleep(time.Second)
   for i := 0; i < 40; i++ {
-    _, leaders := countRafts(t)
+    _, leaders := countRafts()
     if leaders == 0 {
       time.Sleep(time.Second)
-    } else if leaders == 1 {
-      return
     } else {
-      t.Fatalf("Expected only one leader but found %d", leaders)
+      return leaders
     }
   }
-  t.Fatal("Waited too long for a leader to emerge")
+  return 0
+}
+
+func assertOneLeader(t *testing.T) {
+  leaders := waitForLeader()
+  switch leaders {
+  case 0:
+    t.Fatal("No leader present in time")
+  case 1:
+    return
+  default:
+    t.Fatalf("Found %d leaders when one will do", leaders)
+  }
 }
 
 func appendAndVerify(t *testing.T, msg string, expectedCount int) {
   data := []byte(msg)
-  leader := getLeader(t)
+  leader := getLeader()
+  if leader == nil { t.Fatal("No leader present") }
   lastIndex, _ := leader.GetLastIndex()
   index, err := leader.Propose(data)
   if err != nil { t.Fatalf("Proposal failed: %v", err) }
@@ -96,7 +107,7 @@ func appendAndVerify(t *testing.T, msg string, expectedCount int) {
   t.Fatal("Indices not replicated in time")
 }
 
-func countRafts(t *testing.T) (int, int) {
+func countRafts() (int, int) {
   var followers, leaders int
 
   for _, r := range(testRafts) {
@@ -104,23 +115,19 @@ func countRafts(t *testing.T) (int, int) {
     case StateFollower:
       followers++
     case StateLeader:
-      t.Logf("Node %d is a leader", r.id)
       leaders++
     }
   }
 
-  t.Logf("total = %d followers = %d leaders = %d", len(testRafts), followers, leaders)
-
   return followers, leaders
 }
 
-func getLeader(t *testing.T) *RaftImpl {
+func getLeader() *RaftImpl {
   for _, r := range(testRafts) {
     if r.GetState() == StateLeader {
       return r
     }
   }
-  t.Fatal("No leader present")
   return nil
 }
 

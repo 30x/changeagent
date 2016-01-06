@@ -25,10 +25,10 @@ func startPeer(id uint64, r *RaftImpl, changes chan<- peerMatchResult) *raftPeer
   p := &raftPeer{
     id: id,
     r: r,
-    proposals: make(chan uint64),
-    updateChan: make(chan bool, 1),
+    proposals: make(chan uint64, 10000),
+    updateChan: make(chan bool, 100),
     changeChan: changes,
-    stopChan: make(chan bool),
+    stopChan: make(chan bool, 1),
   }
   go p.peerLoop()
   return p
