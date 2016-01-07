@@ -12,7 +12,7 @@ const (
   JSONContent = "application/json"
   ChangesURI = "/changes"
   DefaultSince = uint64(0)
-  DefaultLimit = 100
+  DefaultLimit = uint64(100)
   CommitTimeoutSeconds = 10
 )
 
@@ -87,7 +87,7 @@ func (a *ChangeAgent) handlePostChanges(resp http.ResponseWriter, req *http.Requ
 func (a *ChangeAgent) handleGetChanges(resp http.ResponseWriter, req *http.Request) {
   qps := req.URL.Query()
   limit := DefaultLimit
-  since := DefaultSince
+  first := DefaultSince
   block := time.Duration(0)
 
   if qps["limit"] != nil {
@@ -96,7 +96,7 @@ func (a *ChangeAgent) handleGetChanges(resp http.ResponseWriter, req *http.Reque
       http.Error(resp, "Invalid limit", http.StatusBadRequest)
       return
     }
-    limit = int(il)
+    limit = il
   }
 
   if qps["since"] != nil {
@@ -105,7 +105,7 @@ func (a *ChangeAgent) handleGetChanges(resp http.ResponseWriter, req *http.Reque
       http.Error(resp, "Invalid since value", http.StatusBadRequest)
       return
     }
-    since = ul
+    first = ul + 1
   }
 
   if qps["block"] != nil {
@@ -117,25 +117,37 @@ func (a *ChangeAgent) handleGetChanges(resp http.ResponseWriter, req *http.Reque
     block = time.Duration(bk)
   }
 
-  changes, err := a.stor.GetChanges(since, limit)
+  // Check how many changes there will be and block if we must
+  last := a.raft.GetLastApplied()
+  if (last < first) && (block > 0) {
+    a.raft.GetAppliedTracker().TimedWait(first, time.Second * block)
+    last = a.raft.GetLastApplied()
+  }
+
+  // Still no changes?
+  if last < first {
+    resp.Header().Add(http.CanonicalHeaderKey("content-type"), JSONContent)
+    marshalChanges(nil, resp)
+    return
+  }
+
+  // Limit the result set if necessary
+  if (last - first) + 1 > limit {
+    last = first + limit - 1
+  }
+
+  log.Debugf("Getting changes from %d to %d", first, last)
+
+  entries, err := a.stor.GetEntries(first, last)
   if err != nil {
     log.Infof("Error getting changes from DB: %v", err)
     writeError(resp, http.StatusInternalServerError, err)
     return
   }
-
-  if block > 0 && len(changes) == 0 {
-    a.raft.GetAppliedTracker().TimedWait(since + 1, time.Second * block)
-    changes, err = a.stor.GetChanges(since, limit)
-    if err != nil {
-      log.Infof("Error getting changes from DB: %v", err)
-      writeError(resp, http.StatusInternalServerError, err)
-      return
-    }
-  }
+  log.Debugf("Got %d entries", len(entries))
 
   resp.Header().Add(http.CanonicalHeaderKey("content-type"), JSONContent)
-  marshalChanges(changes, resp)
+  marshalChanges(entries, resp)
 }
 
 func writeError(resp http.ResponseWriter, code int, err error) {

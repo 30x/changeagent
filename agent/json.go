@@ -57,7 +57,7 @@ func marshalJson(body []byte, metadata *JsonData, out io.Writer) error {
 /*
  * Same as above but marshal a whole array of changes.
  */
-func marshalChanges(changes []storage.Change, out io.Writer) error {
+func marshalChanges(changes []storage.Entry, out io.Writer) error {
   if changes == nil || len(changes) == 0 {
     out.Write([]byte("[]"))
     return nil

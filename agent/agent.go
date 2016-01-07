@@ -19,14 +19,14 @@ func StartChangeAgent(nodeId uint64,
                       mux *http.ServeMux) (*ChangeAgent, error) {
   comm, err := communication.StartHttpCommunication(mux, disco)
   if err != nil { return nil, err }
-  stor, err := storage.CreateSqliteStorage(dbFile)
+  stor, err := storage.CreateLevelDBStorage(dbFile)
   if err != nil { return nil, err }
 
   agent := &ChangeAgent{
     stor: stor,
   }
 
-  raft, err := raft.StartRaft(nodeId, comm, disco, stor, agent)
+  raft, err := raft.StartRaft(nodeId, comm, disco, stor)
   if err != nil { return nil, err }
   agent.raft = raft
   comm.SetRaft(raft)
@@ -44,16 +44,6 @@ func (a *ChangeAgent) Close() {
 
 func (a *ChangeAgent) Delete() {
   a.stor.Delete()
-}
-
-func (a *ChangeAgent) ApplyEntry(index uint64, data []byte) error {
-  err := a.stor.InsertChange(index, "", "", data)
-  return err
-}
-
-func (a *ChangeAgent) GetLastIndex() (uint64, error) {
-  ix, err := a.stor.GetMaxChange()
-  return ix, err
 }
 
 func (a *ChangeAgent) GetRaftState() int {

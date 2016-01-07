@@ -16,7 +16,7 @@ import (
 const (
   DataDir = "./agenttestdata"
   PreserveDatabases = false
-  DebugMode = false
+  DebugMode = true
 )
 
 var testListener []*net.TCPListener

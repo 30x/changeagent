@@ -168,8 +168,8 @@ func verifyCommit(t *testing.T, ix uint64, expectedCount int) bool {
 
 func verifyApplied(t *testing.T, ix uint64, expectedData []byte, expectedCount int) bool {
   correctCount := 0
-  for _, state := range(testStates) {
-    if bytes.Equal(expectedData, state.entries[ix]) {
+  for _, raft := range(testRafts) {
+    if raft.GetLastApplied() >= ix {
       correctCount++
     }
   }

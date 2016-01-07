@@ -94,20 +94,10 @@ func (r *RaftImpl) handleAppend(state *raftState, cmd appendCommand) {
 
 func (r *RaftImpl) applyCommittedEntries(commitIndex uint64) error {
   // 5.3: If commitIndex > lastApplied: increment lastApplied,
-  // apply log[lastApplied] to state machine
-  lastApplied := r.GetLastApplied()
-  for lastApplied < commitIndex {
-    lastApplied++
-    _, data, err := r.stor.GetEntry(lastApplied)
-    if err != nil {
-      return err
-    }
-
-    r.mach.ApplyEntry(lastApplied, data)
-  }
-
-  r.setLastApplied(lastApplied)
-  log.Debugf("Node %d: Last applied now %d", r.id, lastApplied)
+  // apply log[lastApplied] to state machine.
+  // In our implementation, we just move a pointer.
+  r.setLastApplied(commitIndex)
+  log.Debugf("Node %d: Last applied now %d", r.id, commitIndex)
   return nil
 }
 

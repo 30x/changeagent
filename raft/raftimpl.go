@@ -17,6 +17,7 @@ const (
   CurrentTermKey = 1
   VotedForKey = 2
   LocalIdKey = 3
+  LastAppliedKey = 4
   ElectionTimeout = 10 * time.Second
   HeartbeatTimeout = 2 * time.Second
 )
@@ -35,7 +36,6 @@ type RaftImpl struct {
   comm communication.Communication
   disco discovery.Discovery
   stor storage.Storage
-  mach StateMachine
   stopChan chan chan bool
   voteCommands chan voteCommand
   appendCommands chan appendCommand
@@ -75,14 +75,12 @@ var raftRand *rand.Rand = makeRand()
 func StartRaft(id uint64,
                comm communication.Communication,
                disco discovery.Discovery,
-               stor storage.Storage,
-               mach StateMachine) (*RaftImpl, error) {
+               stor storage.Storage) (*RaftImpl, error) {
   r := &RaftImpl{
     state: StateFollower,
     comm: comm,
     disco: disco,
     stor: stor,
-    mach: mach,
     stopChan: make(chan chan bool, 1),
     voteCommands: make(chan voteCommand, 1),
     appendCommands: make(chan appendCommand, 1),
@@ -243,6 +241,9 @@ func (r *RaftImpl) GetLastApplied() uint64 {
 }
 
 func (r *RaftImpl) setLastApplied(t uint64) {
+  err := r.stor.SetMetadata(LastAppliedKey, t)
+  if err != nil { panic("Error writing last applied key to database") }
+
   r.latch.Lock()
   r.lastApplied = t
   r.latch.Unlock()
@@ -308,7 +309,7 @@ func (r *RaftImpl) readLastCommit() uint64 {
 }
 
 func (r *RaftImpl) readLastApplied() uint64 {
-  la, err := r.mach.GetLastIndex()
+  la, err := r.stor.GetMetadata(LastAppliedKey)
   if err != nil { panic("Fatal error reading state from state machine") }
   return la
 }

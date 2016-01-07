@@ -375,17 +375,3 @@ func (s *LevelDBStorage) DeleteEntries(first uint64) error {
   }
   return nil
 }
-
-  // Methods for the actual change table itself
-func (s *LevelDBStorage) InsertChange(index uint64, tenant string, key string, data []byte) error {
-  panic("Not implemented")
-}
-func (s *LevelDBStorage) InsertChanges(changes []Change) error {
-  panic("Not implemented")
-}
-func (s *LevelDBStorage) GetChanges(lastIndex uint64, limit int) ([]Change, error) {
-  panic("Not implemented")
-}
-func (s *LevelDBStorage) GetMaxChange() (uint64, error) {
-  panic("Not implemented")
-}

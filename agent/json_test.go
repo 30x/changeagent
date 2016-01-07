@@ -91,7 +91,7 @@ func TestMarshalList(t *testing.T) {
   buf2, err := unmarshalJson(bytes.NewReader([]byte(testStringIn)))
   if err != nil { t.Fatalf("Error: %v", err) }
 
-  cl := []storage.Change{
+  cl := []storage.Entry{
     {
       Index: 123,
       Data: buf1,
@@ -116,7 +116,7 @@ func TestMarshalList(t *testing.T) {
 }
 
 func TestMarshalEmptyList(t *testing.T) {
-  cl := []storage.Change{}
+  cl := []storage.Entry{}
 
   outBuf := &bytes.Buffer{}
   err := marshalChanges(cl, outBuf)

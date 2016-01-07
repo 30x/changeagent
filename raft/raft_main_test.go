@@ -21,7 +21,6 @@ const (
 
 var testRafts []*RaftImpl
 var testListener []*net.TCPListener
-var testStates []*TestStateMachine
 var unitTestRaft *RaftImpl
 var unitTestListener *net.TCPListener
 
@@ -43,8 +42,6 @@ func runMain(m *testing.M) int {
     if err != nil { panic("Invalid listen address") }
     addrs = append(addrs, fmt.Sprintf("localhost:%s", port))
     testListener = append(testListener, listener)
-    newState := createTestState()
-    testStates = append(testStates, newState)
   }
   disco := discovery.CreateStaticDiscovery(addrs)
 
@@ -56,7 +53,7 @@ func runMain(m *testing.M) int {
   unitAddr := []string{fmt.Sprintf("localhost:%s", port)}
   unitDisco := discovery.CreateStaticDiscovery(unitAddr)
 
-  raft1, err := startRaft(1, disco, testListener[0], path.Join(DataDir, "test1"), testStates[0])
+  raft1, err := startRaft(1, disco, testListener[0], path.Join(DataDir, "test1"))
   if err != nil {
     fmt.Printf("Error starting raft 1: %v", err)
     return 2
@@ -64,7 +61,7 @@ func runMain(m *testing.M) int {
   testRafts = append(testRafts, raft1)
   defer cleanRaft(raft1, testListener[0])
 
-  raft2, err := startRaft(2, disco, testListener[1], path.Join(DataDir, "test2"), testStates[1])
+  raft2, err := startRaft(2, disco, testListener[1], path.Join(DataDir, "test2"))
   if err != nil {
     fmt.Printf("Error starting raft 2: %v", err)
     return 3
@@ -72,7 +69,7 @@ func runMain(m *testing.M) int {
   testRafts = append(testRafts, raft2)
   defer cleanRaft(raft2, testListener[1])
 
-  raft3, err := startRaft(3, disco, testListener[2], path.Join(DataDir, "test3"), testStates[2])
+  raft3, err := startRaft(3, disco, testListener[2], path.Join(DataDir, "test3"))
   if err != nil {
     fmt.Printf("Error starting raft 3: %v", err)
     return 4
@@ -80,7 +77,7 @@ func runMain(m *testing.M) int {
   testRafts = append(testRafts, raft3)
   defer cleanRaft(raft3, testListener[2])
 
-  unitTestRaft, err = startRaft(1, unitDisco, unitTestListener, path.Join(DataDir, "unit"), createTestState())
+  unitTestRaft, err = startRaft(1, unitDisco, unitTestListener, path.Join(DataDir, "unit"))
   if err != nil {
     fmt.Printf("Error starting unit test raft: %v", err)
     return 4
@@ -91,14 +88,14 @@ func runMain(m *testing.M) int {
   return m.Run()
 }
 
-func startRaft(id uint64, disco discovery.Discovery, listener *net.TCPListener, dir string, state StateMachine) (*RaftImpl, error) {
+func startRaft(id uint64, disco discovery.Discovery, listener *net.TCPListener, dir string) (*RaftImpl, error) {
   mux := http.NewServeMux()
   comm, err := communication.StartHttpCommunication(mux, disco)
   if err != nil { return nil, err }
   stor, err := storage.CreateLevelDBStorage(dir)
   if err != nil { return nil, err }
 
-  raft, err := StartRaft(id, comm, disco, stor, state)
+  raft, err := StartRaft(id, comm, disco, stor)
   if err != nil { return nil, err }
   comm.SetRaft(raft)
   go http.Serve(listener, mux)
@@ -150,29 +147,4 @@ func initUnitTests(raft *RaftImpl) {
   if resp.CommitIndex != 1 {
     panic("Expected commit index to be 3 at startup")
   }
-}
-
-type TestStateMachine struct {
-  entries map[uint64][]byte
-}
-
-func createTestState() *TestStateMachine {
-  return &TestStateMachine{
-    entries: make(map[uint64][]byte),
-  }
-}
-
-func (s *TestStateMachine) ApplyEntry(index uint64, data []byte) error {
-  s.entries[index] = data
-  return nil
-}
-
-func (s *TestStateMachine) GetLastIndex() (uint64, error) {
-  var max uint64 = 0
-  for i := range(s.entries) {
-    if i > max {
-      max = i
-    }
-  }
-  return max, nil
 }
