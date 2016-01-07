@@ -12,11 +12,17 @@ import (
   "revision.aeip.apigee.net/greg/changeagent/log"
 )
 
+type rpcResponse struct {
+  success bool
+  heartbeat bool
+  newIndex uint64
+  err error
+}
+
 type raftPeer struct {
   id uint64
   r *RaftImpl
   proposals chan uint64
-  updateChan chan bool
   changeChan chan<- peerMatchResult
   stopChan chan bool
 }
@@ -25,8 +31,7 @@ func startPeer(id uint64, r *RaftImpl, changes chan<- peerMatchResult) *raftPeer
   p := &raftPeer{
     id: id,
     r: r,
-    proposals: make(chan uint64, 10000),
-    updateChan: make(chan bool, 100),
+    proposals: make(chan uint64, 1000),
     changeChan: changes,
     stopChan: make(chan bool, 1),
   }
@@ -48,28 +53,40 @@ func (p *raftPeer) peerLoop() {
   // The index, from storage, that we expect to be sending
   desiredIndex := nextIndex
 
+  // Send HTTP requests asynchronously and notify this channel when they complete
+  responseChan := make(chan rpcResponse, 1)
+  rpcRunning := false
+
   // Repaat heartbeats during idle periods to prevent
   // election timeouts (§5.2)
-
   timeout := time.NewTimer(HeartbeatTimeout)
 
   for {
+    if !rpcRunning && (desiredIndex > nextIndex) {
+      err := p.sendUpdates(desiredIndex, nextIndex, responseChan)
+      if err != nil {
+        log.Debugf("Error sending updates to peer: %s", err)
+      }
+      rpcRunning = true
+      timeout.Reset(HeartbeatTimeout)
+    }
+
     select {
     case <- timeout.C:
-      if nextIndex == desiredIndex {
-        p.heartbeatPeer()
-      } else {
-        nextIndex = p.updatePeer(desiredIndex, nextIndex)
+      if !rpcRunning && (nextIndex == desiredIndex) {
+        // Special handling for heartbeats so that a new leader is not elected
+        p.sendHeartbeat(desiredIndex, responseChan)
+        rpcRunning = true
       }
       timeout.Reset(HeartbeatTimeout)
 
     case newIndex := <- p.proposals:
+      // These are pushed to this routine from the main raft impl
       desiredIndex = newIndex
-      p.updateChan <- true
 
-    case <- p.updateChan:
-
-      timeout.Reset(HeartbeatTimeout)
+    case response := <- responseChan:
+      rpcRunning = false
+      nextIndex = p.handleRpcResult(response)
 
     case <- p.stopChan:
       log.Debugf("Peer %d stopping", p.id)
@@ -78,7 +95,34 @@ func (p *raftPeer) peerLoop() {
   }
 }
 
-func (p *raftPeer) heartbeatPeer() {
+func (p *raftPeer) handleRpcResult(resp rpcResponse) uint64 {
+  if resp.success && !resp.heartbeat {
+    // If successful: update nextIndex and matchIndex for
+    // follower (§5.3)
+    newIndex := resp.newIndex
+    log.Debugf("Client %d now up to date with index %d", p.id, resp.newIndex)
+    change := peerMatchResult{
+      id: p.id,
+      newMatch: newIndex,
+    }
+    p.changeChan <- change
+    return newIndex
+
+  } else if !resp.heartbeat {
+    // If AppendEntries fails because of log inconsistency:
+    // decrement nextIndex and retry (§5.3)
+    newNext := resp.newIndex
+    if newNext > 0 {
+      newNext--
+    }
+    return newNext
+
+  } else {
+    return resp.newIndex
+  }
+}
+
+func (p *raftPeer) sendHeartbeat(index uint64, rc chan rpcResponse) {
   lastIndex, lastTerm := p.r.GetLastIndex()
   ar := &communication.AppendRequest{
     Term: p.r.GetCurrentTerm(),
@@ -88,48 +132,25 @@ func (p *raftPeer) heartbeatPeer() {
     LeaderCommit: p.r.GetCommitIndex(),
   }
 
-  p.r.sendAppend(p.id, ar)
+  go func() {
+    p.r.sendAppend(p.id, ar)
+    rpcResp := rpcResponse{
+      success: true,
+      newIndex: index,
+      heartbeat: true,
+    }
+    rc <- rpcResp
+  }()
 }
 
-func (p *raftPeer) updatePeer(desiredIndex uint64, nextIndex uint64) uint64 {
-  newNext := nextIndex
-  // Requests to update the peer happen via an internal channel.
-  // This prevents starvation of stops and timeouts.
-  success, err := p.sendUpdates(desiredIndex, nextIndex)
-  if err != nil {
-    log.Debugf("Error sending to %d: %v", p.id, err)
-  } else {
-    log.Debugf("Client sent back %v", success)
-  }
-  if success {
-    // If successful: update nextIndex and matchIndex for
-    // follower (§5.3)
-    log.Debugf("Client %d now up to date with index %d", p.id, desiredIndex)
-    newNext = desiredIndex
-    change := peerMatchResult{
-      id: p.id,
-      newMatch: desiredIndex,
-    }
-    p.changeChan <- change
-
-  } else {
-    // If AppendEntries fails because of log inconsistency:
-    // decrement nextIndex and retry (§5.3)
-    if newNext > 0 {
-      newNext--
-      p.updateChan <- true
-    }
-  }
-  return newNext
-}
-
-func (p *raftPeer) sendUpdates(desired uint64, next uint64) (bool, error) {
+func (p *raftPeer) sendUpdates(desired uint64, next uint64, rc chan rpcResponse) error {
   // If last log index ≥ nextIndex for a follower: send AppendEntries RPC
   // with log entries starting at nextIndex
+  // TODO Why not only get stuff since "next" and then slice it to avoid two queries?
   entries, err := p.r.stor.GetEntries(next, desired)
   if err != nil {
-    log.Debugf("Error sending to peer %d: %v", p.id, err)
-    return false, err
+    log.Debugf("Error getting entries for peer %d: %v", p.id, err)
+    return err
   }
 
   log.Debugf("Sending %d entries between %d and %d to %d",
@@ -138,8 +159,8 @@ func (p *raftPeer) sendUpdates(desired uint64, next uint64) (bool, error) {
   lastIndex := next - 1
   lastTerm, _, err := p.r.stor.GetEntry(lastIndex)
   if err != nil {
-    log.Debugf("Error sending to peer %d: %v", p.id, err)
-    return false, err
+    log.Debugf("Error getting entries for peer %d: %v", p.id, err)
+    return err
   }
 
   ar := &communication.AppendRequest{
@@ -151,6 +172,17 @@ func (p *raftPeer) sendUpdates(desired uint64, next uint64) (bool, error) {
     Entries: entries,
   }
 
-  success, err := p.r.sendAppend(p.id, ar)
-  return success, err
+  go func() {
+    success, err := p.r.sendAppend(p.id, ar)
+    newIndex := next
+    if success { newIndex = desired }
+    rpcResp := rpcResponse{
+      success: success,
+      newIndex: newIndex,
+      err: err,
+    }
+    rc <- rpcResp
+  }()
+
+  return nil
 }
