@@ -5,14 +5,6 @@ import (
   "testing"
 )
 
-func TestSqliteMetadata(t *testing.T) {
-  stor, err := CreateSqliteStorage("./metadatatestdb")
-  if err != nil { t.Fatalf("Create db failed: %v", err) }
-  defer stor.Delete()
-  defer stor.Close()
-  metadataTest(t, stor)
-}
-
 func TestLevelDBMetadata(t *testing.T) {
   stor, err := CreateLevelDBStorage("./metadatatestleveldb")
   if err != nil { t.Fatalf("Create db failed: %v", err) }
@@ -37,17 +29,16 @@ func metadataTest(t* testing.T, stor Storage) {
    if err != nil { t.Fatalf("Error on get: %v", err) }
    if val != 234 { t.Fatalf("Received %d instead of %d", val, 234) }
 
+   bval := []byte("Hello, Metadata World!")
+   err = stor.SetRawMetadata(2, bval)
+   if err != nil { t.Fatalf("Error on set: %v", err) }
+   bresult, err := stor.GetRawMetadata(2)
+   if err != nil { t.Fatalf("Error on get: %v", err) }
+   if !bytes.Equal(bresult, bval) { t.Fatal("Bytes metadata does not match") }
+
    val, err = stor.GetMetadata(999)
    if err != nil { t.Fatalf("Error on get: %v", err) }
    if val != 0 { t.Fatalf("Received %d instead of %d", val, 0) }
-}
-
-func TestSqliteEntries(t *testing.T) {
-  stor, err := CreateSqliteStorage("./entrytestdb")
-  if err != nil { t.Fatalf("Create db failed: %v", err) }
-  defer stor.Delete()
-  defer stor.Close()
-  entriesTest(t, stor)
 }
 
 func TestLevelDBEntries(t *testing.T) {

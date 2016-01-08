@@ -8,10 +8,12 @@ type Entry struct {
 
 type Storage interface {
   GetDataPath() string
-  
+
   // Methods for all kinds of metadata
   GetMetadata(key uint) (uint64, error)
+  GetRawMetadata(key uint) ([]byte, error)
   SetMetadata(key uint, val uint64) error
+  SetRawMetadata(key uint, val []byte) error
 
   // Methods for the Raft index
   AppendEntry(index uint64, term uint64, data []byte) error

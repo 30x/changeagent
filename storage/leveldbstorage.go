@@ -181,12 +181,58 @@ func (s *LevelDBStorage) GetMetadata(key uint) (uint64, error) {
   }
 }
 
+func (s *LevelDBStorage) GetRawMetadata(key uint) ([]byte, error) {
+  var valLen C.size_t
+  var e *C.char
+
+  keyBuf, keyLen := uintToKey(MetadataKey, uint64(key))
+  defer C.free(keyBuf)
+
+  val := C.go_leveldb_get(
+    s.db, defaultReadOptions,
+    keyBuf, keyLen,
+    &valLen, &e)
+
+  if val == nil {
+    if e == nil {
+      return nil, nil
+    } else {
+      defer freeString(e)
+      return nil, stringToError(e)
+    }
+  } else {
+    defer freeString(val)
+    val := ptrToBytes(unsafe.Pointer(val), valLen)
+    return val, nil
+  }
+}
+
 func (s *LevelDBStorage) SetMetadata(key uint, val uint64) error {
   var e *C.char
 
   keyBuf, keyLen := uintToKey(MetadataKey, uint64(key))
   defer C.free(keyBuf)
   valBuf, valLen := uintToPtr(val)
+  defer C.free(valBuf)
+
+  C.go_leveldb_put(
+    s.db, defaultWriteOptions,
+    keyBuf, keyLen,
+    valBuf, valLen,
+    &e)
+  if e == nil {
+    return nil
+  }
+  defer freeString(e)
+  return stringToError(e)
+}
+
+func (s *LevelDBStorage) SetRawMetadata(key uint, val []byte) error {
+  var e *C.char
+
+  keyBuf, keyLen := uintToKey(MetadataKey, uint64(key))
+  defer C.free(keyBuf)
+  valBuf, valLen := bytesToPtr(val)
   defer C.free(valBuf)
 
   C.go_leveldb_put(
