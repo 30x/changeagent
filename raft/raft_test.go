@@ -2,6 +2,8 @@ package raft
 
 import (
   "bytes"
+  "net"
+  "strconv"
   "testing"
   "time"
 )
@@ -47,11 +49,71 @@ func TestStopLeader(t *testing.T) {
   }
 
   t.Logf("Stopping leader node %d", testRafts[leaderIndex].id)
-  testRafts[leaderIndex].Close()
-  testListener[leaderIndex].Close()
+  savedId, savedPath, savedPort := stopOneNode(leaderIndex)
   time.Sleep(time.Second)
+
   assertOneLeader(t)
   appendAndVerify(t, "Second test. Yay!", 2)
+  // Previous step read the storage so we can close it now.
+  testRafts[leaderIndex].stor.Close()
+
+  t.Logf("Restarting node %d on port %d", savedId, savedPort)
+  err := restartOneNode(leaderIndex, savedId, savedPath, savedPort)
+  if err != nil { t.Fatalf("Error restarting node: %v", err) }
+
+  time.Sleep(time.Second)
+  assertOneLeader(t)
+  appendAndVerify(t, "Restarted third node. Yay!", 3)
+}
+
+// After stopping one follower, things are pretty normal actually.
+func TestStopFollower(t *testing.T) {
+  assertOneLeader(t)
+
+  var followerIndex int
+  for i, r := range(testRafts) {
+    if r.GetState() == StateFollower {
+      followerIndex = i
+    }
+  }
+
+  t.Logf("Stopping follower node %d", testRafts[followerIndex].id)
+  savedId, savedPath, savedPort := stopOneNode(followerIndex)
+  time.Sleep(time.Second)
+
+  assertOneLeader(t)
+  appendAndVerify(t, "Second test. Yay!", 2)
+  // Previous step read the storage so we can close it now.
+  testRafts[followerIndex].stor.Close()
+
+  t.Logf("Restarting node %d on port %d", savedId, savedPort)
+  err := restartOneNode(followerIndex, savedId, savedPath, savedPort)
+  if err != nil { t.Fatalf("Error restarting node: %v", err) }
+
+  time.Sleep(time.Second)
+  assertOneLeader(t)
+  appendAndVerify(t, "Restarted third node. Yay!", 3)
+}
+
+func stopOneNode(stopId int) (uint64, string, int) {
+  savedId := testRafts[stopId].id
+  savedPath := testRafts[stopId].stor.GetDataPath()
+  _, savedPortStr, _ := net.SplitHostPort(testListener[stopId].Addr().String())
+  savedPort, _ := strconv.Atoi(savedPortStr)
+  testRafts[stopId].Close()
+  testListener[stopId].Close()
+  return savedId, savedPath, savedPort
+}
+
+func restartOneNode(ix int, savedId uint64, savedPath string, savedPort int) error {
+  restartedListener, err := net.ListenTCP("tcp4", &net.TCPAddr{Port: savedPort})
+  if err != nil { return err }
+  testListener[ix] = restartedListener
+  restartedRaft, err :=
+    startRaft(savedId, testDiscovery, testListener[ix], savedPath)
+  if err != nil { return err }
+  testRafts[ix] = restartedRaft
+  return nil
 }
 
 func waitForLeader() int {
@@ -79,7 +141,7 @@ func assertOneLeader(t *testing.T) {
   }
 }
 
-func appendAndVerify(t *testing.T, msg string, expectedCount int) {
+func appendAndVerify(t *testing.T, msg string, expectedCount int) uint64 {
   data := []byte(msg)
   leader := getLeader()
   if leader == nil { t.Fatal("No leader present") }
@@ -92,19 +154,20 @@ func appendAndVerify(t *testing.T, msg string, expectedCount int) {
   t.Logf("Wrote data at index %d", lastIndex + 1)
 
   for i := 0; i < 10; i++ {
-    if verifyIndex(t, lastIndex + 1, data, expectedCount) {
+    if verifyIndex(t, index, data, expectedCount) {
       t.Log("Index now matches")
-      if verifyCommit(t, lastIndex + 1, expectedCount) {
+      if verifyCommit(t, index, expectedCount) {
         t.Log("Commit index matches too")
-        if verifyApplied(t, lastIndex + 1, data, expectedCount) {
+        if verifyApplied(t, index, data, expectedCount) {
           t.Log("Applied data matches too")
-          return
+          return index
         }
       }
     }
     time.Sleep(time.Second)
   }
   t.Fatal("Indices not replicated in time")
+  return lastIndex
 }
 
 func countRafts() (int, int) {

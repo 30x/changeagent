@@ -7,7 +7,9 @@ type Entry struct {
 }
 
 type Storage interface {
-  // Methods for all kinds of metadat
+  GetDataPath() string
+  
+  // Methods for all kinds of metadata
   GetMetadata(key uint) (uint64, error)
   SetMetadata(key uint, val uint64) error
 

@@ -57,28 +57,32 @@ func (p *raftPeer) peerLoop() {
   responseChan := make(chan rpcResponse, 1)
   rpcRunning := false
 
-  // Repaat heartbeats during idle periods to prevent
+  // Repeat heartbeats during idle periods to prevent
   // election timeouts (§5.2)
-  timeout := time.NewTimer(HeartbeatTimeout)
+  hbTimeout := time.NewTimer(HeartbeatTimeout)
+
+  // Provide a way to delay on failure
+  failureDelay := false
 
   for {
-    if !rpcRunning && (desiredIndex > nextIndex) {
+    if !rpcRunning && !failureDelay && (desiredIndex > nextIndex) {
       err := p.sendUpdates(desiredIndex, nextIndex, responseChan)
       if err != nil {
         log.Debugf("Error sending updates to peer: %s", err)
       }
       rpcRunning = true
-      timeout.Reset(HeartbeatTimeout)
+      hbTimeout.Reset(HeartbeatTimeout)
     }
 
     select {
-    case <- timeout.C:
+    case <- hbTimeout.C:
+      failureDelay = false
       if !rpcRunning && (nextIndex == desiredIndex) {
         // Special handling for heartbeats so that a new leader is not elected
         p.sendHeartbeat(desiredIndex, responseChan)
         rpcRunning = true
       }
-      timeout.Reset(HeartbeatTimeout)
+      hbTimeout.Reset(HeartbeatTimeout)
 
     case newIndex := <- p.proposals:
       // These are pushed to this routine from the main raft impl
@@ -86,7 +90,12 @@ func (p *raftPeer) peerLoop() {
 
     case response := <- responseChan:
       rpcRunning = false
-      nextIndex = p.handleRpcResult(response)
+      if response.err == nil {
+        nextIndex = p.handleRpcResult(response)
+      } else {
+        log.Debugf("Error from peer: %s", response.err)
+        failureDelay = true
+      }
 
     case <- p.stopChan:
       log.Debugf("Peer %d stopping", p.id)

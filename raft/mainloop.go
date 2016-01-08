@@ -58,6 +58,7 @@ func (r *RaftImpl) mainLoop() {
       if stopDone != nil {
         stopDone <- true
       }
+      log.Debugf("Node %d stop is complete", r.id)
       return
     case StateStopped:
       return

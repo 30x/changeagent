@@ -80,6 +80,10 @@ func CreateSqliteStorage(dbFile string) (*SqliteStorage, error) {
   return ret, nil
 }
 
+func (s *SqliteStorage) GetDataPath() string {
+  return s.fileName
+}
+
 func (s *SqliteStorage) configureDatabase() error {
   err := s.execSql("pragma journal_mode=WAL")
   if err != nil { return err }

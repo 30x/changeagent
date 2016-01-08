@@ -110,6 +110,10 @@ func CreateLevelDBStorage(baseFile string) (*LevelDBStorage, error) {
   return stor, nil
 }
 
+func (s *LevelDBStorage) GetDataPath() string {
+  return s.baseFile
+}
+
 func (s *LevelDBStorage) openDb(opts *C.leveldb_options_t) (*C.leveldb_t, error) {
   var e *C.char
   dbCName := C.CString(s.baseFile)

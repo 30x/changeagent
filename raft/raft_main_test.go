@@ -23,6 +23,7 @@ var testRafts []*RaftImpl
 var testListener []*net.TCPListener
 var unitTestRaft *RaftImpl
 var unitTestListener *net.TCPListener
+var testDiscovery discovery.Discovery
 
 func TestMain(m *testing.M) {
   os.Exit(runMain(m))
@@ -44,6 +45,9 @@ func runMain(m *testing.M) int {
     testListener = append(testListener, listener)
   }
   disco := discovery.CreateStaticDiscovery(addrs)
+  testDiscovery = disco
+
+  defer cleanRafts()
 
   // Create one more for unit tests
   unitTestListener, err := net.ListenTCP("tcp4", anyPort)
@@ -59,7 +63,6 @@ func runMain(m *testing.M) int {
     return 2
   }
   testRafts = append(testRafts, raft1)
-  defer cleanRaft(raft1, testListener[0])
 
   raft2, err := startRaft(2, disco, testListener[1], path.Join(DataDir, "test2"))
   if err != nil {
@@ -67,7 +70,6 @@ func runMain(m *testing.M) int {
     return 3
   }
   testRafts = append(testRafts, raft2)
-  defer cleanRaft(raft2, testListener[1])
 
   raft3, err := startRaft(3, disco, testListener[2], path.Join(DataDir, "test3"))
   if err != nil {
@@ -75,14 +77,12 @@ func runMain(m *testing.M) int {
     return 4
   }
   testRafts = append(testRafts, raft3)
-  defer cleanRaft(raft3, testListener[2])
 
   unitTestRaft, err = startRaft(1, unitDisco, unitTestListener, path.Join(DataDir, "unit"))
   if err != nil {
     fmt.Printf("Error starting unit test raft: %v", err)
     return 4
   }
-  defer cleanRaft(unitTestRaft, unitTestListener)
   initUnitTests(unitTestRaft)
 
   return m.Run()
@@ -98,9 +98,23 @@ func startRaft(id uint64, disco discovery.Discovery, listener *net.TCPListener, 
   raft, err := StartRaft(id, comm, disco, stor)
   if err != nil { return nil, err }
   comm.SetRaft(raft)
-  go http.Serve(listener, mux)
+  go func(){
+    // Disable HTTP keep-alives to make raft restart tests more reliable
+    svr := &http.Server{
+      Handler: mux,
+    }
+    svr.SetKeepAlivesEnabled(false)
+    svr.Serve(listener)
+  }()
 
   return raft, nil
+}
+
+func cleanRafts() {
+  for i, r := range(testRafts) {
+    cleanRaft(r, testListener[i])
+  }
+  cleanRaft(unitTestRaft, unitTestListener)
 }
 
 func cleanRaft(raft *RaftImpl, l *net.TCPListener) {

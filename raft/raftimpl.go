@@ -165,6 +165,7 @@ func (r *RaftImpl) RequestVote(req *communication.VoteRequest) (*communication.V
 }
 
 func (r *RaftImpl) Append(req *communication.AppendRequest) (*communication.AppendResponse, error) {
+  log.Debugf("Node %d append request. State is %v", r.id, r.GetState())
   if r.GetState() == StateStopping || r.GetState() == StateStopped {
     return nil, errors.New("Raft is stopped")
   }
@@ -175,7 +176,6 @@ func (r *RaftImpl) Append(req *communication.AppendRequest) (*communication.Appe
     rc: rc,
   }
 
-  log.Debugf("Gonna append. State is %v", r.GetState())
   r.appendCommands <- cmd
   resp := <- rc
   return resp, resp.Error
