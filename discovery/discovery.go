@@ -1,5 +1,11 @@
 package discovery
 
+/*
+ * This module contains a set of discovery services that make it easier to
+ * learn which servers are configured as part of a cluster, and make it easier
+ * to know when that configuration changes.
+ */
+
 const (
   StateNew = iota
   StateCatchup = iota
@@ -19,16 +25,30 @@ type Node struct {
 
 type Change struct {
   Action int
-  Node Node
+  Node *Node
 }
 
 type Discovery interface {
+  /*
+   * Get a list of nodes from this discovery service. Safe to be called from
+   * many threads.
+   */
   GetNodes() []Node
+
+  /*
+   * Shortcut to get just the "address" field from a single node identified
+   * by its node ID. Also safe to be called from many threads.
+   */
   GetAddress(id uint64) string
-  AddNode(node *Node) error
-  RemoveNode(id uint64) error
-  //UpdateAddress(id uint64, address string) error
-  //UpdateState(id uint64, state int) error
-  GetChanges() <-chan Change
+
+  /*
+   * Return a channel that will be notified via a Change object every time
+   * the list of nodes is changed.
+   */
+  Watch() <-chan Change
+
+  /*
+   * Stop any resources created by the service.
+   */
   Close()
 }

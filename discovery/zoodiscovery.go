@@ -189,7 +189,7 @@ func (z *ZookeeperDiscovery) sendDifferences(oldNodes map[uint64]*Node, newNodes
       log.Infof("New key %d", k)
       e := Change{
         Action: NewNode,
-        Node: *n,
+        Node: n,
       }
       z.changeChan <- e
     }
