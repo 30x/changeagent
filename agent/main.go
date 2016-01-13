@@ -6,6 +6,7 @@ import (
   "os"
   "net"
   "syscall"
+  "time"
   "os/signal"
   "net/http"
   "revision.aeip.apigee.net/greg/changeagent/discovery"
@@ -15,6 +16,7 @@ import (
 const (
   DefaultNode = 1
   DefaultPort = 8080
+  DefaultConfigScan = 10 * time.Second
 )
 
 func main() {
@@ -54,7 +56,7 @@ func runAgentMain() int {
     return 4
   }
 
-  disco, err := discovery.ReadDiscoveryFile(discoveryFile)
+  disco, err := discovery.ReadDiscoveryFile(discoveryFile, DefaultConfigScan)
   if err != nil {
     fmt.Printf("Error reading discovery file: %s\n", err)
     return 5

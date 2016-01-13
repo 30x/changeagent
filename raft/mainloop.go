@@ -8,6 +8,7 @@ package raft
 import (
   "errors"
   "time"
+  "revision.aeip.apigee.net/greg/changeagent/discovery"
   "revision.aeip.apigee.net/greg/changeagent/log"
 )
 
@@ -127,6 +128,11 @@ func (r *RaftImpl) followerLoop(isCandidate bool, state *raftState) chan bool {
         timeout.Reset(r.randomElectionTimeout())
       }
 
+    case change := <- r.configChanges:
+      // Discovery service now up to date, so not much to do
+      log.Infof("Received configuration change type %d for node %d",
+        change.Action, change.Node.Id)
+
     case stopDone := <- r.stopChan:
       r.setState(StateStopping)
       return stopDone
@@ -199,6 +205,9 @@ func (r *RaftImpl) leaderLoop(state *raftState) chan bool {
       r.setCommitIndex(newIndex)
       r.applyCommittedEntries(newIndex)
 
+    case change := <- r.configChanges:
+      r.handleLeaderConfigChange(state, change)
+
     case stopDone := <- r.stopChan:
       r.setState(StateStopping)
       stopPeers(state)
@@ -210,6 +219,25 @@ func (r *RaftImpl) leaderLoop(state *raftState) chan bool {
 func stopPeers(state *raftState) {
   for _, p := range(state.peers) {
     p.stop()
+  }
+}
+
+func (r *RaftImpl) handleLeaderConfigChange(state *raftState, change discovery.Change) {
+  id := change.Node.Id
+  switch change.Action {
+  case discovery.NewNode:
+    log.Infof("Adding new node %d", id)
+    state.peers[id] = startPeer(id, r, state.peerMatchChanges)
+    state.peerMatches[id] = 0
+
+  case discovery.DeletedNode:
+    log.Infof("Stopping communications to node %d", id)
+    state.peers[id].stop()
+    delete(state.peers, id)
+    delete(state.peerMatches, id)
+
+  case discovery.UpdatedNode:
+    log.Infof("New address for node %d: %s", id, change.Node.Address)
   }
 }
 

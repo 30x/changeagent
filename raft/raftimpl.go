@@ -35,6 +35,7 @@ type RaftImpl struct {
   state int
   comm communication.Communication
   disco discovery.Discovery
+  configChanges <-chan discovery.Change
   stor storage.Storage
   stopChan chan chan bool
   voteCommands chan voteCommand
@@ -111,6 +112,8 @@ func StartRaft(id uint64,
   r.currentTerm = r.readCurrentTerm()
   r.commitIndex = r.readLastCommit()
   r.lastApplied = r.readLastApplied()
+
+  r.configChanges = disco.Watch()
 
   go r.mainLoop()
 
