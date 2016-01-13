@@ -33,6 +33,7 @@ const (
 type RaftImpl struct {
   id uint64
   state int
+  leaderId uint64
   comm communication.Communication
   disco discovery.Discovery
   configChanges <-chan discovery.Change
@@ -212,6 +213,30 @@ func (r *RaftImpl) GetState() int {
   return r.state
 }
 
+func (r *RaftImpl) setState(newState int) {
+  r.latch.Lock()
+  defer r.latch.Unlock()
+  log.Debugf("Node %d: setting state to %d", r.id, newState)
+  r.state = newState
+}
+
+func (r *RaftImpl) GetLeaderId() uint64 {
+  r.latch.Lock()
+  defer r.latch.Unlock()
+  return r.leaderId
+}
+
+func (r *RaftImpl) setLeaderId(newId uint64) {
+  r.latch.Lock()
+  defer r.latch.Unlock()
+  if newId == 0 {
+    log.Debugf("Node %d: No leader present")
+  } else {
+    log.Debugf("Node %d: Node %d is now the leader", r.id, newId)
+  }
+  r.leaderId = newId
+}
+
 func (r *RaftImpl) GetCurrentTerm() uint64 {
   r.latch.Lock()
   defer r.latch.Unlock()
@@ -274,13 +299,6 @@ func (r *RaftImpl) setLastIndex(ix uint64, term uint64) {
 // Used only in unit testing. Forces us to never become a leader.
 func (r *RaftImpl) setFollowerOnly(f bool) {
   r.followerOnly = f
-}
-
-func (r *RaftImpl) setState(newState int) {
-  r.latch.Lock()
-  defer r.latch.Unlock()
-  log.Debugf("Node %d: setting state to %d", r.id, newState)
-  r.state = newState
 }
 
 func (r *RaftImpl) readCurrentTerm() uint64 {

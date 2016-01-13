@@ -14,6 +14,8 @@ It has these top-level messages:
 	EntryPb
 	AppendRequestPb
 	AppendResponsePb
+	ProposalPb
+	ProposalResponsePb
 */
 package communication
 
@@ -208,4 +210,44 @@ func (m *AppendResponsePb) GetSuccess() bool {
 		return *m.Success
 	}
 	return false
+}
+
+type ProposalPb struct {
+	Data             []byte `protobuf:"bytes,1,req,name=data" json:"data,omitempty"`
+	XXX_unrecognized []byte `json:"-"`
+}
+
+func (m *ProposalPb) Reset()         { *m = ProposalPb{} }
+func (m *ProposalPb) String() string { return proto.CompactTextString(m) }
+func (*ProposalPb) ProtoMessage()    {}
+
+func (m *ProposalPb) GetData() []byte {
+	if m != nil {
+		return m.Data
+	}
+	return nil
+}
+
+type ProposalResponsePb struct {
+	NewIndex         *uint64 `protobuf:"varint,1,req,name=newIndex" json:"newIndex,omitempty"`
+	Error            *string `protobuf:"bytes,2,opt,name=error" json:"error,omitempty"`
+	XXX_unrecognized []byte  `json:"-"`
+}
+
+func (m *ProposalResponsePb) Reset()         { *m = ProposalResponsePb{} }
+func (m *ProposalResponsePb) String() string { return proto.CompactTextString(m) }
+func (*ProposalResponsePb) ProtoMessage()    {}
+
+func (m *ProposalResponsePb) GetNewIndex() uint64 {
+	if m != nil && m.NewIndex != nil {
+		return *m.NewIndex
+	}
+	return 0
+}
+
+func (m *ProposalResponsePb) GetError() string {
+	if m != nil && m.Error != nil {
+		return *m.Error
+	}
+	return ""
 }

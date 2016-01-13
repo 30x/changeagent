@@ -85,6 +85,7 @@ func (r *RaftImpl) followerLoop(isCandidate bool, state *raftState) chan bool {
       log.Debugf("Node %d: election timeout", r.id)
       if !r.followerOnly {
         r.setState(StateCandidate)
+        r.setLeaderId(0)
         return nil
       }
 
@@ -104,15 +105,33 @@ func (r *RaftImpl) followerLoop(isCandidate bool, state *raftState) chan bool {
         state.votedFor = 0
         r.writeLastVote(0)
         r.setState(StateFollower)
+        r.setLeaderId(appendCmd.ar.LeaderId)
       }
       r.handleAppend(state, appendCmd)
       timeout.Reset(r.randomElectionTimeout())
 
     case prop := <- r.proposals:
-      pr := proposalResult{
-        err: errors.New("Cannot accept proposal because we are not the leader"),
+      leaderId := r.GetLeaderId()
+      if leaderId == 0 {
+        pr := proposalResult{
+          err: errors.New("Cannot accept proposal because there is no leader"),
+        }
+        prop.rc <- pr
+      } else {
+        go func() {
+          log.Debugf("Forwarding proposal to leader node %d", leaderId)
+          fr, err := r.comm.Propose(leaderId, prop.data)
+          pr := proposalResult{
+            index: fr.NewIndex,
+          }
+          if err != nil {
+            pr.err = err
+          } else if fr.Error != nil {
+            pr.err = fr.Error
+          }
+          prop.rc <- pr
+        }()
       }
-      prop.rc <- pr
 
     case vr := <- state.voteResults:
       if vr.index == state.voteIndex {
@@ -122,6 +141,7 @@ func (r *RaftImpl) followerLoop(isCandidate bool, state *raftState) chan bool {
         log.Debugf("Node %d received the election result: %v", r.id, vr.result)
         if vr.result {
           r.setState(StateLeader)
+          r.setLeaderId(0)
           return nil
         }
         // Voting failed. Try again after timeout.
@@ -183,6 +203,7 @@ func (r *RaftImpl) leaderLoop(state *raftState) chan bool {
         state.votedFor = 0
         r.writeLastVote(0)
         r.setState(StateFollower)
+        r.setLeaderId(appendCmd.ar.LeaderId)
         stopPeers(state)
         r.handleAppend(state, appendCmd)
         return nil

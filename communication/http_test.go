@@ -29,7 +29,8 @@ func TestRaftCalls(t *testing.T) {
   discovery := discovery.CreateStaticDiscovery(addrs)
   testRaft := makeTestRaft(t)
   mux := http.NewServeMux()
-  comm, err := StartHttpCommunication(mux, discovery)
+  var comm Communication
+  comm, err = StartHttpCommunication(mux, discovery)
   if err != nil { t.Fatalf("Error starting raft: %v", err) }
   comm.SetRaft(testRaft)
   go http.Serve(listener, mux)
@@ -80,10 +81,15 @@ func TestRaftCalls(t *testing.T) {
   expectedEntries = ar.Entries
 
   aresp, err = comm.Append(1, &ar)
-  if err != nil { t.Fatalf("Error from voteResponse: %v", resp.Error) }
+  if err != nil { t.Fatalf("Error from voteResponse: %v", err) }
   if aresp.Error != nil { t.Fatalf("Error from voteResponse: %v", aresp.Error) }
   if aresp.Term != 2 { t.Fatalf("Expected term 2, got %d", resp.Term) }
   if aresp.Success { t.Fatal("Expected not success") }
+
+  presp, err := comm.Propose(1, []byte("Hello, World!"))
+  if err != nil { t.Fatalf("Error from propose: %v", err) }
+  if presp.Error != nil { t.Fatalf("Error from propose: %v", presp.Error) }
+  if presp.NewIndex == 0 { t.Fatal("Expected a non-zero index") }
 }
 
 type testRaft struct {
@@ -127,4 +133,8 @@ func (r *testRaft) Append(req *AppendRequest) (*AppendResponse, error) {
     }
   }
   return &vr, nil
+}
+
+func (r *testRaft) Propose(data []byte) (uint64, error) {
+  return 123, nil
 }

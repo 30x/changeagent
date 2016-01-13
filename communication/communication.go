@@ -8,6 +8,7 @@ type Raft interface {
   MyId() uint64
   RequestVote(req *VoteRequest) (*VoteResponse, error)
   Append(req *AppendRequest) (*AppendResponse, error)
+  Propose(data []byte) (uint64, error)
 }
 
 type VoteRequest struct {
@@ -40,8 +41,14 @@ type AppendResponse struct {
   Error error
 }
 
+type ProposalResponse struct {
+  NewIndex uint64
+  Error error
+}
+
 type Communication interface {
   SetRaft(raft Raft)
   RequestVote(id uint64, req *VoteRequest, ch chan *VoteResponse)
   Append(id uint64, req *AppendRequest) (*AppendResponse, error)
+  Propose(id uint64, data []byte) (*ProposalResponse, error)
 }

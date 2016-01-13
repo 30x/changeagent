@@ -2,6 +2,7 @@ package communication
 
 import (
   "bytes"
+  "errors"
   "fmt"
   "time"
   "io/ioutil"
@@ -16,6 +17,7 @@ const (
   ContentType = "application/changeagent+protobuf"
   RequestVoteUri = "/raft/requestvote"
   AppendUri = "/raft/append"
+  ProposeUri = "/raft/propose"
   RequestTimeout = 10 * time.Second
 )
 
@@ -35,6 +37,7 @@ func StartHttpCommunication(mux *http.ServeMux,
   }
   mux.HandleFunc(RequestVoteUri, comm.handleRequestVote)
   mux.HandleFunc(AppendUri, comm.handleAppend)
+  mux.HandleFunc(ProposeUri, comm.handlePropose)
   return &comm, nil
 }
 
@@ -171,6 +174,53 @@ func (h *HttpCommunication) Append(id uint64, req *AppendRequest) (*AppendRespon
   return appResp, nil
 }
 
+func (h *HttpCommunication) Propose(id uint64, data []byte) (*ProposalResponse, error) {
+  addr := h.discovery.GetAddress(id)
+  if addr == "" {
+    return nil, fmt.Errorf("Invalid peer ID %d", id)
+  }
+
+  uri := fmt.Sprintf("http://%s%s", addr, ProposeUri)
+
+  reqPb := ProposalPb{
+    Data: data,
+  }
+
+  reqBody, err := proto.Marshal(&reqPb)
+  if err != nil {
+    return nil, err
+  }
+
+  resp, err := httpClient.Post(uri, ContentType, bytes.NewReader(reqBody))
+  if err != nil {
+    return nil, err
+  }
+  defer resp.Body.Close()
+
+  log.Debugf("Got back %d", resp.StatusCode)
+  if resp.StatusCode != 200 {
+    return nil, fmt.Errorf("HTTP status %d %s", resp.StatusCode, resp.Status)
+  }
+
+  respBody, err := ioutil.ReadAll(resp.Body)
+  if err != nil {
+    return nil, err
+  }
+
+  var respPb ProposalResponsePb
+  err = proto.Unmarshal(respBody, &respPb)
+  if err != nil {
+    return nil, err
+  }
+
+  appResp := &ProposalResponse{
+    NewIndex: respPb.GetNewIndex(),
+  }
+  if respPb.GetError() != "" {
+    appResp.Error = errors.New(respPb.GetError())
+  }
+  return appResp, nil
+}
 
 func (h *HttpCommunication) handleRequestVote(resp http.ResponseWriter, req *http.Request) {
   defer req.Body.Close()
@@ -277,6 +327,55 @@ func (h *HttpCommunication) handleAppend(resp http.ResponseWriter, req *http.Req
   respPb := AppendResponsePb{
     Term: &appResp.Term,
     Success: &appResp.Success,
+  }
+
+  respBody, err := proto.Marshal(&respPb)
+  if err != nil {
+    resp.WriteHeader(http.StatusInternalServerError)
+    return
+  }
+
+  resp.Header().Set(http.CanonicalHeaderKey("content-type"), ContentType)
+  resp.Write(respBody)
+}
+
+func (h *HttpCommunication) handlePropose(resp http.ResponseWriter, req *http.Request) {
+  defer req.Body.Close()
+
+  if req.Method != "POST" {
+    resp.WriteHeader(http.StatusMethodNotAllowed)
+    return
+  }
+
+  if req.Header.Get(http.CanonicalHeaderKey("content-type")) != ContentType {
+    resp.WriteHeader(http.StatusUnsupportedMediaType)
+    return
+  }
+  body, err := ioutil.ReadAll(req.Body)
+  if err != nil {
+    resp.WriteHeader(http.StatusInternalServerError)
+    return
+  }
+
+  var reqpb ProposalPb
+  err = proto.Unmarshal(body, &reqpb)
+  if err != nil {
+    resp.WriteHeader(http.StatusBadRequest)
+    return
+  }
+
+  newIndex, err := h.raft.Propose(reqpb.GetData())
+  if err != nil {
+    resp.WriteHeader(http.StatusInternalServerError)
+    return
+  }
+
+  respPb := ProposalResponsePb{
+    NewIndex: &newIndex,
+  }
+  if err != nil {
+    errMsg := err.Error()
+    respPb.Error = &errMsg
   }
 
   respBody, err := proto.Marshal(&respPb)

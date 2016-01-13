@@ -32,3 +32,12 @@ message AppendResponsePb {
   required uint64 term = 1;
   required bool success = 2;
 }
+
+message ProposalPb {
+  required bytes data = 1;
+}
+
+message ProposalResponsePb {
+  required uint64 newIndex = 1;
+  optional string error = 2;
+}
