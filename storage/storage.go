@@ -1,8 +1,14 @@
 package storage
 
+import "time"
+
 type Entry struct {
   Index uint64
   Term uint64
+  Timestamp time.Time
+  Tenant string
+  Collection string
+  Key string
   Data []byte
 }
 

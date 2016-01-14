@@ -1,0 +1,11 @@
+package storage;
+
+message EntryPb {
+  required uint64 index = 1;
+  optional uint64 term = 2;
+  optional int64 timestamp = 3;
+  optional string tenant = 4;
+  optional string collection  = 5;
+  optional string key = 6;
+  optional bytes data = 7;
+}

@@ -47,8 +47,6 @@ func runMain(m *testing.M) int {
   disco := discovery.CreateStaticDiscovery(addrs)
   testDiscovery = disco
 
-  defer cleanRafts()
-
   // Create one more for unit tests
   unitTestListener, err := net.ListenTCP("tcp4", anyPort)
   if err != nil { panic("Can't listen on a TCP port") }
@@ -63,6 +61,7 @@ func runMain(m *testing.M) int {
     return 2
   }
   testRafts = append(testRafts, raft1)
+  defer cleanRafts()
 
   raft2, err := startRaft(2, disco, testListener[1], path.Join(DataDir, "test2"))
   if err != nil {

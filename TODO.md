@@ -2,37 +2,17 @@
 
 ## High Priority
 
-Forward requests from non-leaders to the leader. Return 503 if we are not a follower.
-
-Add tenant ID and key to each entry.
-
-Add timestamp to each entry.
-
 Support API queries that filter by tenant ID and key.
-
-Support discovery of new nodes.
-  Simplest proposal: Just wait for a notification from ZK and start to replicate.
-  Store discovery locally in case there is an issue and we can't get it at startup time.
-  Followers:
-    Change in discovery will only take effect when we become a candidate
-  Leaders:
-    Changes have to be pushed to leader so it can start new peers
-
-Support removal of existing nodes.
-  Followers:
-    Nothing to do. If it was the leader then we will elect a new one.
-      Make sure that node list is consistent every time we start election.
-  Leader:
-    If we're the leader and we stop, well does it matter?
-    Only if there are un-committed changes!
 
 TLS everywhere.
   Specify CA for trusted connections from server to server.
   Optional CA for API calls.
 
-Add version numbers to all keys and values in the database.
-
 Add a version number to the whole database!
+
+Test and understand ramifications of current cluster configuration changes.
+
+Come up with a graceful shutdown procedure for the leader.
 
 ## Lower Priority
 

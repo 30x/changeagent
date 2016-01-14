@@ -1,73 +1,10 @@
 package storage
 
 /*
-#include <stdio.h>
 #include <stdlib.h>
-#include <leveldb/c.h>
+#include "leveldb_native.h"
+#cgo CFLAGS: -O0 -g -Wall
 #cgo LDFLAGS: -lleveldb
-
-static char* go_leveldb_get(
-    leveldb_t* db,
-    const leveldb_readoptions_t* options,
-    const void* key, size_t keylen,
-    size_t* vallen,
-    char** errptr) {
-  return leveldb_get(db, options, (const char*)key, keylen, vallen, errptr);
-}
-
-static void go_leveldb_put(
-    leveldb_t* db,
-    const leveldb_writeoptions_t* options,
-    const void* key, size_t keylen,
-    const void* val, size_t vallen,
-    char** errptr) {
-  leveldb_put(db, options, (const char*)key, keylen,
-              (const char*)val, vallen, errptr);
-}
-
-static void go_leveldb_delete(
-    leveldb_t* db,
-    const leveldb_writeoptions_t* options,
-    const void* key, size_t keylen,
-    char** errptr) {
-  leveldb_delete(db, options, (const char*)key, keylen, errptr);
-}
-
-static void go_leveldb_iter_seek(leveldb_iterator_t* it,
-    const void* k, size_t klen) {
-  leveldb_iter_seek(it, (const char*)k, klen);
-}
-
-int go_compare_bytes(
-  void* state,
-  const char* a, size_t alen,
-  const char* b, size_t blen) {
-  if ((alen != 9) || (blen != 9)) { return 0; }
-  if (a[0] == b[0]) {
-    unsigned long long* av = (unsigned long long*)(&a[1]);
-    unsigned long long* bv = (unsigned long long*)(&b[1]);
-    if (*av > *bv) {
-      return 1;
-    } else if (*av < *bv) {
-      return -1;
-    } else {
-      return 0;
-    }
-  } else if (a[0] > b[0]) {
-    return 1;
-  } else {
-    return -1;
-  }
-}
-
-static const char* go_comparator_name(void* v) {
-  return "ByteComparator";
-}
-
-static leveldb_comparator_t* go_create_comparator() {
-  return leveldb_comparator_create(
-    NULL, NULL, go_compare_bytes, go_comparator_name);
-}
 */
 import "C"
 
@@ -75,11 +12,6 @@ import (
   "errors"
   "unsafe"
   "revision.aeip.apigee.net/greg/changeagent/log"
-)
-
-const (
-  MetadataKey = 1
-  EntryKey = 2
 )
 
 var defaultWriteOptions *C.leveldb_writeoptions_t = C.leveldb_writeoptions_create();
@@ -253,7 +185,12 @@ func (s *LevelDBStorage) AppendEntry(index uint64, term uint64, data []byte) err
   var e *C.char
   keyPtr, keyLen := uintToKey(EntryKey, index)
   defer C.free(keyPtr)
-  valPtr, valLen := entryToPtr(term, data)
+
+  newEntry := &Entry{
+    Term: term,
+    Data: data,
+  }
+  valPtr, valLen := entryToPtr(newEntry)
   defer C.free(valPtr)
 
   C.go_leveldb_put(
@@ -289,7 +226,9 @@ func (s *LevelDBStorage) GetEntry(index uint64) (uint64, []byte, error) {
     }
   } else {
     defer freeString(valPtr)
-    return ptrToEntry(unsafe.Pointer(valPtr), valLen)
+    entry, err := ptrToEntry(unsafe.Pointer(valPtr), valLen)
+    if err != nil { return 0, nil, err }
+    return entry.Term, entry.Data, nil
   }
 }
 
@@ -356,13 +295,17 @@ func readIterPosition(it *C.leveldb_iterator_t) (uint64, int, uint64, []byte, er
   keyType, key, err := keyToUint(unsafe.Pointer(keyPtr), keyLen)
   if err != nil { return 0, 0, 0, nil, err }
 
+  if keyType != EntryKey {
+    // This function is just for reading index entries. Short-circuit if we see something else.
+    return key, keyType, 0, nil, nil
+  }
+
   var valLen C.size_t
   valPtr := C.leveldb_iter_value(it, &valLen)
 
-  term, data, err := ptrToEntry(unsafe.Pointer(valPtr), valLen)
+  entry, err := ptrToEntry(unsafe.Pointer(valPtr), valLen)
   if err != nil { return 0, 0, 0, nil, err }
-
-  return key, keyType, term, data, nil
+  return key, keyType, entry.Term, entry.Data, nil
 }
 
 // Return index and term of everything from index to the end
