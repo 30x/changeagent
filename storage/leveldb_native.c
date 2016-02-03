@@ -95,10 +95,10 @@ static int compare_index_key(
 
   // Check for special "range" flags
   if (colllena == START_RANGE) {
-    return -1;
+    return (colllenb == START_RANGE ? 0 : -1);
   }
   if (colllena == END_RANGE) {
-    return 1;
+    return (colllenb == END_RANGE ? 0 : 1);
   }
   if (colllenb == START_RANGE) {
     return 1;
@@ -121,10 +121,10 @@ static int compare_index_key(
 
   // Keep going, check more "range" flags
   if (keylena == START_RANGE) {
-    return -1;
+    return (keylenb == START_RANGE ? 0 : -1);
   }
   if (keylena == END_RANGE) {
-    return 1;
+    return (keylenb == END_RANGE ? 0 : 1);
   }
   if (keylenb == START_RANGE) {
     return 1;

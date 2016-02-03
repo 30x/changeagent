@@ -3,7 +3,9 @@ package raft
 import (
   "fmt"
   "testing"
+  "time"
   "revision.aeip.apigee.net/greg/changeagent/log"
+  "revision.aeip.apigee.net/greg/changeagent/storage"
 )
 
 func BenchmarkSlowAppends(b *testing.B) {
@@ -28,7 +30,11 @@ func doAppendBenchmark(b *testing.B, waitFrequency int) {
   lastIndex, _ := leader.GetLastIndex()
   for i := 0; i < b.N; i++ {
     proposal := fmt.Sprintf("Benchmark entry %d", i)
-    newIndex, err := leader.Propose([]byte(proposal))
+    newEntry := storage.Entry{
+      Timestamp: time.Now(),
+      Data: []byte(proposal),
+    }
+    newIndex, err := leader.Propose(&newEntry)
     if err != nil { b.Fatalf("Error on proposal: %v", err) }
     if newIndex != (lastIndex + 1) {
       b.Fatalf("Expected new index of %d rather than %d", lastIndex + 1, newIndex)

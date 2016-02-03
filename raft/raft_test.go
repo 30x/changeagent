@@ -6,6 +6,7 @@ import (
   "strconv"
   "testing"
   "time"
+  "revision.aeip.apigee.net/greg/changeagent/storage"
 )
 
 const (
@@ -146,7 +147,11 @@ func appendAndVerify(t *testing.T, msg string, expectedCount int) uint64 {
   leader := getLeader()
   if leader == nil { t.Fatal("No leader present") }
   lastIndex, _ := leader.GetLastIndex()
-  index, err := leader.Propose(data)
+  newEntry := storage.Entry{
+    Data: data,
+    Timestamp: time.Now(),
+  }
+  index, err := leader.Propose(&newEntry)
   if err != nil { t.Fatalf("Proposal failed: %v", err) }
   if index != (lastIndex + 1) {
     t.Fatalf("Expected index %d and got %d", lastIndex + 1, index)
@@ -198,13 +203,12 @@ func verifyIndex(t *testing.T, ix uint64, expected []byte, expectedCount int) bo
   correctCount := 0
   for _, raft := range(testRafts) {
     verified := true
-    _, data, err := raft.stor.GetEntry(ix)
+    entry, err := raft.stor.GetEntry(ix)
     if err != nil { t.Fatalf("Error getting entry: %v", err) }
-    if data == nil {
+    if entry == nil {
       t.Logf("Index %d not replicated to raft %d", ix, raft.id)
       verified = false
-    }
-    if !bytes.Equal(expected, data) {
+    } else if !bytes.Equal(expected, entry.Data) {
       t.Log("Data in log does not match")
       verified = false
     }

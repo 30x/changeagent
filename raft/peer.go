@@ -166,10 +166,14 @@ func (p *raftPeer) sendUpdates(desired uint64, next uint64, rc chan rpcResponse)
     len(entries), next, desired, p.id)
 
   lastIndex := next - 1
-  lastTerm, _, err := p.r.stor.GetEntry(lastIndex)
+  lastEntry, err := p.r.stor.GetEntry(lastIndex)
   if err != nil {
     log.Debugf("Error getting entries for peer %d: %v", p.id, err)
     return err
+  }
+  lastTerm := uint64(0)
+  if lastEntry != nil {
+    lastTerm = lastEntry.Term
   }
 
   ar := &communication.AppendRequest{

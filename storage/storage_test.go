@@ -2,17 +2,21 @@ package storage
 
 import (
   "bytes"
+  "flag"
   "testing"
+  "time"
+  "os"
 )
 
 func TestLevelDBMetadata(t *testing.T) {
+  flag.Set("logtostderr", "true")
   stor, err := CreateLevelDBStorage("./metadatatestleveldb")
   if err != nil { t.Fatalf("Create db failed: %v", err) }
   defer func() {
+    stor.Close()
     err := stor.Delete()
     if err != nil { t.Logf("Error deleting database: %v", err) }
   }()
-  defer stor.Close()
   metadataTest(t, stor)
 }
 
@@ -42,13 +46,15 @@ func metadataTest(t* testing.T, stor Storage) {
 }
 
 func TestLevelDBEntries(t *testing.T) {
+  flag.Set("logtostderr", "true")
   stor, err := CreateLevelDBStorage("./entrytestleveldb")
   if err != nil { t.Fatalf("Create db failed: %v", err) }
   defer func() {
+    stor.Dump(os.Stdout, 25)
+    stor.Close()
     err := stor.Delete()
     if err != nil { t.Logf("Error deleting database: %v", err) }
   }()
-  defer stor.Close()
   entriesTest(t, stor)
 }
 
@@ -62,10 +68,9 @@ func entriesTest(t *testing.T, stor Storage) {
   if err != nil { t.Fatalf("error on getEntries: %v", err) }
   if len(entries) != 0 { t.Fatalf("Expected no entries and got %d", len(entries)) }
 
-  term, data, err := stor.GetEntry(1)
+  entry, err := stor.GetEntry(1)
   if err != nil { t.Fatalf("error on get: %v", err) }
-  if term != 0 { t.Fatalf("Expected term 0 and got %d", term) }
-  if data != nil { t.Fatal("expected nil data") }
+  if entry != nil { t.Fatal("expected nil entry") }
 
   hello := []byte("Hello!")
 
@@ -78,20 +83,30 @@ func entriesTest(t *testing.T, stor Storage) {
   if max != 0 { t.Fatalf("Expected 0 max index and got %d", max) }
   if term != 0 { t.Fatalf("Expected 0 max term and got %d", term) }
 
-  err = stor.AppendEntry(1, 1, nil)
-  if err != nil { t.Fatalf("error on append: %v", err) }
-  err = stor.AppendEntry(2, 1, hello)
+  entry1 := &Entry{
+    Index: 1,
+    Term: 1,
+    Timestamp: time.Now(),
+  }
+  err = stor.AppendEntry(entry1)
   if err != nil { t.Fatalf("error on append: %v", err) }
 
-  term, data, err = stor.GetEntry(1)
-  if err != nil { t.Fatalf("error on get: %v", err) }
-  if term != 1 { t.Fatalf("Expected term 1 and got %d", term) }
-  if data != nil { t.Fatalf("Expected nil data and got %v", data) }
+  entry2 := &Entry{
+    Index: 2,
+    Term: 1,
+    Timestamp: time.Now(),
+    Data: hello,
+  }
+  err = stor.AppendEntry(entry2)
+  if err != nil { t.Fatalf("error on append: %v", err) }
 
-  term, data, err = stor.GetEntry(2)
+  re, err := stor.GetEntry(1)
   if err != nil { t.Fatalf("error on get: %v", err) }
-  if term != 1 { t.Fatalf("Expected term 1 and got %d", term) }
-  if bytes.Compare(hello, data) != 0 { t.Fatal("Expected bytes to match") }
+  if !entriesMatch(t, entry1, re) { t.Fatal("No match") }
+
+  re, err = stor.GetEntry(2)
+  if err != nil { t.Fatalf("error on get: %v", err) }
+  if !entriesMatch(t, entry2, re) { t.Fatal("No match") }
 
   max, term, err = stor.GetLastIndex()
   if err != nil { t.Fatalf("error on get max: %v", err) }
@@ -110,12 +125,8 @@ func entriesTest(t *testing.T, stor Storage) {
   entries, err = stor.GetEntries(1, 2)
   if err != nil { t.Fatalf("error on getEntries: %v", err) }
   if len(entries) != 2 { t.Fatalf("Expected 2 entries and got %d", len(entries)) }
-  if entries[0].Index != 1 { t.Fatalf("Expected index 1 and got %d", term) }
-  if entries[0].Term != 1 { t.Fatalf("Expected term 1 and got %d", term) }
-  if entries[0].Data != nil { t.Fatalf("Expected nil data") }
-  if entries[1].Index != 2 { t.Fatalf("Expected index 2 and got %d", term) }
-  if entries[1].Term != 1 { t.Fatalf("Expected term 1 and got %d", term) }
-  if bytes.Compare(hello, entries[1].Data) != 0 { t.Fatal("Expected bytes to match") }
+  if !entriesMatch(t, entry1, &entries[0]) { t.Fatal("No match") }
+  if !entriesMatch(t, entry2, &entries[1]) { t.Fatal("No match") }
 
   err = stor.DeleteEntries(1)
   if err != nil { t.Fatalf("error on delete: %v", err) }
@@ -126,4 +137,15 @@ func entriesTest(t *testing.T, stor Storage) {
 
   err = stor.DeleteEntries(1)
   if err != nil { t.Fatalf("error on delete: %v", err) }
+}
+
+func entriesMatch(t *testing.T, e1 *Entry, e2 *Entry) bool {
+  if e1.Index != e2.Index { t.Log("Index does not match"); return false }
+  if e1.Term != e2.Term { t.Log("Term does not match"); return false  }
+  if !e1.Timestamp.Equal(e2.Timestamp) { t.Logf("Timestamp %v does not match %v", e1.Timestamp, e2.Timestamp); return false  }
+  if e1.Tenant != e2.Tenant { t.Log("Tenant does not match"); return false  }
+  if e1.Collection != e2.Collection { t.Log("Collection does not match"); return false  }
+  if e1.Key != e2.Key { t.Log("Key does not match"); return false  }
+  if !bytes.Equal(e1.Data, e2.Data) { t.Log("Data does not match"); return false  }
+  return true
 }

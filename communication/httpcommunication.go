@@ -130,14 +130,9 @@ func (h *HttpCommunication) Append(id uint64, req *AppendRequest) (*AppendRespon
     LeaderCommit: &req.LeaderCommit,
   }
   for _, e := range req.Entries {
-    index := e.Index
-    term := e.Term
-    ne := EntryPb{
-      Index: &index,
-      Term: &term,
-      Data: e.Data,
-    }
-    reqPb.Entries = append(reqPb.Entries, &ne)
+    ebytes, err := storage.EncodeEntry(&e)
+    if err != nil { return nil, err }
+    reqPb.Entries = append(reqPb.Entries, ebytes)
   }
 
   reqBody, err := proto.Marshal(&reqPb)
@@ -174,7 +169,7 @@ func (h *HttpCommunication) Append(id uint64, req *AppendRequest) (*AppendRespon
   return appResp, nil
 }
 
-func (h *HttpCommunication) Propose(id uint64, data []byte) (*ProposalResponse, error) {
+func (h *HttpCommunication) Propose(id uint64, e *storage.Entry) (*ProposalResponse, error) {
   addr := h.discovery.GetAddress(id)
   if addr == "" {
     return nil, fmt.Errorf("Invalid peer ID %d", id)
@@ -182,11 +177,7 @@ func (h *HttpCommunication) Propose(id uint64, data []byte) (*ProposalResponse, 
 
   uri := fmt.Sprintf("http://%s%s", addr, ProposeUri)
 
-  reqPb := ProposalPb{
-    Data: data,
-  }
-
-  reqBody, err := proto.Marshal(&reqPb)
+  reqBody, err := storage.EncodeEntry(e)
   if err != nil {
     return nil, err
   }
@@ -310,12 +301,13 @@ func (h *HttpCommunication) handleAppend(resp http.ResponseWriter, req *http.Req
     LeaderCommit: reqpb.GetLeaderCommit(),
   }
   for _, e := range reqpb.GetEntries() {
-    ne := storage.Entry{
-      Index: e.GetIndex(),
-      Term: e.GetTerm(),
-      Data: e.GetData(),
+    newEntry, err := storage.DecodeEntry(e)
+    if err != nil {
+      resp.WriteHeader(http.StatusBadRequest)
+      return
     }
-    apReq.Entries = append(apReq.Entries, ne)
+
+    apReq.Entries = append(apReq.Entries, *newEntry)
   }
 
   appResp, err := h.raft.Append(&apReq)
@@ -357,14 +349,13 @@ func (h *HttpCommunication) handlePropose(resp http.ResponseWriter, req *http.Re
     return
   }
 
-  var reqpb ProposalPb
-  err = proto.Unmarshal(body, &reqpb)
+  newEntry, err := storage.DecodeEntry(body)
   if err != nil {
     resp.WriteHeader(http.StatusBadRequest)
     return
   }
 
-  newIndex, err := h.raft.Propose(reqpb.GetData())
+  newIndex, err := h.raft.Propose(newEntry)
   if err != nil {
     resp.WriteHeader(http.StatusInternalServerError)
     return

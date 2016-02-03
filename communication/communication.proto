@@ -13,28 +13,18 @@ message VoteResponsePb {
   required bool voteGranted = 3;
 }
 
-message EntryPb {
-  required uint64 index = 1;
-  required uint64 term = 2;
-  optional bytes data = 3;
-}
-
 message AppendRequestPb {
   required uint64 term = 1;
   required uint64 leaderId = 2;
   required uint64 prevLogIndex = 3;
   required uint64 prevLogTerm = 4;
   required uint64 leaderCommit = 5;
-  repeated EntryPb entries = 6;
+  repeated bytes entries = 6;
 }
 
 message AppendResponsePb {
   required uint64 term = 1;
   required bool success = 2;
-}
-
-message ProposalPb {
-  required bytes data = 1;
 }
 
 message ProposalResponsePb {

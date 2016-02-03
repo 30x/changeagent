@@ -11,10 +11,8 @@ It is generated from these files:
 It has these top-level messages:
 	VoteRequestPb
 	VoteResponsePb
-	EntryPb
 	AppendRequestPb
 	AppendResponsePb
-	ProposalPb
 	ProposalResponsePb
 */
 package communication
@@ -100,46 +98,14 @@ func (m *VoteResponsePb) GetVoteGranted() bool {
 	return false
 }
 
-type EntryPb struct {
-	Index            *uint64 `protobuf:"varint,1,req,name=index" json:"index,omitempty"`
-	Term             *uint64 `protobuf:"varint,2,req,name=term" json:"term,omitempty"`
-	Data             []byte  `protobuf:"bytes,3,opt,name=data" json:"data,omitempty"`
-	XXX_unrecognized []byte  `json:"-"`
-}
-
-func (m *EntryPb) Reset()         { *m = EntryPb{} }
-func (m *EntryPb) String() string { return proto.CompactTextString(m) }
-func (*EntryPb) ProtoMessage()    {}
-
-func (m *EntryPb) GetIndex() uint64 {
-	if m != nil && m.Index != nil {
-		return *m.Index
-	}
-	return 0
-}
-
-func (m *EntryPb) GetTerm() uint64 {
-	if m != nil && m.Term != nil {
-		return *m.Term
-	}
-	return 0
-}
-
-func (m *EntryPb) GetData() []byte {
-	if m != nil {
-		return m.Data
-	}
-	return nil
-}
-
 type AppendRequestPb struct {
-	Term             *uint64    `protobuf:"varint,1,req,name=term" json:"term,omitempty"`
-	LeaderId         *uint64    `protobuf:"varint,2,req,name=leaderId" json:"leaderId,omitempty"`
-	PrevLogIndex     *uint64    `protobuf:"varint,3,req,name=prevLogIndex" json:"prevLogIndex,omitempty"`
-	PrevLogTerm      *uint64    `protobuf:"varint,4,req,name=prevLogTerm" json:"prevLogTerm,omitempty"`
-	LeaderCommit     *uint64    `protobuf:"varint,5,req,name=leaderCommit" json:"leaderCommit,omitempty"`
-	Entries          []*EntryPb `protobuf:"bytes,6,rep,name=entries" json:"entries,omitempty"`
-	XXX_unrecognized []byte     `json:"-"`
+	Term             *uint64  `protobuf:"varint,1,req,name=term" json:"term,omitempty"`
+	LeaderId         *uint64  `protobuf:"varint,2,req,name=leaderId" json:"leaderId,omitempty"`
+	PrevLogIndex     *uint64  `protobuf:"varint,3,req,name=prevLogIndex" json:"prevLogIndex,omitempty"`
+	PrevLogTerm      *uint64  `protobuf:"varint,4,req,name=prevLogTerm" json:"prevLogTerm,omitempty"`
+	LeaderCommit     *uint64  `protobuf:"varint,5,req,name=leaderCommit" json:"leaderCommit,omitempty"`
+	Entries          [][]byte `protobuf:"bytes,6,rep,name=entries" json:"entries,omitempty"`
+	XXX_unrecognized []byte   `json:"-"`
 }
 
 func (m *AppendRequestPb) Reset()         { *m = AppendRequestPb{} }
@@ -181,7 +147,7 @@ func (m *AppendRequestPb) GetLeaderCommit() uint64 {
 	return 0
 }
 
-func (m *AppendRequestPb) GetEntries() []*EntryPb {
+func (m *AppendRequestPb) GetEntries() [][]byte {
 	if m != nil {
 		return m.Entries
 	}
@@ -210,22 +176,6 @@ func (m *AppendResponsePb) GetSuccess() bool {
 		return *m.Success
 	}
 	return false
-}
-
-type ProposalPb struct {
-	Data             []byte `protobuf:"bytes,1,req,name=data" json:"data,omitempty"`
-	XXX_unrecognized []byte `json:"-"`
-}
-
-func (m *ProposalPb) Reset()         { *m = ProposalPb{} }
-func (m *ProposalPb) String() string { return proto.CompactTextString(m) }
-func (*ProposalPb) ProtoMessage()    {}
-
-func (m *ProposalPb) GetData() []byte {
-	if m != nil {
-		return m.Data
-	}
-	return nil
 }
 
 type ProposalResponsePb struct {

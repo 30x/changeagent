@@ -32,11 +32,15 @@ func (r *RaftImpl) handleAppend(state *raftState, cmd appendCommand) {
   // whose term matches prevLogTerm
   // but of course we have to be able to start from zero!
   if cmd.ar.PrevLogIndex > 0 {
-    ourTerm, _, err := r.stor.GetEntry(cmd.ar.PrevLogIndex)
+    ourEntry, err := r.stor.GetEntry(cmd.ar.PrevLogIndex)
     if err != nil {
       resp.Error = err
       cmd.rc <- &resp
       return
+    }
+    ourTerm := uint64(0)
+    if ourEntry != nil {
+      ourTerm = ourEntry.Term
     }
     if ourTerm != cmd.ar.PrevLogTerm {
       log.Debugf("Term %d at index %d does not match %d in request",
@@ -133,7 +137,7 @@ func (r *RaftImpl) appendEntries(entries []storage.Entry) error {
   // Append any new entries not already in the log
   for _, e := range(entries) {
     if terms[e.Index] == 0 {
-      err = r.stor.AppendEntry(e.Index, e.Term, e.Data)
+      err = r.stor.AppendEntry(&e)
       if err != nil { return err }
     }
   }
@@ -147,23 +151,19 @@ func (r *RaftImpl) appendEntries(entries []storage.Entry) error {
   return nil
 }
 
-func (r *RaftImpl) makeProposal(data []byte, state *raftState) (uint64, error) {
+func (r *RaftImpl) makeProposal(newEntry *storage.Entry, state *raftState) (uint64, error) {
     // If command received from client: append entry to local log,
     // respond after entry applied to state machine (§5.3)
     newIndex, _ := r.GetLastIndex()
     newIndex++
     term := r.GetCurrentTerm()
-    newEntry := storage.Entry{
-      Index: newIndex,
-      Term: term,
-      Data: data,
-    }
 
-    log.Debugf("Appending %d bytes of data for index %d term %d",
-      len(data), newIndex, term)
-    err := r.appendEntries([]storage.Entry{newEntry})
-    if err != nil {
-      return 0, err
+    if newEntry != nil {
+      log.Debugf("Appending data for index %d term %d", newIndex, term)
+      err := r.appendEntries([]storage.Entry{*newEntry})
+      if err != nil {
+        return 0, err
+      }
     }
 
     r.setLastIndex(newIndex, term)

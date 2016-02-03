@@ -68,7 +68,7 @@ type proposalResult struct {
 }
 
 type proposalCommand struct {
-  data []byte
+  entry storage.Entry
   rc chan proposalResult
 }
 
@@ -185,18 +185,18 @@ func (r *RaftImpl) Append(req *communication.AppendRequest) (*communication.Appe
   return resp, resp.Error
 }
 
-func (r *RaftImpl) Propose(data []byte) (uint64, error) {
+func (r *RaftImpl) Propose(e *storage.Entry) (uint64, error) {
   if r.GetState() == StateStopping || r.GetState() == StateStopped {
     return 0, errors.New("Raft is stopped")
   }
 
   rc := make(chan proposalResult, 1)
   cmd := proposalCommand{
-    data: data,
+    entry: *e,
     rc: rc,
   }
 
-  log.Debugf("Going to propose a value of %d bytes", len(data))
+  log.Debugf("Going to propose a value of %d bytes", len(e.Data))
   r.proposals <- cmd
 
   result := <- rc

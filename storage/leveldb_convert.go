@@ -12,9 +12,7 @@ import (
   "fmt"
   "math"
   "unsafe"
-  "time"
   "encoding/binary"
-  "github.com/golang/protobuf/proto"
 )
 
 /* These have to match constants in leveldb_native.h */
@@ -26,9 +24,9 @@ const (
   EntryValue = 3
 )
 
-var maxKeyLen uint16 = math.MaxUint16 - 2
-var startRange uint16 = math.MaxUint16 - 1
-var endRange uint16 = math.MaxUint16
+var maxKeyLen uint16 =   math.MaxUint16 - 3
+var startRange uint16 =  math.MaxUint16 - 2
+var endRange uint16 =    math.MaxUint16 - 1
 var null []byte = []byte{ 0 }
 
 /*
@@ -208,18 +206,7 @@ func ptrToIndexKey(ptr unsafe.Pointer, len C.size_t) (*Entry, error) {
  * Given an entire entry, format the data into an entire record.
  */
 func entryToPtr(entry *Entry) (unsafe.Pointer, C.size_t) {
-  ts := entry.Timestamp.UnixNano()
-  pb := EntryPb{
-    Index: &entry.Index,
-    Term: &entry.Term,
-    Timestamp: &ts,
-    Tenant: &entry.Tenant,
-    Collection: &entry.Collection,
-    Key: &entry.Key,
-    Data: entry.Data,
-  }
-
-  marsh, err := proto.Marshal(&pb)
+  marsh, err := EncodeEntry(entry)
   if err != nil { panic(err.Error()) }
   pfx := keyPrefix(EntryValue)
   bytes := append(pfx, marsh...)
@@ -242,22 +229,7 @@ func ptrToEntry(ptr unsafe.Pointer, len C.size_t) (*Entry, error) {
     return nil, fmt.Errorf("Invalid entry type %d", kt)
   }
 
-  pb := EntryPb{}
-  err := proto.Unmarshal(bytes[1:], &pb)
-  if err != nil { return nil, err }
-
-  ts := time.Unix(0, pb.GetTimestamp())
-  e := &Entry{
-    Index: pb.GetIndex(),
-    Term: pb.GetTerm(),
-    Timestamp: ts,
-    Tenant: pb.GetTenant(),
-    Collection: pb.GetCollection(),
-    Key: pb.GetKey(),
-    Data: pb.GetData(),
-  }
-
-  return e, nil
+  return DecodeEntry(bytes[1:])
 }
 
 /*

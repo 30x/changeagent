@@ -9,8 +9,8 @@
 #define METADATA_KEY 1
 #define INDEX_KEY 2
 #define ENTRY_KEY 10
-#define START_RANGE  (0xffff - 1)
-#define END_RANGE 0xffff
+#define START_RANGE  (0xffff - 2)
+#define END_RANGE    (0xffff - 1)
 
 /*
  * Wrapper around leveldb_get because it's a pain to cast to and from char* in

@@ -120,7 +120,7 @@ func (r *RaftImpl) followerLoop(isCandidate bool, state *raftState) chan bool {
       } else {
         go func() {
           log.Debugf("Forwarding proposal to leader node %d", leaderId)
-          fr, err := r.comm.Propose(leaderId, prop.data)
+          fr, err := r.comm.Propose(leaderId, &prop.entry)
           pr := proposalResult{
             index: fr.NewIndex,
           }
@@ -213,7 +213,7 @@ func (r *RaftImpl) leaderLoop(state *raftState) chan bool {
     case prop := <- r.proposals:
       // If command received from client: append entry to local log,
       // respond after entry applied to state machine (§5.3)
-      index, err := r.makeProposal(prop.data, state)
+      index, err := r.makeProposal(&prop.entry, state)
       pr := proposalResult{
         index: index,
         err: err,
@@ -298,10 +298,10 @@ func (r *RaftImpl) canCommit(ix uint64, state *raftState) bool {
   // So look just for a simple majority and not for a quorum
   // (N / 2) rather than (N / 2) + 1
   if votes >= (len(state.peerMatches) / 2) {
-    term, _, err := r.stor.GetEntry(ix)
+    entry, err := r.stor.GetEntry(ix)
     if err != nil {
       log.Debugf("Error reading entry from log: %v", err)
-    } else if term == r.GetCurrentTerm() {
+    } else if entry != nil && entry.Term == r.GetCurrentTerm() {
       return true
     }
   }

@@ -168,16 +168,16 @@ func TestAppend(t *testing.T) {
   }
   lastIndex = 5
 
-  term, _, err := unitTestRaft.stor.GetEntry(4)
+  entry, err := unitTestRaft.stor.GetEntry(4)
   if err != nil { t.Fatalf("Error in get: %v", err) }
-  if term != 2 {
-    t.Fatalf("Expected term 2 and got %d", term)
+  if entry.Term != 2 {
+    t.Fatalf("Expected term 2 and got %d", entry.Term)
   }
 
-  term, _, err = unitTestRaft.stor.GetEntry(5)
+  entry, err = unitTestRaft.stor.GetEntry(5)
   if err != nil { t.Fatalf("Error in get: %v", err) }
-  if term != 2 {
-    t.Fatalf("Expected term 2 and got %d", term)
+  if entry.Term != 2 {
+    t.Fatalf("Expected term 2 and got %d", entry.Term)
   }
 
   // If an existing entry conflicts with a new one (same index
@@ -202,16 +202,16 @@ func TestAppend(t *testing.T) {
   }
   lastIndex = 4
 
-  term, _, err = unitTestRaft.stor.GetEntry(4)
+  entry, err = unitTestRaft.stor.GetEntry(4)
   if err != nil { t.Fatalf("Error in get: %v", err) }
-  if term != 3 {
-    t.Fatalf("Expected term 3 and got %d", term)
+  if entry.Term != 3 {
+    t.Fatalf("Expected term 3 and got %d", entry.Term)
   }
 
-  term, _, err = unitTestRaft.stor.GetEntry(5)
+  entry, err = unitTestRaft.stor.GetEntry(5)
   if err != nil { t.Fatalf("Error in get: %v", err) }
-  if term != 0 {
-    t.Fatalf("Expected term 0 and got %d", term)
+  if entry != nil {
+    t.Fatalf("Expected no entry and got %d", entry.Term)
   }
 
   // Append any new entries not already in the log, again
@@ -238,16 +238,16 @@ func TestAppend(t *testing.T) {
   }
   lastIndex = 6
 
-  term, _, err = unitTestRaft.stor.GetEntry(5)
+  entry, err = unitTestRaft.stor.GetEntry(5)
   if err != nil { t.Fatalf("Error in get: %v", err) }
-  if term != 3 {
-    t.Fatalf("Expected term 3 and got %d", term)
+  if entry.Term != 3 {
+    t.Fatalf("Expected term 3 and got %d", entry.Term)
   }
 
-  term, _, err = unitTestRaft.stor.GetEntry(6)
+  entry, err = unitTestRaft.stor.GetEntry(6)
   if err != nil { t.Fatalf("Error in get: %v", err) }
-  if term != 3 {
-    t.Fatalf("Expected term 3 and got %d", term)
+  if entry.Term != 3 {
+    t.Fatalf("Expected term 3 and got %d", entry.Term)
   }
 
   // If leaderCommit > commitIndex, set commitIndex =

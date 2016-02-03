@@ -86,7 +86,12 @@ func TestRaftCalls(t *testing.T) {
   if aresp.Term != 2 { t.Fatalf("Expected term 2, got %d", resp.Term) }
   if aresp.Success { t.Fatal("Expected not success") }
 
-  presp, err := comm.Propose(1, []byte("Hello, World!"))
+  e3 := storage.Entry{
+    Index: 3,
+    Term: 3,
+    Data: []byte("Hello, World!"),
+  }
+  presp, err := comm.Propose(1, &e3)
   if err != nil { t.Fatalf("Error from propose: %v", err) }
   if presp.Error != nil { t.Fatalf("Error from propose: %v", presp.Error) }
   if presp.NewIndex == 0 { t.Fatal("Expected a non-zero index") }
@@ -135,6 +140,6 @@ func (r *testRaft) Append(req *AppendRequest) (*AppendResponse, error) {
   return &vr, nil
 }
 
-func (r *testRaft) Propose(data []byte) (uint64, error) {
+func (r *testRaft) Propose(e *storage.Entry) (uint64, error) {
   return 123, nil
 }
