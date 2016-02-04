@@ -154,7 +154,8 @@ func indexKeyToPtr(entry *Entry) (unsafe.Pointer, C.size_t, error) {
 }
 
 /*
- * Given an encoded key, extract the parts of the key.
+ * Given an encoded key, extract the parts of the key. The result will be an Entry. If the
+ * key is a start or end of range key, then skip those parts.
  */
 func ptrToIndexKey(ptr unsafe.Pointer, len C.size_t) (*Entry, error) {
   if len < 6 {
@@ -186,13 +187,13 @@ func ptrToIndexKey(ptr unsafe.Pointer, len C.size_t) (*Entry, error) {
     e.Tenant = string(tb)
     buf.ReadByte()
   }
-  if collLen > 0 {
+  if collLen > 0 && collLen <= maxKeyLen {
     tb := make([]byte, collLen)
     buf.Read(tb)
     e.Collection = string(tb)
     buf.ReadByte()
   }
-  if keyLen > 0 {
+  if keyLen > 0 && collLen <= maxKeyLen {
     tb := make([]byte, keyLen)
     buf.Read(tb)
     e.Key = string(tb)
@@ -200,6 +201,59 @@ func ptrToIndexKey(ptr unsafe.Pointer, len C.size_t) (*Entry, error) {
   }
 
   return &e, nil
+}
+
+/*
+ * Given an encoded key, extract only the lengths, plus the tenant and collection names.
+ * We will use this information in order to do index scans.
+ *
+ * For a tenant record, returns (tenant name, nil, [start range | end range | else], nil
+ * For a collection record, returns (tenant name, collection name, [start range | end range | else], nil
+ */
+func ptrToIndexType(ptr unsafe.Pointer, len C.size_t) (string, string, uint16, error) {
+  if len < 6 {
+    return "", "", 0, errors.New("Invalid entry")
+  }
+
+  buf := bytes.NewBuffer(ptrToBytes(ptr, len))
+  pb, _ := buf.ReadByte()
+  vers, kt := parseKeyPrefix(pb)
+  if vers != KeyVersion {
+    return "", "", 0, fmt.Errorf("Invalid index key version %d", vers)
+  }
+  if kt != IndexKey {
+    return "", "", 0, fmt.Errorf("Invalid key type %d", kt)
+  }
+
+  var tenantLen uint16
+  binary.Read(buf, byteOrder, &tenantLen)
+  var collLen uint16
+  binary.Read(buf, byteOrder, &collLen)
+  var keyLen uint16
+  binary.Read(buf, byteOrder, &keyLen)
+
+  var tenantName string
+  var collName string
+
+  if tenantLen > 0 {
+    tb := make([]byte, tenantLen)
+    buf.Read(tb)
+    tenantName = string(tb)
+    buf.ReadByte()
+  }
+
+  if collLen == startRange {
+    return tenantName, "", startRange, nil
+  } else if collLen == endRange {
+    return tenantName, "", endRange, nil
+  } else if collLen > 0 {
+    tb := make([]byte, collLen)
+    buf.Read(tb)
+    collName = string(tb)
+    buf.ReadByte()
+  }
+
+  return tenantName, collName, keyLen, nil
 }
 
 /*
@@ -406,7 +460,7 @@ func readString(buf *bytes.Buffer) string {
   return string(bb)
 }
 
-func testKeyComparison(ptra unsafe.Pointer, lena C.size_t, ptrb unsafe.Pointer, lenb C.size_t) int {
+func compareKeys(ptra unsafe.Pointer, lena C.size_t, ptrb unsafe.Pointer, lenb C.size_t) int {
   cmp := C.go_compare_bytes(nil, ptra, lena, ptrb, lenb);
   return int(cmp)
 }

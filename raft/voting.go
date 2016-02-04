@@ -5,12 +5,12 @@
 package raft
 
 import (
+  "github.com/golang/glog"
   "revision.aeip.apigee.net/greg/changeagent/communication"
-  "revision.aeip.apigee.net/greg/changeagent/log"
 )
 
 func (r *RaftImpl) handleFollowerVote(state *raftState, cmd voteCommand) bool {
-  log.Debugf("Node %d got vote request from %d at term %d",
+  glog.V(2).Infof("Node %d got vote request from %d at term %d",
     r.id, cmd.vr.CandidateId, cmd.vr.Term)
   currentTerm := r.GetCurrentTerm()
 
@@ -40,7 +40,7 @@ func (r *RaftImpl) handleFollowerVote(state *raftState, cmd voteCommand) bool {
      cmd.vr.LastLogIndex >= commitIndex {
      state.votedFor = cmd.vr.CandidateId
      r.writeLastVote(cmd.vr.CandidateId)
-     log.Debugf("Node %d voting for candidate %d", r.id, cmd.vr.CandidateId)
+     glog.V(2).Infof("Node %d voting for candidate %d", r.id, cmd.vr.CandidateId)
      resp.VoteGranted = true
    } else {
      resp.VoteGranted = false
@@ -61,7 +61,7 @@ func (r *RaftImpl) voteNo(state *raftState, cmd voteCommand) {
 func (r *RaftImpl) sendVotes(state *raftState, index uint64, rc chan<- voteResult) {
   lastIndex, lastTerm, err := r.stor.GetLastIndex()
   if err != nil {
-    log.Infof("Error reading database to start election: %v", err)
+    glog.Infof("Error reading database to start election: %v", err)
     dbErr := voteResult{
       index: index,
       err: err,
@@ -80,7 +80,7 @@ func (r *RaftImpl) sendVotes(state *raftState, index uint64, rc chan<- voteResul
 
   nodes := r.disco.GetNodes()
   votes := 0
-  log.Debugf("Node %d sending vote request to %d nodes for term %d",
+  glog.V(2).Infof("Node %d sending vote request to %d nodes for term %d",
     r.id, len(nodes), currentTerm)
 
   var responses []chan *communication.VoteResponse
@@ -98,19 +98,19 @@ func (r *RaftImpl) sendVotes(state *raftState, index uint64, rc chan<- voteResul
   for _, respChan := range(responses) {
     vresp := <- respChan
     if vresp.Error != nil {
-      log.Debugf("Error receiving vote: from %d", vresp.NodeId, vresp.Error)
+      glog.V(2).Infof("Error receiving vote: from %d", vresp.NodeId, vresp.Error)
     } else if vresp.VoteGranted {
-      log.Debugf("Node %d received a yes vote from %d",
+      glog.V(2).Infof("Node %d received a yes vote from %d",
         r.id, vresp.NodeId)
       votes++
     } else {
-      log.Debugf("Node %d received a no vote from %d",
+      glog.V(2).Infof("Node %d received a no vote from %d",
         r.id, vresp.NodeId)
     }
   }
 
   granted := votes >= ((len(nodes) / 2) + 1)
-  log.Infof("Node %d: election request complete for term %d: %d votes for %d notes. Granted = %v",
+  glog.Infof("Node %d: election request complete for term %d: %d votes for %d notes. Granted = %v",
     r.id, vr.Term, votes, len(nodes), granted)
 
   finalResponse := voteResult{

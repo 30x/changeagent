@@ -41,14 +41,35 @@ type Storage interface {
   // Delete everything that is greater than or equal to the index
   DeleteEntries(index uint64) error
 
-  // Methods for secondary indices
+  // Create a tenant. Tenants must be created to match the "tenantName" field in indices
+  // in order to support iteration over all the records for a tenant.
   CreateTenant(tenantName string) error
+  // Return whether a tenant already exists
   TenantExists(tenantName string) (bool, error)
+
+  // Create a tenant. Tenants must be created to match the "collectionName" field in indices/
+  // in order to support iteration over all the records for a collection.
   CreateCollection(tenantName, collectionName string) error
+  // Return whether a collection already exists
   CollectionExists(tenantName, collectionName string) (bool, error)
+
+  // insert an entry into the index. "tenantName" and "collectionName" may be empty.
+  // "index" should match an index in the Raft index created usign "AppendEntry" from above.
+  // Do not use zero for "index"
   SetIndexEntry(tenantName, collectionName, key string, index uint64) error
+
+  // Delete an index entry. This does not affect the index that the entry points to.
   DeleteIndexEntry(tenantName, collectionName, key string) error
+
+  // Retrieve the index of an index entry, or zero if there is no mapping.
   GetIndexEntry(tenantName, collectionName, key string) (uint64, error)
+
+  // Iterate through all the indices for a collection, in key order, until "max" is reached
+  GetCollectionIndices(tenantName, collectionName string, max uint) ([]uint64, error)
+
+  // Get all the names of the collections for a particular tenant. This is a fairly expensive operation
+  // because it iterates through all the records of the collection
+  GetTenantCollections(tenantName string) ([]string, error)
 
   // Maintenance
   Close()

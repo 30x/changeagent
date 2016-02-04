@@ -102,7 +102,77 @@ func testIndexEntry(t *testing.T, tenant string, collection string, key string) 
   if e.Tenant != re.Tenant { t.Errorf("Tenant %s does not match %s", re.Tenant, e.Tenant); return false }
   if e.Collection != re.Collection { t.Error("Collection does not match"); return false }
   if e.Key != re.Key { t.Error("Key does not match"); return false }
+
+  ten, col, ixLen, err := ptrToIndexType(bb, len)
+  if err != nil { t.Error(err); return false }
+  if ten != e.Tenant { t.Errorf("Tenant %s does not match %s", ten, e.Tenant); return false }
+  if col != re.Collection { t.Error("Collection does not match"); return false }
+  if ixLen >= maxKeyLen { t.Error("Key length is not correct") }
   return true
+}
+
+func TestConvertStartEndIndexEntry(t *testing.T) {
+
+  startTen, startTenLen, err := startTenantToPtr("foo")
+  if err != nil { t.Fatal(err.Error()) }
+  defer freePtr(startTen)
+
+  e, err := ptrToIndexKey(startTen, startTenLen)
+  if err != nil { t.Fatal(err.Error()) }
+  if e.Tenant != "foo" { t.Fatal("Tenant does not match") }
+
+  ten, coll, len, err := ptrToIndexType(startTen, startTenLen)
+  if err != nil { t.Fatal(err.Error()) }
+  if ten != "foo" { t.Fatal("Wrong tenant name") }
+  if coll != "" { t.Fatal("Had a collection name and should not") }
+  if len != startRange { t.Fatal("Should be start range") }
+
+
+  endTen, endTenLen, err := endTenantToPtr("foo")
+  if err != nil { t.Fatal(err.Error()) }
+  defer freePtr(endTen)
+
+  e, err = ptrToIndexKey(endTen, endTenLen)
+  if err != nil { t.Fatal(err.Error()) }
+  if e.Tenant != "foo" { t.Fatal("Tenant does not match") }
+
+  ten, coll, len, err = ptrToIndexType(endTen, endTenLen)
+  if err != nil { t.Fatal(err.Error()) }
+  if ten != "foo" { t.Fatal("Wrong tenant name") }
+  if coll != "" { t.Fatal("Had a collection name and should not") }
+  if len != endRange { t.Fatal("Should be end range") }
+
+
+  startColl, startCollLen, err := startCollectionToPtr("foo", "bar")
+  if err != nil { t.Fatal(err.Error()) }
+  defer freePtr(startColl)
+
+  e, err = ptrToIndexKey(startColl, startCollLen)
+  if err != nil { t.Fatal(err.Error()) }
+  if e.Tenant != "foo" { t.Fatal("Tenant does not match") }
+  if e.Collection != "bar" { t.Fatal("Collection does not match") }
+
+  ten, coll, len, err = ptrToIndexType(startColl, startCollLen)
+  if err != nil { t.Fatal(err.Error()) }
+  if ten != "foo" { t.Fatal("Wrong tenant name") }
+  if coll != "bar" { t.Fatal("Wrong collection name") }
+  if len != startRange { t.Fatal("Should be start range") }
+
+
+  endColl, endCollLen, err := endCollectionToPtr("foo", "bar")
+  if err != nil { t.Fatal(err.Error()) }
+  defer freePtr(endColl)
+
+  e, err = ptrToIndexKey(endColl, endCollLen)
+  if err != nil { t.Fatal(err.Error()) }
+  if e.Tenant != "foo" { t.Fatal("Tenant does not match") }
+  if e.Collection != "bar" { t.Fatal("Collection does not match") }
+
+  ten, coll, len, err = ptrToIndexType(endColl, endCollLen)
+  if err != nil { t.Fatal(err.Error()) }
+  if ten != "foo" { t.Fatal("Wrong tenant name") }
+  if coll != "bar" { t.Fatal("Wrong collection name") }
+  if len != endRange { t.Fatal("Should be end range") }
 }
 
 func TestConvertKeyComp(t *testing.T) {
@@ -138,7 +208,7 @@ func testKeyCompare(t *testing.T, isMetadata1 bool, k1 uint64, isMetadata2 bool,
   keyBytes2, keyLen2 := uintToKey(kt2, k2)
   defer freePtr(keyBytes2)
 
-  cmp := testKeyComparison(keyBytes1, keyLen1, keyBytes2, keyLen2)
+  cmp := compareKeys(keyBytes1, keyLen1, keyBytes2, keyLen2)
 
   if kt1 < kt2 {
     t.Logf("kt1 < kt2: cmp %d", cmp)
@@ -216,7 +286,7 @@ func testIndexCompare(t *testing.T, tenant1 string, collection1 string, key1 str
   }
   defer freePtr(keyBytes2)
 
-  cmp := testKeyComparison(keyBytes1, keyLen1, keyBytes2, keyLen2)
+  cmp := compareKeys(keyBytes1, keyLen1, keyBytes2, keyLen2)
 
   if tenant1 < tenant2 {
     t.Logf("tenant1 < tenant2: %d", cmp)
@@ -285,12 +355,12 @@ func tenantRangeTest(t *testing.T, tenant string, collection string, key string)
   if err != nil { t.Fatal(err.Error()) }
   defer freePtr(endBytes)
 
-  cmp := testKeyComparison(startBytes, startLen, keyBytes, keyLen)
+  cmp := compareKeys(startBytes, startLen, keyBytes, keyLen)
   if (cmp >= 0) {
     t.Log("Start range should always be before all keys")
     return false
   }
-  cmp = testKeyComparison(keyBytes, keyLen, endBytes, endLen)
+  cmp = compareKeys(keyBytes, keyLen, endBytes, endLen)
   if (cmp >= 0) {
     t.Log("End range should always be after all keys")
     return false
@@ -335,22 +405,22 @@ func collectionRangeTest(t *testing.T, tenant string, collection string, key str
   if err != nil { t.Fatal(err.Error()) }
   defer freePtr(endBytes)
 
-  cmp := testKeyComparison(startBytes, startLen, keyBytes, keyLen)
+  cmp := compareKeys(startBytes, startLen, keyBytes, keyLen)
   if cmp >= 0 {
     t.Log("Start tenant range should always be before all keys")
     return false
   }
-  cmp = testKeyComparison(keyBytes, keyLen, endBytes, endLen)
+  cmp = compareKeys(keyBytes, keyLen, endBytes, endLen)
   if cmp >= 0 {
     t.Log("End tenant range should always be after all keys")
     return false
   }
-  cmp = testKeyComparison(startBytes, startLen, endBytes, endLen)
+  cmp = compareKeys(startBytes, startLen, endBytes, endLen)
   if cmp >= 0 {
     t.Log("Start tenant must always be before end")
     return false
   }
-  cmp = testKeyComparison(endBytes, endLen, startBytes, startLen)
+  cmp = compareKeys(endBytes, endLen, startBytes, startLen)
   if cmp <= 0 {
     t.Log("End tenant must always be after start")
     return false
@@ -364,25 +434,35 @@ func collectionRangeTest(t *testing.T, tenant string, collection string, key str
   if err != nil { t.Fatal(err.Error()) }
   defer freePtr(endColl)
 
-  cmp = testKeyComparison(startColl, collLen, keyBytes, keyLen)
+  cmp = compareKeys(startColl, collLen, keyBytes, keyLen)
   if cmp >= 0 {
     t.Log("Start collection range should always be before all keys")
     return false
   }
-  cmp = testKeyComparison(keyBytes, keyLen, endColl, endCollLen)
+  cmp = compareKeys(keyBytes, keyLen, endColl, endCollLen)
   if cmp >= 0 {
     t.Log("End collection range should always be after all keys")
     return false
   }
+  cmp = compareKeys(startColl, collLen, startColl, collLen)
+  if cmp != 0 {
+    t.Log("Start collection keys must compare equal")
+    return false
+  }
 
-  cmp = testKeyComparison(startBytes, startLen, startColl, collLen)
+  cmp = compareKeys(startBytes, startLen, startColl, collLen)
   if cmp >= 0 {
     t.Log("Start tenant should always be before start collection")
     return false
   }
-  cmp = testKeyComparison(endColl, endCollLen, endBytes, endLen)
+  cmp = compareKeys(endColl, endCollLen, endBytes, endLen)
   if cmp >= 0 {
     t.Log("End tenant should always be after end collection")
+    return false
+  }
+  cmp = compareKeys(endColl, endCollLen, endColl, endCollLen)
+  if cmp != 0 {
+    t.Log("End tenant keys should compare equal")
     return false
   }
 

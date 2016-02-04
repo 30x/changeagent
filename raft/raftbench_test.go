@@ -4,7 +4,7 @@ import (
   "fmt"
   "testing"
   "time"
-  "revision.aeip.apigee.net/greg/changeagent/log"
+  "github.com/golang/glog"
   "revision.aeip.apigee.net/greg/changeagent/storage"
 )
 
@@ -26,7 +26,7 @@ func doAppendBenchmark(b *testing.B, waitFrequency int) {
   if leader == nil { b.Fatal("No leaders found") }
   b.ResetTimer()
 
-  log.Debugf("Gonna benchmark %d iterations", b.N)
+  glog.V(2).Infof("Gonna benchmark %d iterations", b.N)
   lastIndex, _ := leader.GetLastIndex()
   for i := 0; i < b.N; i++ {
     proposal := fmt.Sprintf("Benchmark entry %d", i)
@@ -45,5 +45,5 @@ func doAppendBenchmark(b *testing.B, waitFrequency int) {
       leader.GetAppliedTracker().Wait(lastIndex)
     }
   }
-  log.Debug("Done.")
+  glog.V(2).Info("Done.")
 }

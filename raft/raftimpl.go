@@ -6,10 +6,10 @@ import (
   "sync"
   "time"
   "math/rand"
+  "github.com/golang/glog"
   "revision.aeip.apigee.net/greg/changeagent/communication"
   "revision.aeip.apigee.net/greg/changeagent/discovery"
   "revision.aeip.apigee.net/greg/changeagent/storage"
-  "revision.aeip.apigee.net/greg/changeagent/log"
 )
 
 const (
@@ -133,7 +133,7 @@ func (r *RaftImpl) Close() {
 
 func (r *RaftImpl) cleanup() {
   for len(r.voteCommands) > 0 {
-    log.Debug("Sending cleanup command for vote request")
+    glog.V(2).Info("Sending cleanup command for vote request")
     vc := <- r.voteCommands
     vc.rc <- &communication.VoteResponse{
       Error: errors.New("Raft is shutting down"),
@@ -142,7 +142,7 @@ func (r *RaftImpl) cleanup() {
   //close(r.voteCommands)
 
   for len(r.appendCommands) > 0 {
-    log.Debug("Sending cleanup command for append request")
+    glog.V(2).Info("Sending cleanup command for append request")
     vc := <- r.appendCommands
     vc.rc <- &communication.AppendResponse{
       Error: errors.New("Raft is shutting down"),
@@ -169,7 +169,7 @@ func (r *RaftImpl) RequestVote(req *communication.VoteRequest) (*communication.V
 }
 
 func (r *RaftImpl) Append(req *communication.AppendRequest) (*communication.AppendResponse, error) {
-  log.Debugf("Node %d append request. State is %v", r.id, r.GetState())
+  glog.V(2).Infof("Node %d append request. State is %v", r.id, r.GetState())
   if r.GetState() == StateStopping || r.GetState() == StateStopped {
     return nil, errors.New("Raft is stopped")
   }
@@ -196,7 +196,7 @@ func (r *RaftImpl) Propose(e *storage.Entry) (uint64, error) {
     rc: rc,
   }
 
-  log.Debugf("Going to propose a value of %d bytes", len(e.Data))
+  glog.V(2).Infof("Going to propose a value of %d bytes", len(e.Data))
   r.proposals <- cmd
 
   result := <- rc
@@ -216,7 +216,7 @@ func (r *RaftImpl) GetState() int {
 func (r *RaftImpl) setState(newState int) {
   r.latch.Lock()
   defer r.latch.Unlock()
-  log.Debugf("Node %d: setting state to %d", r.id, newState)
+  glog.V(2).Infof("Node %d: setting state to %d", r.id, newState)
   r.state = newState
 }
 
@@ -230,9 +230,9 @@ func (r *RaftImpl) setLeaderId(newId uint64) {
   r.latch.Lock()
   defer r.latch.Unlock()
   if newId == 0 {
-    log.Debugf("Node %d: No leader present")
+    glog.V(2).Infof("Node %d: No leader present")
   } else {
-    log.Debugf("Node %d: Node %d is now the leader", r.id, newId)
+    glog.V(2).Infof("Node %d: Node %d is now the leader", r.id, newId)
   }
   r.leaderId = newId
 }

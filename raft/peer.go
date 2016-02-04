@@ -8,8 +8,8 @@ package raft
 
 import (
   "time"
+  "github.com/golang/glog"
   "revision.aeip.apigee.net/greg/changeagent/communication"
-  "revision.aeip.apigee.net/greg/changeagent/log"
 )
 
 type rpcResponse struct {
@@ -68,7 +68,7 @@ func (p *raftPeer) peerLoop() {
     if !rpcRunning && !failureDelay && (desiredIndex > nextIndex) {
       err := p.sendUpdates(desiredIndex, nextIndex, responseChan)
       if err != nil {
-        log.Debugf("Error sending updates to peer: %s", err)
+        glog.V(2).Infof("Error sending updates to peer: %s", err)
       }
       rpcRunning = true
       hbTimeout.Reset(HeartbeatTimeout)
@@ -93,12 +93,12 @@ func (p *raftPeer) peerLoop() {
       if response.err == nil {
         nextIndex = p.handleRpcResult(response)
       } else {
-        log.Debugf("Error from peer: %s", response.err)
+        glog.V(2).Infof("Error from peer: %s", response.err)
         failureDelay = true
       }
 
     case <- p.stopChan:
-      log.Debugf("Peer %d stopping", p.id)
+      glog.V(2).Infof("Peer %d stopping", p.id)
       return
     }
   }
@@ -109,7 +109,7 @@ func (p *raftPeer) handleRpcResult(resp rpcResponse) uint64 {
     // If successful: update nextIndex and matchIndex for
     // follower (§5.3)
     newIndex := resp.newIndex
-    log.Debugf("Client %d now up to date with index %d", p.id, resp.newIndex)
+    glog.V(2).Infof("Client %d now up to date with index %d", p.id, resp.newIndex)
     change := peerMatchResult{
       id: p.id,
       newMatch: newIndex,
@@ -158,17 +158,17 @@ func (p *raftPeer) sendUpdates(desired uint64, next uint64, rc chan rpcResponse)
   // TODO Why not only get stuff since "next" and then slice it to avoid two queries?
   entries, err := p.r.stor.GetEntries(next, desired)
   if err != nil {
-    log.Debugf("Error getting entries for peer %d: %v", p.id, err)
+    glog.V(2).Infof("Error getting entries for peer %d: %v", p.id, err)
     return err
   }
 
-  log.Debugf("Sending %d entries between %d and %d to %d",
+  glog.V(2).Infof("Sending %d entries between %d and %d to %d",
     len(entries), next, desired, p.id)
 
   lastIndex := next - 1
   lastEntry, err := p.r.stor.GetEntry(lastIndex)
   if err != nil {
-    log.Debugf("Error getting entries for peer %d: %v", p.id, err)
+    glog.V(2).Infof("Error getting entries for peer %d: %v", p.id, err)
     return err
   }
   lastTerm := uint64(0)

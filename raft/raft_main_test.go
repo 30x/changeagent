@@ -2,6 +2,7 @@ package raft
 
 import (
   "fmt"
+  "flag"
   "os"
   "net"
   "net/http"
@@ -10,13 +11,12 @@ import (
   "revision.aeip.apigee.net/greg/changeagent/communication"
   "revision.aeip.apigee.net/greg/changeagent/discovery"
   "revision.aeip.apigee.net/greg/changeagent/storage"
-  "revision.aeip.apigee.net/greg/changeagent/log"
 )
 
 const (
   DataDir = "./rafttestdata"
   PreserveDatabases = false
-  DebugMode = false
+  DebugMode = true
 )
 
 var testRafts []*RaftImpl
@@ -31,7 +31,11 @@ func TestMain(m *testing.M) {
 
 func runMain(m *testing.M) int {
   os.MkdirAll(DataDir, 0777)
-  log.InitDebug(DebugMode)
+  if DebugMode {
+    flag.Set("logtostderr", "true")
+    flag.Set("v", "2")
+  }
+  flag.Parse()
 
   // Create three TCP listeners -- we'll use them for a cluster
   anyPort := &net.TCPAddr{}

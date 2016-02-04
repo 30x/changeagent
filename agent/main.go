@@ -9,8 +9,8 @@ import (
   "time"
   "os/signal"
   "net/http"
+  "github.com/golang/glog"
   "revision.aeip.apigee.net/greg/changeagent/discovery"
-  "revision.aeip.apigee.net/greg/changeagent/log"
 )
 
 const (
@@ -43,8 +43,6 @@ func runAgentMain() int {
     flag.PrintDefaults()
     return 2
   }
-
-  log.InitDebug(debug)
 
   if dbDir == "" {
     fmt.Println("Database directory must be specified.")
@@ -82,7 +80,7 @@ func runAgentMain() int {
   }
   defer listener.Close()
 
-  log.Infof("Listening on port %d", port)
+  glog.Infof("Listening on port %d", port)
 
   doneChan := make(chan bool, 1)
   signalChan := make(chan os.Signal, 1)
@@ -91,13 +89,13 @@ func runAgentMain() int {
 
   go func() {
     sig := <- signalChan
-    log.Infof("Got signal %v", sig)
+    glog.Infof("Got signal %v", sig)
     doneChan <- true
   }()
 
   go http.Serve(listener, mux)
 
   <- doneChan
-  log.Infof("Shutting down.")
+  glog.Infof("Shutting down.")
   return 0
 }

@@ -5,13 +5,13 @@
 package raft
 
 import (
+  "github.com/golang/glog"
   "revision.aeip.apigee.net/greg/changeagent/communication"
   "revision.aeip.apigee.net/greg/changeagent/storage"
-  "revision.aeip.apigee.net/greg/changeagent/log"
 )
 
 func (r *RaftImpl) handleAppend(state *raftState, cmd appendCommand) {
-  log.Debugf("Got append request for term %d. prevIndex = %d prevTerm = %d",
+  glog.V(2).Infof("Got append request for term %d. prevIndex = %d prevTerm = %d",
     cmd.ar.Term, cmd.ar.PrevLogIndex, cmd.ar.PrevLogTerm)
   currentTerm := r.GetCurrentTerm()
   commitIndex := r.GetCommitIndex()
@@ -22,7 +22,7 @@ func (r *RaftImpl) handleAppend(state *raftState, cmd appendCommand) {
 
   // 5.1: Reply false if term doesn't match current term
   if cmd.ar.Term < r.currentTerm {
-    log.Debugf("Term does not match current term %d", r.currentTerm)
+    glog.V(2).Infof("Term does not match current term %d", r.currentTerm)
     resp.Success = false
     cmd.rc <- &resp
     return
@@ -43,7 +43,7 @@ func (r *RaftImpl) handleAppend(state *raftState, cmd appendCommand) {
       ourTerm = ourEntry.Term
     }
     if ourTerm != cmd.ar.PrevLogTerm {
-      log.Debugf("Term %d at index %d does not match %d in request",
+      glog.V(2).Infof("Term %d at index %d does not match %d in request",
         ourTerm, cmd.ar.PrevLogIndex, cmd.ar.PrevLogTerm)
       resp.Success = false
       cmd.rc <- &resp
@@ -63,7 +63,7 @@ func (r *RaftImpl) handleAppend(state *raftState, cmd appendCommand) {
   // If leaderCommit > commitIndex, set commitIndex =
   // min(leaderCommit, index of last new entry)
 
-  log.Debugf("leader commit: %d commitIndex: %d",
+  glog.V(2).Infof("leader commit: %d commitIndex: %d",
     cmd.ar.LeaderCommit, commitIndex)
   if cmd.ar.LeaderCommit > commitIndex {
     lastIndex, _, err := r.stor.GetLastIndex()
@@ -79,7 +79,7 @@ func (r *RaftImpl) handleAppend(state *raftState, cmd appendCommand) {
       commitIndex = lastIndex
     }
     r.setCommitIndex(commitIndex)
-    log.Debugf("Node %d: Commit index now %d", r.id, commitIndex)
+    glog.V(2).Infof("Node %d: Commit index now %d", r.id, commitIndex)
 
     err = r.applyCommittedEntries(commitIndex)
     if err != nil {
@@ -101,12 +101,12 @@ func (r *RaftImpl) applyCommittedEntries(commitIndex uint64) error {
   // apply log[lastApplied] to state machine.
   // In our implementation, we just move a pointer.
   r.setLastApplied(commitIndex)
-  log.Debugf("Node %d: Last applied now %d", r.id, commitIndex)
+  glog.V(2).Infof("Node %d: Last applied now %d", r.id, commitIndex)
   return nil
 }
 
 func (r *RaftImpl) sendAppend(id uint64, ar *communication.AppendRequest) (bool, error) {
-  log.Debugf("Sending append request to node %d for term %d", id, ar.Term)
+  glog.V(2).Infof("Sending append request to node %d for term %d", id, ar.Term)
 
   resp, err := r.comm.Append(id, ar)
   if err == nil {
@@ -159,7 +159,7 @@ func (r *RaftImpl) makeProposal(newEntry *storage.Entry, state *raftState) (uint
     term := r.GetCurrentTerm()
 
     if newEntry != nil {
-      log.Debugf("Appending data for index %d term %d", newIndex, term)
+      glog.V(2).Infof("Appending data for index %d term %d", newIndex, term)
       err := r.appendEntries([]storage.Entry{*newEntry})
       if err != nil {
         return 0, err

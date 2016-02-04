@@ -5,7 +5,7 @@ import (
   "strconv"
   "time"
   "net/http"
-  "revision.aeip.apigee.net/greg/changeagent/log"
+  "github.com/golang/glog"
 )
 
 const (
@@ -56,7 +56,7 @@ func (a *ChangeAgent) handlePostChanges(resp http.ResponseWriter, req *http.Requ
   // Send the raft proposal. This happens asynchronously.
   newIndex, err := a.raft.Propose(proposal)
   if err != nil {
-    log.Infof("Fatal error making Raft proposal: %v", err)
+    glog.Warningf("Fatal error making Raft proposal: %v", err)
     writeError(resp, http.StatusInternalServerError, err)
     return
   }
@@ -136,15 +136,15 @@ func (a *ChangeAgent) handleGetChanges(resp http.ResponseWriter, req *http.Reque
     last = first + limit - 1
   }
 
-  log.Debugf("Getting changes from %d to %d", first, last)
+  glog.V(2).Infof("Getting changes from %d to %d", first, last)
 
   entries, err := a.stor.GetEntries(first, last)
   if err != nil {
-    log.Infof("Error getting changes from DB: %v", err)
+    glog.Errorf("Error getting changes from DB: %v", err)
     writeError(resp, http.StatusInternalServerError, err)
     return
   }
-  log.Debugf("Got %d entries", len(entries))
+  glog.V(2).Infof("Got %d entries", len(entries))
 
   resp.Header().Add(http.CanonicalHeaderKey("content-type"), JSONContent)
   marshalChanges(entries, resp)

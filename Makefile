@@ -10,7 +10,6 @@ agent/agent: $(ALLDEPS)
 	(cd agent; go build)
 
 test:
-	(cd log; go test)
 	(cd communication; go test)
 	(cd discovery; go test)
 	(cd storage; go test)

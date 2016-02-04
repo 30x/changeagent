@@ -389,6 +389,10 @@ func (s *LevelDBStorage) CollectionExists(tenantName, collectionName string) (bo
 }
 
 func (s *LevelDBStorage) SetIndexEntry(tenantName, collectionName, key string, index uint64) error {
+  if index == 0 {
+    return errors.New("Invalid index value")
+  }
+
   entry := &Entry{
     Tenant: tenantName,
     Collection: collectionName,
@@ -443,6 +447,91 @@ func (s *LevelDBStorage) GetIndexEntry(tenantName, collectionName, key string) (
   index := ptrToUint(valPtr, valLen)
   freePtr(valPtr)
   return index, nil
+}
+
+func (s *LevelDBStorage) GetCollectionIndices(tenantName, collectionName string, max uint) ([]uint64, error) {
+  startPtr, startLen, err := startCollectionToPtr(tenantName, collectionName)
+  if err != nil { return nil, err }
+  defer freePtr(startPtr)
+  endPtr, endLen, err := endCollectionToPtr(tenantName, collectionName)
+  if err != nil { return nil, err }
+  defer freePtr(endPtr)
+
+  it := C.leveldb_create_iterator(s.db, defaultReadOptions)
+  defer C.leveldb_iter_destroy(it)
+
+  C.go_leveldb_iter_seek(it, startPtr, startLen)
+
+  var ret []uint64
+
+  for count := uint(0); (count < max) && (C.leveldb_iter_valid(it) != 0); count++ {
+    var keyLen C.size_t
+    keyPtr := unsafe.Pointer(C.leveldb_iter_key(it, &keyLen))
+    if compareKeys(keyPtr, keyLen, startPtr, startLen) == 0 {
+      // Always skip the start-of-range key
+      C.leveldb_iter_next(it)
+      continue
+    }
+    if compareKeys(keyPtr, keyLen, endPtr, endLen) == 0 {
+      // The end-of-range key indicates, well, the end
+      break
+    }
+
+    var valLen C.size_t
+    valPtr := C.leveldb_iter_value(it, &valLen)
+    index := ptrToUint(unsafe.Pointer(valPtr), valLen)
+    ret = append(ret, index)
+
+    C.leveldb_iter_next(it)
+  }
+
+  return ret, nil
+}
+
+func (s *LevelDBStorage) GetTenantCollections(tenantName string) ([]string, error) {
+  startPtr, startLen, err := startTenantToPtr(tenantName)
+  if err != nil { return nil, err }
+  defer freePtr(startPtr)
+  endPtr, endLen, err := endTenantToPtr(tenantName)
+  if err != nil { return nil, err }
+  defer freePtr(endPtr)
+
+  it := C.leveldb_create_iterator(s.db, defaultReadOptions)
+  defer C.leveldb_iter_destroy(it)
+
+  C.go_leveldb_iter_seek(it, startPtr, startLen)
+
+  var ret []string
+
+  for C.leveldb_iter_valid(it) != 0 {
+    var keyLen C.size_t
+    keyPtr := unsafe.Pointer(C.leveldb_iter_key(it, &keyLen))
+    if compareKeys(keyPtr, keyLen, startPtr, startLen) == 0 {
+      // Always skip the start-of-range key
+      C.leveldb_iter_next(it)
+      continue
+    }
+    if compareKeys(keyPtr, keyLen, endPtr, endLen) == 0 {
+      // The end-of-range key indicates, well, the end
+      break
+    }
+
+    _, collName, len, err := ptrToIndexType(keyPtr, keyLen)
+    if err != nil { return nil, err }
+    if collName == "" {
+      // Shouldn't get here because we just checked for end of tenant
+      return nil, errors.New("Received bogus tenant record")
+    }
+
+    if len == startRange {
+      // Found a start-of-collection record
+      ret = append(ret, collName)
+    }
+
+    C.leveldb_iter_next(it)
+  }
+
+  return ret, nil
 }
 
 func (s *LevelDBStorage) putEntry(

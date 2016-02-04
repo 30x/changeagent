@@ -9,7 +9,6 @@ import (
   "testing"
   "time"
   "revision.aeip.apigee.net/greg/changeagent/discovery"
-  "revision.aeip.apigee.net/greg/changeagent/log"
   "revision.aeip.apigee.net/greg/changeagent/raft"
 )
 
@@ -29,7 +28,6 @@ func TestMain(m *testing.M) {
 
 func runMain(m *testing.M) int {
   os.MkdirAll(DataDir, 0777)
-  log.InitDebug(DebugMode)
 
   // Create three TCP listeners -- we'll use them for a cluster
   anyPort := &net.TCPAddr{}

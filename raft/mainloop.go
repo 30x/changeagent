@@ -8,8 +8,8 @@ package raft
 import (
   "errors"
   "time"
+  "github.com/golang/glog"
   "revision.aeip.apigee.net/greg/changeagent/discovery"
-  "revision.aeip.apigee.net/greg/changeagent/log"
 )
 
 type voteResult struct {
@@ -46,20 +46,20 @@ func (r *RaftImpl) mainLoop() {
   for {
     switch r.GetState() {
     case StateFollower:
-      log.Infof("Node %d entering follower mode", r.id)
+      glog.Infof("Node %d entering follower mode", r.id)
       stopDone = r.followerLoop(false, state)
     case StateCandidate:
-      log.Infof("Node %d entering candidate mode", r.id)
+      glog.Infof("Node %d entering candidate mode", r.id)
       stopDone = r.followerLoop(true, state)
     case StateLeader:
-      log.Infof("Node %d entering leader mode", r.id)
+      glog.Infof("Node %d entering leader mode", r.id)
       stopDone = r.leaderLoop(state)
     case StateStopping:
       r.cleanup()
       if stopDone != nil {
         stopDone <- true
       }
-      log.Debugf("Node %d stop is complete", r.id)
+      glog.V(2).Infof("Node %d stop is complete", r.id)
       return
     case StateStopped:
       return
@@ -69,7 +69,7 @@ func (r *RaftImpl) mainLoop() {
 
 func (r *RaftImpl) followerLoop(isCandidate bool, state *raftState) chan bool {
   if isCandidate {
-    log.Debugf("Node %d starting an election", r.id)
+    glog.V(2).Infof("Node %d starting an election", r.id)
     state.voteIndex++
     // Update term and vote for myself
     r.setCurrentTerm(r.GetCurrentTerm() + 1)
@@ -82,7 +82,7 @@ func (r *RaftImpl) followerLoop(isCandidate bool, state *raftState) chan bool {
   for {
     select {
     case <- timeout.C:
-      log.Debugf("Node %d: election timeout", r.id)
+      glog.V(2).Infof("Node %d: election timeout", r.id)
       if !r.followerOnly {
         r.setState(StateCandidate)
         r.setLeaderId(0)
@@ -100,7 +100,7 @@ func (r *RaftImpl) followerLoop(isCandidate bool, state *raftState) chan bool {
       // 5.1: If RPC request or response contains term T > currentTerm:
       // set currentTerm = T, convert to follower
       if appendCmd.ar.Term > r.GetCurrentTerm() {
-        log.Infof("Append request from new leader at new term %d", appendCmd.ar.Term)
+        glog.Infof("Append request from new leader at new term %d", appendCmd.ar.Term)
         r.setCurrentTerm(appendCmd.ar.Term)
         state.votedFor = 0
         r.writeLastVote(0)
@@ -119,7 +119,7 @@ func (r *RaftImpl) followerLoop(isCandidate bool, state *raftState) chan bool {
         prop.rc <- pr
       } else {
         go func() {
-          log.Debugf("Forwarding proposal to leader node %d", leaderId)
+          glog.V(2).Infof("Forwarding proposal to leader node %d", leaderId)
           fr, err := r.comm.Propose(leaderId, &prop.entry)
           pr := proposalResult{
             index: fr.NewIndex,
@@ -138,7 +138,7 @@ func (r *RaftImpl) followerLoop(isCandidate bool, state *raftState) chan bool {
         // Avoid vote results that come back way too late
         state.votedFor = 0
         r.writeLastVote(0)
-        log.Debugf("Node %d received the election result: %v", r.id, vr.result)
+        glog.V(2).Infof("Node %d received the election result: %v", r.id, vr.result)
         if vr.result {
           r.setState(StateLeader)
           r.setLeaderId(0)
@@ -150,7 +150,7 @@ func (r *RaftImpl) followerLoop(isCandidate bool, state *raftState) chan bool {
 
     case change := <- r.configChanges:
       // Discovery service now up to date, so not much to do
-      log.Infof("Received configuration change type %d for node %d",
+      glog.Infof("Received configuration change type %d for node %d",
         change.Action, change.Node.Id)
 
     case stopDone := <- r.stopChan:
@@ -179,7 +179,7 @@ func (r *RaftImpl) leaderLoop(state *raftState) chan bool {
   _, err := r.makeProposal(nil, state)
   if err != nil {
     // Not sure what else to do, so abort being the leader
-    log.Infof("Error when initially trying to become leader: %s", err)
+    glog.Infof("Error when initially trying to become leader: %s", err)
     state.votedFor = 0
     r.writeLastVote(0)
     r.setState(StateFollower)
@@ -196,7 +196,7 @@ func (r *RaftImpl) leaderLoop(state *raftState) chan bool {
       // 5.1: If RPC request or response contains term T > currentTerm:
       // set currentTerm = T, convert to follower
       if appendCmd.ar.Term > r.GetCurrentTerm() {
-        log.Infof("Append request from new leader at new term %d. No longer leader",
+        glog.Infof("Append request from new leader at new term %d. No longer leader",
           appendCmd.ar.Term)
         // Potential race condition averted because only this goroutine updates term
         r.setCurrentTerm(appendCmd.ar.Term)
@@ -247,18 +247,18 @@ func (r *RaftImpl) handleLeaderConfigChange(state *raftState, change discovery.C
   id := change.Node.Id
   switch change.Action {
   case discovery.NewNode:
-    log.Infof("Adding new node %d", id)
+    glog.Infof("Adding new node %d", id)
     state.peers[id] = startPeer(id, r, state.peerMatchChanges)
     state.peerMatches[id] = 0
 
   case discovery.DeletedNode:
-    log.Infof("Stopping communications to node %d", id)
+    glog.Infof("Stopping communications to node %d", id)
     state.peers[id].stop()
     delete(state.peers, id)
     delete(state.peerMatches, id)
 
   case discovery.UpdatedNode:
-    log.Infof("New address for node %d: %s", id, change.Node.Address)
+    glog.Infof("New address for node %d: %s", id, change.Node.Address)
   }
 }
 
@@ -277,7 +277,7 @@ func (r *RaftImpl) calculateCommitIndex(state *raftState) uint64 {
   cur := max
   for ; cur > r.GetCommitIndex(); cur-- {
     if r.canCommit(cur, state) {
-      log.Debugf("Returning new commit index of %d", cur)
+      glog.V(2).Infof("Returning new commit index of %d", cur)
       return cur
     }
   }
@@ -300,7 +300,7 @@ func (r *RaftImpl) canCommit(ix uint64, state *raftState) bool {
   if votes >= (len(state.peerMatches) / 2) {
     entry, err := r.stor.GetEntry(ix)
     if err != nil {
-      log.Debugf("Error reading entry from log: %v", err)
+      glog.V(2).Infof("Error reading entry from log: %v", err)
     } else if entry != nil && entry.Term == r.GetCurrentTerm() {
       return true
     }

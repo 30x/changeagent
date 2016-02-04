@@ -3,9 +3,9 @@ package discovery
 import (
   "fmt"
   "time"
+  "github.com/golang/glog"
   "github.com/golang/protobuf/proto"
   "github.com/samuel/go-zookeeper/zk"
-  "revision.aeip.apigee.net/greg/changeagent/log"
 )
 
 const (
@@ -24,7 +24,7 @@ type ZookeeperDiscovery struct {
 }
 
 func StartZookeeperDiscovery(servers []string, path string, user string, pw string) (*ZookeeperDiscovery, error) {
-  log.Infof("Connecting to zookeeper at %v", servers)
+  glog.Infof("Connecting to zookeeper at %v", servers)
   zoo, eventChan, err := zk.Connect(servers, ConnectTimeout)
   if err != nil {
     return nil, err
@@ -120,10 +120,10 @@ func (z *ZookeeperDiscovery) zkEventLoop() {
     case se := <-z.eventChan:
       if se.Type == zk.EventNodeChildrenChanged {
         // We only start one watcher so this always mean we need to re-check children
-        log.Info("Node children changed")
+        glog.Info("Node children changed")
         z.commandChan <- true
       } else {
-        log.Infof("Unknown server event %v", se.Type)
+        glog.Infof("Unknown server event %v", se.Type)
       }
     case <-z.stopChan:
       // Nothing to do!
@@ -142,7 +142,7 @@ func (z *ZookeeperDiscovery) commandLoop() {
       z.nodes = newNodes
       z.sendDifferences(oldNodes, newNodes)
     } else {
-      log.Infof("Error getting state from zookeeper: %v", err)
+      glog.Infof("Error getting state from zookeeper: %v", err)
     }
   }
 }
@@ -150,7 +150,7 @@ func (z *ZookeeperDiscovery) commandLoop() {
 func (z *ZookeeperDiscovery) updateChildren() (map[uint64]*Node, error) {
   ret := make(map[uint64]*Node)
   childList, _, _, err := z.zk.ChildrenW(z.path)
-  log.Infof("New children: %v", childList)
+  glog.Infof("New children: %v", childList)
   if err != nil {
     return nil, fmt.Errorf("Error getting %s: %s", z.path, err.Error())
   }
@@ -173,7 +173,7 @@ func (z *ZookeeperDiscovery) updateChildren() (map[uint64]*Node, error) {
     }
     ret[pb.GetId()] = &node
   }
-  log.Infof("Got new list of nodes: %v", ret)
+  glog.Infof("Got new list of nodes: %v", ret)
   return ret, nil
 }
 
@@ -186,7 +186,7 @@ func (z *ZookeeperDiscovery) sendDifferences(oldNodes map[uint64]*Node, newNodes
   for k, n := range(newNodes) {
     delete(oldKeys, k)
     if oldNodes[k] == nil {
-      log.Infof("New key %d", k)
+      glog.Infof("New key %d", k)
       e := Change{
         Action: NewNode,
         Node: n,
@@ -196,7 +196,7 @@ func (z *ZookeeperDiscovery) sendDifferences(oldNodes map[uint64]*Node, newNodes
   }
 
   for k := range(oldKeys) {
-    log.Infof("Deleted key %d", k)
+    glog.Infof("Deleted key %d", k)
     e := Change{
       Action: DeletedNode,
     }

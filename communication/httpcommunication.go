@@ -7,10 +7,10 @@ import (
   "time"
   "io/ioutil"
   "net/http"
+  "github.com/golang/glog"
   "github.com/golang/protobuf/proto"
   "revision.aeip.apigee.net/greg/changeagent/discovery"
   "revision.aeip.apigee.net/greg/changeagent/storage"
-  "revision.aeip.apigee.net/greg/changeagent/log"
 )
 
 const (
@@ -82,7 +82,7 @@ func (h *HttpCommunication) sendVoteRequest(addr string, req *VoteRequest, ch ch
   }
   defer resp.Body.Close()
 
-  log.Debugf("Got back %d", resp.StatusCode)
+  glog.V(2).Infof("Got back %d", resp.StatusCode)
   if resp.StatusCode != 200 {
     vr := VoteResponse{
       Error: fmt.Errorf("HTTP status %d %s", resp.StatusCode, resp.Status),
@@ -146,7 +146,7 @@ func (h *HttpCommunication) Append(id uint64, req *AppendRequest) (*AppendRespon
   }
   defer resp.Body.Close()
 
-  log.Debugf("Got back %d", resp.StatusCode)
+  glog.V(2).Infof("Got back %d", resp.StatusCode)
   if resp.StatusCode != 200 {
     return nil, fmt.Errorf("HTTP status %d %s", resp.StatusCode, resp.Status)
   }
@@ -188,7 +188,7 @@ func (h *HttpCommunication) Propose(id uint64, e *storage.Entry) (*ProposalRespo
   }
   defer resp.Body.Close()
 
-  log.Debugf("Got back %d", resp.StatusCode)
+  glog.V(2).Infof("Got back %d", resp.StatusCode)
   if resp.StatusCode != 200 {
     return nil, fmt.Errorf("HTTP status %d %s", resp.StatusCode, resp.Status)
   }
