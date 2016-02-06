@@ -1,6 +1,8 @@
 package storage
 
 import (
+  "fmt"
+  "io"
   "time"
   "github.com/golang/protobuf/proto"
 )
@@ -74,6 +76,7 @@ type Storage interface {
   // Maintenance
   Close()
   Delete() error
+  Dump(out io.Writer, max int)
 }
 
 /*
@@ -112,4 +115,19 @@ func DecodeEntry(bytes []byte) (*Entry, error) {
     Data: pb.GetData(),
   }
   return e, nil
+}
+
+func (e *Entry) String() string {
+  s := fmt.Sprintf("{ Index: %d Term: %d ", e.Index, e.Term)
+  if e.Tenant != "" {
+    s += fmt.Sprintf("Tenant: %s ", e.Tenant)
+  }
+  if e.Collection != "" {
+    s += fmt.Sprintf("Collection: %s ", e.Collection)
+  }
+  if e.Key != "" {
+    s += fmt.Sprintf("Key: %s ", e.Key)
+  }
+  s += fmt.Sprintf("(%d bytes) }", len(e.Data))
+  return s
 }

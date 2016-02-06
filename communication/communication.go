@@ -1,6 +1,7 @@
 package communication
 
 import (
+  "fmt"
   "revision.aeip.apigee.net/greg/changeagent/storage"
 )
 
@@ -34,6 +35,16 @@ type AppendRequest struct {
   Entries []storage.Entry
 }
 
+func (a *AppendRequest) String() string {
+  s := fmt.Sprintf("AppendRequest{ Term: %d Leader: %d PrevIx: %d PrevTerm: %d LeaderCommit: %d [",
+    a.Term, a.LeaderId, a.PrevLogIndex, a.PrevLogTerm, a.LeaderCommit)
+  for _, e := range(a.Entries) {
+    s += e.String()
+  }
+  s += " ]}"
+  return s
+}
+
 type AppendResponse struct {
   Term uint64
   Success bool
@@ -41,9 +52,28 @@ type AppendResponse struct {
   Error error
 }
 
+func (a *AppendResponse) String() string {
+  s := fmt.Sprintf("AppendResponse{ Term: %d Success: %v CommitIndex: %d ",
+    a.Term, a.Success, a.CommitIndex)
+  if a.Error != nil {
+    s += fmt.Sprintf("Error: %s ", a.Error)
+  }
+  s += " }"
+  return s
+}
+
 type ProposalResponse struct {
   NewIndex uint64
   Error error
+}
+
+func (a *ProposalResponse) String() string {
+  s := fmt.Sprintf("ProposalResponse{ NewIndex: %d ", a.NewIndex)
+  if a.Error != nil {
+    s += fmt.Sprintf("Error: %s ", a.Error)
+  }
+  s += " }"
+  return s
 }
 
 type Communication interface {

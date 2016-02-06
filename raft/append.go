@@ -160,6 +160,8 @@ func (r *RaftImpl) makeProposal(newEntry *storage.Entry, state *raftState) (uint
 
     if newEntry != nil {
       glog.V(2).Infof("Appending data for index %d term %d", newIndex, term)
+      newEntry.Index = newIndex
+      newEntry.Term = term
       err := r.appendEntries([]storage.Entry{*newEntry})
       if err != nil {
         return 0, err

@@ -2,18 +2,26 @@ package communication
 
 import (
   "bytes"
+  "errors"
   "fmt"
+  "flag"
   "testing"
   "net"
   "net/http"
+  "sync"
   "time"
   "revision.aeip.apigee.net/greg/changeagent/discovery"
   "revision.aeip.apigee.net/greg/changeagent/storage"
 )
 
 var expectedEntries []storage.Entry
+var expectedLock = sync.Mutex{}
 
 func TestRaftCalls(t *testing.T) {
+  flag.Set("logtostderr", "true")
+  flag.Set("v", "2")
+  flag.Parse()
+
   anyPort := &net.TCPAddr{}
   listener, err := net.ListenTCP("tcp", anyPort)
   if err != nil { t.Fatal("Can't listen on TCP port") }
@@ -69,16 +77,27 @@ func TestRaftCalls(t *testing.T) {
   e := storage.Entry{
     Index: 1,
     Term: 2,
+    Timestamp: time.Now(),
+    Tenant: "foo",
+    Collection: "bar",
+    Key: "baz",
     Data: []byte("Hello!"),
   }
   ar.Entries = append(ar.Entries, e)
   e2 := storage.Entry{
     Index: 2,
     Term: 3,
+    Timestamp: time.Now(),
+    Tenant: "foo",
+    Collection: "bar",
+    Key: "baz",
     Data: []byte("Goodbye!"),
   }
   ar.Entries = append(ar.Entries, e2)
+
+  expectedLock.Lock()
   expectedEntries = ar.Entries
+  expectedLock.Unlock()
 
   aresp, err = comm.Append(1, &ar)
   if err != nil { t.Fatalf("Error from voteResponse: %v", err) }
@@ -87,10 +106,20 @@ func TestRaftCalls(t *testing.T) {
   if aresp.Success { t.Fatal("Expected not success") }
 
   e3 := storage.Entry{
+    Timestamp: time.Now(),
     Index: 3,
     Term: 3,
+    Tenant: "foo",
+    Collection: "bar",
+    Key: "baz",
     Data: []byte("Hello, World!"),
   }
+
+  expectedLock.Lock()
+  expectedEntries = make([]storage.Entry, 1)
+  expectedEntries[0] = e3
+  expectedLock.Unlock()
+
   presp, err := comm.Propose(1, &e3)
   if err != nil { t.Fatalf("Error from propose: %v", err) }
   if presp.Error != nil { t.Fatalf("Error from propose: %v", presp.Error) }
@@ -120,6 +149,9 @@ func (r *testRaft) RequestVote(req *VoteRequest) (*VoteResponse, error) {
 }
 
 func (r *testRaft) Append(req *AppendRequest) (*AppendResponse, error) {
+  expectedLock.Lock()
+  defer expectedLock.Unlock()
+
   vr := AppendResponse{
     Term: req.Term,
     Success: req.Term == 1,
@@ -127,11 +159,24 @@ func (r *testRaft) Append(req *AppendRequest) (*AppendResponse, error) {
   r.t.Logf("Expected: %v", expectedEntries)
   r.t.Logf("Got: %v", req.Entries)
   for i, e := range(req.Entries) {
-    if e.Index != expectedEntries[i].Index {
+    ee := expectedEntries[i]
+    if e.Index != ee.Index {
       r.t.Fatalf("%d: Expected index %d and got %d", i, expectedEntries[i].Index, e.Index)
     }
-    if e.Term != expectedEntries[i].Term {
-      r.t.Fatalf("Expected term %d and got %d", expectedEntries[i].Term, e.Term)
+    if e.Term != ee.Term {
+      r.t.Fatal("Terms do not match")
+    }
+    if e.Timestamp != ee.Timestamp {
+      r.t.Fatal("Timestamps do not match")
+    }
+    if e.Tenant != ee.Tenant {
+      r.t.Fatal("Tenants do not match")
+    }
+    if e.Collection != ee.Collection {
+      r.t.Fatal("Collections do not match")
+    }
+    if e.Key != ee.Key {
+     r.t.Fatal("Keys do not match")
     }
     if !bytes.Equal(e.Data, expectedEntries[i].Data) {
       r.t.Fatal("Bytes do not match")
@@ -141,5 +186,17 @@ func (r *testRaft) Append(req *AppendRequest) (*AppendResponse, error) {
 }
 
 func (r *testRaft) Propose(e *storage.Entry) (uint64, error) {
+  expectedLock.Lock()
+  defer expectedLock.Unlock()
+
+  ee := expectedEntries[0]
+  if ee.Index != e.Index { return 0, errors.New("Incorrect index") }
+  if ee.Term != e.Term { return 0, errors.New("Incorrect term") }
+  if ee.Timestamp != e.Timestamp { return 0, errors.New("Incorrect timestamp") }
+  if ee.Tenant != e.Tenant { return 0, errors.New("Incorrect tenant") }
+  if ee.Collection != e.Collection { return 0, errors.New("Incorrect collection") }
+  if ee.Key != e.Key { return 0, errors.New("Incorrect key") }
+  if !bytes.Equal(ee.Data, e.Data) { return 0, errors.New("Incorrect data") }
+
   return 123, nil
 }

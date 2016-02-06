@@ -16,7 +16,8 @@ import (
 const (
   DataDir = "./rafttestdata"
   PreserveDatabases = false
-  DebugMode = true
+  DumpDatabases = false
+  DebugMode = false
 )
 
 var testRafts []*RaftImpl
@@ -31,9 +32,9 @@ func TestMain(m *testing.M) {
 
 func runMain(m *testing.M) int {
   os.MkdirAll(DataDir, 0777)
+  flag.Set("logtostderr", "true")
   if DebugMode {
-    flag.Set("logtostderr", "true")
-    flag.Set("v", "2")
+    flag.Set("v", "5")
   }
   flag.Parse()
 
@@ -122,6 +123,9 @@ func cleanRafts() {
 
 func cleanRaft(raft *RaftImpl, l *net.TCPListener) {
   raft.Close()
+  if DumpDatabases {
+    raft.stor.Dump(os.Stdout, 1000)
+  }
   raft.stor.Close()
   if !PreserveDatabases {
     raft.stor.Delete()

@@ -13,7 +13,6 @@ import (
   "fmt"
   "io"
   "unsafe"
-  "encoding/hex"
   "github.com/golang/glog"
 )
 
@@ -110,14 +109,45 @@ func (s *LevelDBStorage) Dump(out io.Writer, max int) {
       return
     }
 
-    keyPtr := C.leveldb_iter_key(it, &keyLen)
-    key := ptrToBytes(unsafe.Pointer(keyPtr), keyLen)
-    valPtr := C.leveldb_iter_value(it, &valLen)
-    val := ptrToBytes(unsafe.Pointer(valPtr), valLen)
+    keyPtr := unsafe.Pointer(C.leveldb_iter_key(it, &keyLen))
+    key := ptrToBytes(keyPtr, keyLen)
+    valPtr := unsafe.Pointer(C.leveldb_iter_value(it, &valLen))
 
-    fmt.Fprintf(out, "Key: %s (%d) Value: %s (%d)\n",
-      hex.EncodeToString(key), keyLen,
-      hex.EncodeToString(val), valLen)
+    _, kt := parseKeyPrefix(key[0])
+    switch kt {
+    case MetadataKey:
+      _, mkey, _ := keyToUint(keyPtr, keyLen)
+      fmt.Fprintf(out,          "Metadata   (%d) %d bytes\n", mkey, valLen)
+      break
+    case IndexKey:
+      tenName, colName, ixLen, _ := ptrToIndexType(valPtr, valLen)
+      if colName == "" {
+        switch ixLen {
+        case startRange:
+          fmt.Fprintf(out, "Tenant (%s) start\n", tenName)
+        case endRange:
+          fmt.Fprintf(out, "Tenant (%s) end\n", tenName)
+        default:
+          fmt.Fprintf(out, "Tenant (%s) %d bytes\n", tenName, valLen)
+        }
+      } else {
+        switch ixLen {
+        case startRange:
+          fmt.Fprintf(out, "Collection (%s) start\n", colName)
+        case endRange:
+          fmt.Fprintf(out, "Collection (%s) end\n", colName)
+        default:
+          fmt.Fprintf(out, "Collection (%s) %d bytes\n", colName, valLen)
+        }
+      }
+      break
+    case EntryKey:
+      _, ekey, _ := keyToUint(keyPtr, keyLen)
+      entry, _ := ptrToEntry(valPtr, valLen)
+      fmt.Fprintf(out,          "Entry       (%d) %s\n", ekey, entry)
+      break
+    }
+
     C.leveldb_iter_next(it)
   }
 
@@ -175,6 +205,7 @@ func (s *LevelDBStorage) AppendEntry(entry *Entry) error {
   valPtr, valLen := entryToPtr(entry)
   defer freePtr(valPtr)
 
+  glog.V(2).Infof("Appending entry: %s", entry)
   return s.putEntry(keyPtr, keyLen, valPtr, valLen)
 }
 
