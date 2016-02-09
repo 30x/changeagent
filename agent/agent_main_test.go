@@ -11,23 +11,27 @@ import (
   "time"
   "revision.aeip.apigee.net/greg/changeagent/discovery"
   "revision.aeip.apigee.net/greg/changeagent/raft"
+
+  . "github.com/onsi/ginkgo"
+  . "github.com/onsi/gomega"
 )
 
 const (
   DataDir = "./agenttestdata"
   PreserveDatabases = false
-  DebugMode = true
+  DebugMode = false
 )
 
 var testListener []*net.TCPListener
 var testAgents []*ChangeAgent
 var leaderIndex int
 
-func TestMain(m *testing.M) {
-  os.Exit(runMain(m))
+func TestAgent(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "Agent Suite")
 }
 
-func runMain(m *testing.M) int {
+var _ = BeforeSuite(func() {
   os.MkdirAll(DataDir, 0777)
   flag.Set("logtostderr", "true")
   if DebugMode {
@@ -49,36 +53,30 @@ func runMain(m *testing.M) int {
   disco := discovery.CreateStaticDiscovery(addrs)
 
   agent1, err := startAgent(1, disco, path.Join(DataDir, "test1"), testListener[0])
-  if err != nil {
-    fmt.Printf("Error starting raft 1: %v", err)
-    return 2
-  }
+  Expect(err).Should(Succeed())
   testAgents = append(testAgents, agent1)
-  defer cleanAgent(agent1, testListener[0])
 
   agent2, err := startAgent(2, disco, path.Join(DataDir, "test2"), testListener[1])
-  if err != nil {
-    fmt.Printf("Error starting raft 2: %v", err)
-    return 3
-  }
+  Expect(err).Should(Succeed())
   testAgents = append(testAgents, agent2)
-  defer cleanAgent(agent2, testListener[1])
 
   agent3, err := startAgent(3, disco, path.Join(DataDir, "test3"), testListener[2])
-  if err != nil {
-    fmt.Printf("Error starting raft 3: %v", err)
-    return 4
-  }
+  Expect(err).Should(Succeed())
   testAgents = append(testAgents, agent3)
-  defer cleanAgent(agent3, testListener[2])
+})
 
-  if !waitForLeader() {
-    panic("Leader was not elected in time")
+
+var _ = AfterSuite(func() {
+  for i := range(testAgents) {
+    cleanAgent(testAgents[i], testListener[i])
   }
-  getLeaderIndex()
+})
 
-  return m.Run()
-}
+var _ = Describe("Agent startup test", func() {
+  It("Leader is elected", func() {
+    Expect(waitForLeader()).Should(Equal(true))
+  })
+})
 
 func startAgent(id uint64, disco discovery.Discovery, dir string, listener *net.TCPListener) (*ChangeAgent, error) {
   mux := http.NewServeMux()
@@ -114,7 +112,6 @@ func countRafts() (int, int) {
 }
 
 func waitForLeader() bool {
-  time.Sleep(time.Second)
   for i := 0; i < 40; i++ {
     _, leaders := countRafts()
     if leaders == 0 {

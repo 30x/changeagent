@@ -2,80 +2,85 @@ package main
 
 import (
   "fmt"
+  "regexp"
   "strings"
-  "testing"
   "time"
   "net/http"
   "io/ioutil"
+  . "github.com/onsi/ginkgo"
+  . "github.com/onsi/gomega"
+  "bytes"
 )
 
 const (
   jsonContent = "application/json"
 )
 
-var lastNewChange uint64 = 1
+var _ = Describe("Basic API Test", func() {
+  BeforeEach(func() {
+    waitForLeader()
+    getLeaderIndex()
+  })
 
-func TestPostChange(t *testing.T) {
-  uri := getLeaderURI() + "/changes"
-  request := "{\"hello\": \"world!\", \"foo\": 123}"
+  var lastNewChange uint64 = 1
 
-  pr, err := http.Post(uri, jsonContent, strings.NewReader(request))
-  if err != nil { t.Fatalf("Post error: %v", err) }
-  if pr.StatusCode != 200 {
-    t.Fatalf("Invalid HTTP status: %d", pr.StatusCode)
-  }
-  defer pr.Body.Close()
+  It("POST new change", func() {
+    uri := getLeaderURI() + "/changes"
+    request := "{\"hello\": \"world!\", \"foo\": 123}"
 
-  reqResp, err := unmarshalJson(pr.Body)
-  if err != nil { t.Fatalf("Read error: %v", err) }
-  t.Logf("Got response %s", reqResp)
+    pr, err := http.Post(uri, jsonContent, strings.NewReader(request))
+    Expect(err).Should(Succeed())
+    Expect(pr.StatusCode).Should(Equal(200))
+    defer pr.Body.Close()
 
-  lastNewChange++
-  if reqResp.Index != lastNewChange {
-    t.Fatalf("Got index: %d expected: %d", reqResp.Index, lastNewChange)
-  }
+    respBody, err := ioutil.ReadAll(pr.Body)
+    Expect(err).Should(Succeed())
+    fmt.Fprintf(GinkgoWriter, "Got response body %s\n", respBody)
 
-  // Upon return, change should immediately be represented at the leader
-  respExpected :=
-    fmt.Sprintf("[{\"_id\":%d,\"data\":{\"hello\":\"world!\",\"foo\":123}}]", lastNewChange)
-  peerChanges := getChanges(t, leaderIndex, lastNewChange - 1)
-  if peerChanges != respExpected {
-    t.Fatalf("Peer %d: Got final response of \"%s\" instead of \"%s\"",
-      leaderIndex, peerChanges, respExpected)
-  }
+    reqResp, err := unmarshalJson(bytes.NewBuffer(respBody))
+    Expect(err).Should(Succeed())
+    fmt.Fprintf(GinkgoWriter, "Got response %s\n", reqResp)
 
-  // Check that the change was also replicated to all followers
-  for i, a := range(testAgents) {
-    a.raft.GetAppliedTracker().TimedWait(lastNewChange - 1, 2 * time.Second)
-    peerChanges:= getChanges(t, i, lastNewChange - 1)
-    if peerChanges != respExpected {
-      t.Fatalf("Peer %d: Got final response of \"%s\" instead of \"%s\"",
-        leaderIndex, peerChanges, respExpected)
+    lastNewChange++
+    Expect(reqResp.Index).Should(Equal(lastNewChange))
+
+    // Upon return, change should immediately be represented at the leader
+    respExpected :=
+      fmt.Sprintf("[{\"_id\":%d,\"_ts\":[0-9]+,\"data\":{\"hello\":\"world!\",\"foo\":123}}]", lastNewChange)
+    peerChanges := getChanges(leaderIndex, lastNewChange - 1)
+    match, err := regexp.MatchString(respExpected, peerChanges)
+    fmt.Fprintf(GinkgoWriter, "Post response: \"%s\"\n", peerChanges)
+    Expect(err).Should(Succeed())
+    Expect(match).Should(BeTrue())
+
+    // Check that the change was also replicated to all followers
+    for i, a := range (testAgents) {
+      a.raft.GetAppliedTracker().TimedWait(lastNewChange - 1, 2 * time.Second)
+      peerChanges := getChanges(i, lastNewChange - 1)
+      match, err := regexp.MatchString(respExpected, peerChanges)
+      fmt.Fprintf(GinkgoWriter, "Get changes peer %d: \"%s\"\n", i, peerChanges)
+      Expect(err).Should(Succeed())
+      Expect(match).Should(BeTrue())
     }
-  }
-}
+  })
 
-func TestEmptyChange(t *testing.T) {
-  respExpected := "[]"
-  for i := range(testAgents) {
-    peerChanges:= getChanges(t, i, lastNewChange)
-    if peerChanges != respExpected {
-      t.Fatalf("Peer %d: Got final response of \"%s\" instead of \"%s\"",
-        leaderIndex, peerChanges, respExpected)
+  It("POST empty change", func() {
+    respExpected := "[]"
+    for i := range (testAgents) {
+      peerChanges := getChanges(i, lastNewChange)
+      Expect(peerChanges).Should(Equal(respExpected))
     }
-  }
-}
+  })
+})
 
-func getChanges(t *testing.T, peerIndex int, since uint64) string {
+func getChanges(peerIndex int, since uint64) string{
   gr, err := http.Get(fmt.Sprintf("%s/changes?since=%d",
     getListenerURI(peerIndex), since))
-  if err != nil { t.Fatalf("Get error: %v", err) }
-  if gr.StatusCode != 200 {
-    t.Fatalf("Invalid HTTP status: %d", gr.StatusCode)
-  }
+  Expect(err).Should(Succeed())
+  Expect(gr.StatusCode).Should(Equal(200))
   defer gr.Body.Close()
 
   respBody, err := ioutil.ReadAll(gr.Body)
-  if err != nil { t.Fatalf("Read error: %v", err) }
+  Expect(err).Should(Succeed())
   return string(respBody)
 }

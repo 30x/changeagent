@@ -1,7 +1,6 @@
 package main
 
 import (
-  "errors"
   "encoding/json"
   "io"
   "io/ioutil"
@@ -9,7 +8,6 @@ import (
   "revision.aeip.apigee.net/greg/changeagent/storage"
 )
 
-var InvalidJsonError = errors.New("Invalid JSON")
 var defaultTime time.Time = time.Time{}
 
 type JsonData struct {
@@ -38,7 +36,7 @@ func unmarshalJson(in io.Reader) (*storage.Entry, error) {
   var fullData JsonData
   err = json.Unmarshal(body, &fullData)
 
-  if err != nil || fullData.Data == nil {
+  if err != nil || (fullData.Data == nil) && (fullData.Id == 0) && (fullData.Timestamp == 0) {
     // No "data" entry -- assume that this is raw JSON
     var rawJson json.RawMessage
     err = json.Unmarshal(body, &rawJson)
@@ -55,6 +53,7 @@ func unmarshalJson(in io.Reader) (*storage.Entry, error) {
     ts = time.Unix(0, fullData.Timestamp)
   }
   entry := storage.Entry{
+    Index: fullData.Id,
     Timestamp: ts,
     Tenant: fullData.Tenant,
     Collection: fullData.Collection,
