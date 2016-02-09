@@ -1,6 +1,7 @@
 package main
 
 import (
+  "flag"
   "fmt"
   "os"
   "net"
@@ -28,6 +29,11 @@ func TestMain(m *testing.M) {
 
 func runMain(m *testing.M) int {
   os.MkdirAll(DataDir, 0777)
+  flag.Set("logtostderr", "true")
+  if DebugMode {
+    flag.Set("v", "5")
+  }
+  flag.Parse()
 
   // Create three TCP listeners -- we'll use them for a cluster
   anyPort := &net.TCPAddr{}

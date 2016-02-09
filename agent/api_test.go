@@ -26,14 +26,13 @@ func TestPostChange(t *testing.T) {
   }
   defer pr.Body.Close()
 
-  reqBody, err := ioutil.ReadAll(pr.Body)
+  reqResp, err := unmarshalJson(pr.Body)
   if err != nil { t.Fatalf("Read error: %v", err) }
-  reqResp := string(reqBody)
+  t.Logf("Got response %s", reqResp)
 
   lastNewChange++
-  expected := fmt.Sprintf("{\"_id\":%d}", lastNewChange)
-  if reqResp != expected {
-    t.Fatalf("Got response:\n%s\nexpected:\n%s", reqResp, expected)
+  if reqResp.Index != lastNewChange {
+    t.Fatalf("Got index: %d expected: %d", reqResp.Index, lastNewChange)
   }
 
   // Upon return, change should immediately be represented at the leader

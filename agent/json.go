@@ -5,13 +5,19 @@ import (
   "encoding/json"
   "io"
   "io/ioutil"
+  "time"
   "revision.aeip.apigee.net/greg/changeagent/storage"
 )
 
 var InvalidJsonError = errors.New("Invalid JSON")
+var defaultTime time.Time = time.Time{}
 
 type JsonData struct {
   Id uint64 `json:"_id,omitempty"`
+  Timestamp int64 `json:"_ts,omitempty"`
+  Tenant string `json:"tenant,omitempty"`
+  Collection string `json:"collection,omitempty"`
+  Key string `json:"key,omitempty"`
   Data json.RawMessage `json:"data,omitempty"`
 }
 
@@ -25,15 +31,37 @@ type JsonError struct {
  * bytes that exactly represents the original JSON, although possibly not
  * including white space.
  */
-func unmarshalJson(in io.Reader) ([]byte, error) {
+func unmarshalJson(in io.Reader) (*storage.Entry, error) {
   body, err := ioutil.ReadAll(in)
   if err != nil { return nil, err }
 
-  var rawJson json.RawMessage
-  err = json.Unmarshal(body, &rawJson)
-  if err != nil { return nil, err }
+  var fullData JsonData
+  err = json.Unmarshal(body, &fullData)
 
-  return rawJson, nil
+  if err != nil || fullData.Data == nil {
+    // No "data" entry -- assume that this is raw JSON
+    var rawJson json.RawMessage
+    err = json.Unmarshal(body, &rawJson)
+    if err != nil { return nil, err }
+    return &storage.Entry{
+      Data: rawJson,
+    }, nil
+  }
+
+  var ts time.Time
+  if fullData.Timestamp == 0 {
+    ts = time.Time{}
+  } else {
+    ts = time.Unix(0, fullData.Timestamp)
+  }
+  entry := storage.Entry{
+    Timestamp: ts,
+    Tenant: fullData.Tenant,
+    Collection: fullData.Collection,
+    Key: fullData.Key,
+    Data: fullData.Data,
+  }
+  return &entry, nil
 }
 
 /*
@@ -42,13 +70,9 @@ func unmarshalJson(in io.Reader) ([]byte, error) {
  * named "data". Any fields in "metadata" that are non-empty will also be
  * added to the message.
  */
-func marshalJson(body []byte, metadata *JsonData, out io.Writer) error {
-  if metadata == nil {
-    metadata = &JsonData{}
-  }
-  metadata.Data = body
-
-  outBody, err := json.Marshal(metadata)
+func marshalJson(entry *storage.Entry, out io.Writer) error {
+  jd := convertData(entry)
+  outBody, err := json.Marshal(&jd)
   if err != nil { return err }
   _, err = out.Write(outBody)
   return err
@@ -64,13 +88,9 @@ func marshalChanges(changes []storage.Entry, out io.Writer) error {
   }
 
   var changeList []JsonData
-
   for _, change := range(changes) {
-    cd := JsonData{
-      Id: change.Index,
-      Data: change.Data,
-    }
-    changeList = append(changeList, cd)
+    cd := convertData(&change)
+    changeList = append(changeList, *cd)
   }
 
   outBody, err := json.Marshal(changeList)
@@ -88,4 +108,19 @@ func marshalError(result error, out io.Writer) error {
   if err != nil { return err }
   _, err = out.Write(outBody)
   return err
+}
+
+func convertData(entry *storage.Entry) *JsonData {
+  var ts int64
+  if entry.Timestamp != defaultTime {
+    ts = entry.Timestamp.UnixNano()
+  }
+  return &JsonData{
+    Id: entry.Index,
+    Timestamp: ts,
+    Tenant: entry.Tenant,
+    Collection: entry.Collection,
+    Key: entry.Key,
+    Data: entry.Data,
+  }
 }

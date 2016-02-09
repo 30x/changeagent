@@ -6,6 +6,7 @@ import (
   "time"
   "net/http"
   "github.com/golang/glog"
+  "revision.aeip.apigee.net/greg/changeagent/storage"
 )
 
 const (
@@ -52,7 +53,6 @@ func (a *ChangeAgent) handlePostChanges(resp http.ResponseWriter, req *http.Requ
     http.Error(resp, "Invalid JSON", http.StatusBadRequest)
     return
   }
-
   // Send the raft proposal. This happens asynchronously.
   newIndex, err := a.raft.Propose(proposal)
   if err != nil {
@@ -60,16 +60,18 @@ func (a *ChangeAgent) handlePostChanges(resp http.ResponseWriter, req *http.Requ
     writeError(resp, http.StatusInternalServerError, err)
     return
   }
+  glog.V(2).Infof("Proposed new change with index %d", newIndex)
 
   // Wait for the new commit to be applied, or time out
   appliedIndex :=
     a.raft.GetAppliedTracker().TimedWait(newIndex, time.Second * CommitTimeoutSeconds)
+  glog.V(2).Infof("New index %d is now applied", appliedIndex)
   if appliedIndex >= newIndex {
-    metadata := &JsonData{
-      Id: newIndex,
+    newEntry := storage.Entry{
+      Index: newIndex,
     }
     resp.Header().Add(http.CanonicalHeaderKey("content-type"), JSONContent)
-    marshalJson(nil, metadata, resp)
+    marshalJson(&newEntry, resp)
   } else {
     writeError(resp, 503, errors.New("Commit timeout"))
   }
