@@ -2,23 +2,29 @@ package raft
 
 import (
   "bytes"
+  "fmt"
   "net"
   "strconv"
-  "testing"
   "time"
   "revision.aeip.apigee.net/greg/changeagent/storage"
+  . "github.com/onsi/ginkgo"
+  . "github.com/onsi/gomega"
 )
 
 const (
   MaxWaitTime = 60 * time.Second
 )
 
-func TestWaitForLeader(t *testing.T) {
-  assertOneLeader(t)
-  appendAndVerify(t, "First test", 3)
-}
+var _ = Describe("Raft Tests", func() {
+  BeforeEach(func() {
+    assertOneLeader()
+  })
 
-/*
+  It("Wait for leader", func() {
+    appendAndVerify("First test", 3)
+  })
+
+  /*
 func TestStopFollower(t *testing.T) {
   waitForLeader(t)
 
@@ -38,63 +44,60 @@ func TestStopFollower(t *testing.T) {
 }
 */
 
-// After stopping the leader, a new one is elected
-func TestStopLeader(t *testing.T) {
-  assertOneLeader(t)
-
-  var leaderIndex int
-  for i, r := range(testRafts) {
-    if r.GetState() == StateLeader {
-      leaderIndex = i
+  // After stopping the leader, a new one is elected
+  It("Stop Leader", func() {
+    var leaderIndex int
+    for i, r := range (testRafts) {
+      if r.GetState() == StateLeader {
+        leaderIndex = i
+      }
     }
-  }
 
-  t.Logf("Stopping leader node %d", testRafts[leaderIndex].id)
-  savedId, savedPath, savedPort := stopOneNode(leaderIndex)
-  time.Sleep(time.Second)
+    fmt.Fprintf(GinkgoWriter, "Stopping leader node %d\n", testRafts[leaderIndex].id)
+    savedId, savedPath, savedPort := stopOneNode(leaderIndex)
+    time.Sleep(time.Second)
 
-  assertOneLeader(t)
-  appendAndVerify(t, "Second test. Yay!", 2)
-  // Previous step read the storage so we can close it now.
-  testRafts[leaderIndex].stor.Close()
+    assertOneLeader()
+    appendAndVerify("Second test. Yay!", 2)
+    // Previous step read the storage so we can close it now.
+    testRafts[leaderIndex].stor.Close()
 
-  t.Logf("Restarting node %d on port %d", savedId, savedPort)
-  err := restartOneNode(leaderIndex, savedId, savedPath, savedPort)
-  if err != nil { t.Fatalf("Error restarting node: %v", err) }
+    fmt.Fprintf(GinkgoWriter, "Restarting node %d on port %d\n", savedId, savedPort)
+    err := restartOneNode(leaderIndex, savedId, savedPath, savedPort)
+    Expect(err).Should(Succeed())
 
-  time.Sleep(time.Second)
-  assertOneLeader(t)
-  appendAndVerify(t, "Restarted third node. Yay!", 3)
-}
+    time.Sleep(time.Second)
+    assertOneLeader()
+    appendAndVerify("Restarted third node. Yay!", 3)
+  })
 
-// After stopping one follower, things are pretty normal actually.
-func TestStopFollower(t *testing.T) {
-  assertOneLeader(t)
-
-  var followerIndex int
-  for i, r := range(testRafts) {
-    if r.GetState() == StateFollower {
-      followerIndex = i
+  // After stopping one follower, things are pretty normal actually.
+  It("Stop Follower", func() {
+    var followerIndex int
+    for i, r := range (testRafts) {
+      if r.GetState() == StateFollower {
+        followerIndex = i
+      }
     }
-  }
 
-  t.Logf("Stopping follower node %d", testRafts[followerIndex].id)
-  savedId, savedPath, savedPort := stopOneNode(followerIndex)
-  time.Sleep(time.Second)
+    fmt.Fprintf(GinkgoWriter, "Stopping follower node %d\n", testRafts[followerIndex].id)
+    savedId, savedPath, savedPort := stopOneNode(followerIndex)
+    time.Sleep(time.Second)
 
-  assertOneLeader(t)
-  appendAndVerify(t, "Second test. Yay!", 2)
-  // Previous step read the storage so we can close it now.
-  testRafts[followerIndex].stor.Close()
+    assertOneLeader()
+    appendAndVerify("Second test. Yay!", 2)
+    // Previous step read the storage so we can close it now.
+    testRafts[followerIndex].stor.Close()
 
-  t.Logf("Restarting node %d on port %d", savedId, savedPort)
-  err := restartOneNode(followerIndex, savedId, savedPath, savedPort)
-  if err != nil { t.Fatalf("Error restarting node: %v", err) }
+    fmt.Fprintf(GinkgoWriter, "Restarting node %d on port %d\n", savedId, savedPort)
+    err := restartOneNode(followerIndex, savedId, savedPath, savedPort)
+    Expect(err).Should(Succeed())
 
-  time.Sleep(time.Second)
-  assertOneLeader(t)
-  appendAndVerify(t, "Restarted third node. Yay!", 3)
-}
+    time.Sleep(time.Second)
+    assertOneLeader()
+    appendAndVerify("Restarted third node. Yay!", 3)
+  })
+})
 
 func stopOneNode(stopId int) (uint64, string, int) {
   savedId := testRafts[stopId].id
@@ -130,48 +133,39 @@ func waitForLeader() int {
   return 0
 }
 
-func assertOneLeader(t *testing.T) {
+func assertOneLeader() {
   leaders := waitForLeader()
-  switch leaders {
-  case 0:
-    t.Fatal("No leader present in time")
-  case 1:
-    return
-  default:
-    t.Fatalf("Found %d leaders when one will do", leaders)
-  }
+  Expect(leaders).Should(Equal(1))
 }
 
-func appendAndVerify(t *testing.T, msg string, expectedCount int) uint64 {
+func appendAndVerify(msg string, expectedCount int) uint64 {
   data := []byte(msg)
   leader := getLeader()
-  if leader == nil { t.Fatal("No leader present") }
+  Expect(leader).ShouldNot(BeNil())
   lastIndex, _ := leader.GetLastIndex()
   newEntry := storage.Entry{
     Data: data,
     Timestamp: time.Now(),
   }
   index, err := leader.Propose(&newEntry)
-  if err != nil { t.Fatalf("Proposal failed: %v", err) }
-  if index != (lastIndex + 1) {
-    t.Fatalf("Expected index %d and got %d", lastIndex + 1, index)
-  }
-  t.Logf("Wrote data at index %d", lastIndex + 1)
+  Expect(err).Should(Succeed())
+  Expect(index).Should(Equal(lastIndex + 1))
+  fmt.Fprintf(GinkgoWriter, "Wrote data at index %d\n", lastIndex + 1)
 
   for i := 0; i < 10; i++ {
-    if verifyIndex(t, index, data, expectedCount) {
-      t.Log("Index now matches")
-      if verifyCommit(t, index, expectedCount) {
-        t.Log("Commit index matches too")
-        if verifyApplied(t, index, data, expectedCount) {
-          t.Log("Applied data matches too")
+    if verifyIndex(index, data, expectedCount) {
+      fmt.Fprintf(GinkgoWriter, "Index now matches")
+      if verifyCommit(index, expectedCount) {
+        fmt.Fprintf(GinkgoWriter, "Commit index matches too")
+        if verifyApplied(index, data, expectedCount) {
+          fmt.Fprintf(GinkgoWriter, "Applied data matches too")
           return index
         }
       }
     }
     time.Sleep(time.Second)
   }
-  t.Fatal("Indices not replicated in time")
+  Expect(false).Should(BeTrue())
   return lastIndex
 }
 
@@ -199,48 +193,48 @@ func getLeader() *RaftImpl {
   return nil
 }
 
-func verifyIndex(t *testing.T, ix uint64, expected []byte, expectedCount int) bool {
+func verifyIndex(ix uint64, expected []byte, expectedCount int) bool {
   correctCount := 0
   for _, raft := range(testRafts) {
     verified := true
     entry, err := raft.stor.GetEntry(ix)
-    if err != nil { t.Fatalf("Error getting entry: %v", err) }
+    Expect(err).Should(Succeed())
     if entry == nil {
-      t.Logf("Index %d not replicated to raft %d", ix, raft.id)
+      fmt.Fprintf(GinkgoWriter, "Index %d not replicated to raft %d\n", ix, raft.id)
       verified = false
     } else if !bytes.Equal(expected, entry.Data) {
-      t.Log("Data in log does not match")
+      fmt.Fprintf(GinkgoWriter, "Data in log does not match\n")
       verified = false
     }
     if verified {
       correctCount++
     }
   }
-  t.Logf("%d peers updated out of %d expected", correctCount, expectedCount)
+  fmt.Fprintf(GinkgoWriter, "%d peers updated out of %d expected\n", correctCount, expectedCount)
   return correctCount >= expectedCount
 }
 
-func verifyCommit(t *testing.T, ix uint64, expectedCount int) bool {
+func verifyCommit(ix uint64, expectedCount int) bool {
   correctCount := 0
   for _, raft := range(testRafts) {
-    t.Logf("Node %d has commit index %d", raft.id, raft.GetCommitIndex())
+    fmt.Fprintf(GinkgoWriter, "Node %d has commit index %d\n", raft.id, raft.GetCommitIndex())
     if raft.GetCommitIndex() >= ix {
       correctCount++
     }
   }
-  t.Logf("%d peers have right commit index out of %d expected",
+  fmt.Fprintf(GinkgoWriter, "%d peers have right commit index out of %d expected\n",
     correctCount, expectedCount)
   return correctCount >= expectedCount
 }
 
-func verifyApplied(t *testing.T, ix uint64, expectedData []byte, expectedCount int) bool {
+func verifyApplied(ix uint64, expectedData []byte, expectedCount int) bool {
   correctCount := 0
   for _, raft := range(testRafts) {
     if raft.GetLastApplied() >= ix {
       correctCount++
     }
   }
-  t.Logf("%d peers have right data applied out of %d expected",
+  fmt.Fprintf(GinkgoWriter, "%d peers have right data applied out of %d expected\n",
     correctCount, expectedCount)
   return correctCount >= expectedCount
 }

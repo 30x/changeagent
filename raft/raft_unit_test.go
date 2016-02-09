@@ -1,9 +1,10 @@
 package raft
 
 import (
-  "testing"
   "revision.aeip.apigee.net/greg/changeagent/communication"
   "revision.aeip.apigee.net/greg/changeagent/storage"
+  . "github.com/onsi/ginkgo"
+  . "github.com/onsi/gomega"
 )
 
 /*
@@ -19,374 +20,355 @@ import (
  * Vote RPC tests, from the spec.
  */
 
-var lastIndex uint64 = 3
+var _ = Describe("Raft Unit Tests", func() {
+  initialized := false
+  var lastIndex uint64 = 3
 
-// Reply false if term < currentTerm (§5.1)
-func TestVoteOldTerm(t *testing.T) {
-  req := &communication.VoteRequest{
-    Term: 1,
-    CandidateId: 2,
-    LastLogIndex: 3,
-    LastLogTerm: 2,
-  }
+  BeforeEach(func() {
+    if initialized {
+      return
+    }
 
-  resp, err := unitTestRaft.RequestVote(req)
-  if err != nil { t.Fatalf("Error in vote: %v", err) }
-  if resp.VoteGranted {
-    t.Fatal("Expected vote not to be granted due to old term")
-  }
-}
+    unitTestRaft.setFollowerOnly(true)
 
-// If votedFor is null or candidateId, and candidate’s log is at
-// least as up-to-date as receiver’s log, grant vote (§5.2, §5.4)
-func TestVoteOutOfDate(t *testing.T) {
-  req := &communication.VoteRequest{
-    Term: 1,
-    CandidateId: 2,
-    LastLogIndex: 2,
-    LastLogTerm: 2,
-  }
+    ar := &communication.AppendRequest{
+      Term: 2,
+      LeaderId: 1,
+      PrevLogIndex: 0,
+      PrevLogTerm: 0,
+      LeaderCommit: 1,
+      Entries: []storage.Entry{
+        storage.Entry{
+          Index: 1,
+          Term: 1,
+        },
+        storage.Entry{
+          Index: 2,
+          Term: 2,
+        },
+        storage.Entry{
+          Index: 3,
+          Term: 2,
+        },
+      },
+    }
+    resp, err := unitTestRaft.Append(ar)
+    Expect(err).Should(Succeed())
+    Expect(resp.Success).Should(BeTrue())
+    Expect(resp.CommitIndex).Should(BeEquivalentTo(1))
 
-  resp, err := unitTestRaft.RequestVote(req)
-  if err != nil { t.Fatalf("Error in vote: %v", err) }
-  if resp.VoteGranted {
-    t.Fatal("Expected vote not to be granted due to old index")
-  }
-}
+    initialized = true
+  })
 
-// Test valid voting, and that we keep track of who we voted for
-func TestVoting(t *testing.T) {
-  req := &communication.VoteRequest{
-    Term: 3,
-    CandidateId: 2,
-    LastLogIndex: 3,
-    LastLogTerm: 2,
-  }
+  It("Vote Old Term", func() {
+    // Reply false if term < currentTerm (§5.1)
+    req := &communication.VoteRequest{
+      Term: 1,
+      CandidateId: 2,
+      LastLogIndex: 3,
+      LastLogTerm: 2,
+    }
 
-  resp, err := unitTestRaft.RequestVote(req)
-  if err != nil { t.Fatalf("Error in vote: %v", err) }
-  if !resp.VoteGranted {
-    t.Fatal("Expected vote to be granted")
-  }
+    resp, err := unitTestRaft.RequestVote(req)
+    Expect(err).Should(Succeed())
+    Expect(resp.VoteGranted).Should(BeFalse())
+  })
 
-  req = &communication.VoteRequest{
-    Term: 3,
-    CandidateId: 2,
-    LastLogIndex: 3,
-    LastLogTerm: 2,
-  }
+  It("Vote Out Of Date", func() {
+    // If votedFor is null or candidateId, and candidate’s log is at
+    // least as up-to-date as receiver’s log, grant vote (§5.2, §5.4)
+    req := &communication.VoteRequest{
+      Term: 1,
+      CandidateId: 2,
+      LastLogIndex: 2,
+      LastLogTerm: 2,
+    }
 
-  resp, err = unitTestRaft.RequestVote(req)
-  if err != nil { t.Fatalf("Error in vote: %v", err) }
-  if !resp.VoteGranted {
-    t.Fatal("Expected vote to be granted even the second time")
-  }
+    resp, err := unitTestRaft.RequestVote(req)
+    Expect(err).Should(Succeed())
+    Expect(resp.VoteGranted).Should(BeFalse())
+  })
 
-  req = &communication.VoteRequest{
-    Term: 3,
-    CandidateId: 3,
-    LastLogIndex: 3,
-    LastLogTerm: 2,
-  }
+  It("Voting", func() {
+    // Test valid voting, and that we keep track of who we voted for
+    req := &communication.VoteRequest{
+      Term: 3,
+      CandidateId: 2,
+      LastLogIndex: 3,
+      LastLogTerm: 2,
+    }
 
-  resp, err = unitTestRaft.RequestVote(req)
-  if err != nil { t.Fatalf("Error in vote: %v", err) }
-  if resp.VoteGranted {
-    t.Fatal("Expected vote not to be granted because we already voted")
-  }
-}
+    resp, err := unitTestRaft.RequestVote(req)
+    Expect(err).Should(Succeed())
+    Expect(resp.VoteGranted).Should(BeTrue())
+
+    req = &communication.VoteRequest{
+      Term: 3,
+      CandidateId: 2,
+      LastLogIndex: 3,
+      LastLogTerm: 2,
+    }
+
+    resp, err = unitTestRaft.RequestVote(req)
+    Expect(err).Should(Succeed())
+    Expect(resp.VoteGranted).Should(BeTrue())
+
+    req = &communication.VoteRequest{
+      Term: 3,
+      CandidateId: 3,
+      LastLogIndex: 3,
+      LastLogTerm: 2,
+    }
+
+    resp, err = unitTestRaft.RequestVote(req)
+    Expect(err).Should(Succeed())
+    Expect(resp.VoteGranted).Should(BeFalse())
+  })
 
 /*
  * AppendEntries RPC tests, from the spec.
  */
 
-// Reply false if term < currentTerm (§5.1)
-func TestOldTermAppend(t *testing.T) {
-  req := &communication.AppendRequest{
-    Term: 1,
-    LeaderId: 1,
-  }
-  resp, err := unitTestRaft.Append(req)
-  if err != nil { t.Fatalf("Error in append: %v", err) }
-  if resp.Success {
-    t.Fatalf("Expected false due to old term")
-  }
-}
+  It("Old Term Append", func() {
+    // Reply false if term < currentTerm (§5.1)
+    req := &communication.AppendRequest{
+      Term: 1,
+      LeaderId: 1,
+    }
+    resp, err := unitTestRaft.Append(req)
+    Expect(err).Should(Succeed())
+    Expect(resp.Success).Should(BeFalse())
+  })
 
-// Reply false if log doesn’t contain an entry at prevLogIndex
-// whose term matches prevLogTerm (§5.3)
-func TestLogNoMatch(t *testing.T) {
-  req := &communication.AppendRequest{
-    Term: 1,
-    LeaderId: 1,
-    PrevLogIndex: 10,
-    PrevLogTerm: 2,
-  }
-  resp, err := unitTestRaft.Append(req)
-  if err != nil { t.Fatalf("Error in append: %v", err) }
-  if resp.Success {
-    t.Fatalf("Expected false due to missing log")
-  }
-}
+  It("Log No Match", func() {
+    // Reply false if log doesn’t contain an entry at prevLogIndex
+    // whose term matches prevLogTerm (§5.3)
+    req := &communication.AppendRequest{
+      Term: 1,
+      LeaderId: 1,
+      PrevLogIndex: 10,
+      PrevLogTerm: 2,
+    }
+    resp, err := unitTestRaft.Append(req)
+    Expect(err).Should(Succeed())
+    Expect(resp.Success).Should(BeFalse())
+  })
 
-func TestLogNoMatchTerm(t *testing.T) {
-  req := &communication.AppendRequest{
-    Term: 1,
-    LeaderId: 1,
-    PrevLogIndex: 1,
-    PrevLogTerm: 2,
-  }
-  resp, err := unitTestRaft.Append(req)
-  if err != nil { t.Fatalf("Error in append: %v", err) }
-  if resp.Success {
-    t.Fatalf("Expected false due to mismatched log")
-  }
-}
+  It("Log No Match Term", func() {
+    req := &communication.AppendRequest{
+      Term: 1,
+      LeaderId: 1,
+      PrevLogIndex: 1,
+      PrevLogTerm: 2,
+    }
+    resp, err := unitTestRaft.Append(req)
+    Expect(err).Should(Succeed())
+    Expect(resp.Success).Should(BeFalse())
+  })
 
-func TestAppend(t *testing.T) {
-  // Append any new entries not already in the log
-  req := &communication.AppendRequest{
-    Term: 2,
-    LeaderId: 1,
-    PrevLogIndex: 3,
-    PrevLogTerm: 2,
-    Entries: []storage.Entry{
-      storage.Entry{
-        Term: 2,
-        Index: 4,
+  It("Append", func() {
+    // Append any new entries not already in the log
+    req := &communication.AppendRequest{
+      Term: 2,
+      LeaderId: 1,
+      PrevLogIndex: 3,
+      PrevLogTerm: 2,
+      Entries: []storage.Entry{
+        storage.Entry{
+          Term: 2,
+          Index: 4,
+        },
+        storage.Entry{
+          Term: 2,
+          Index: 5,
+        },
       },
-      storage.Entry{
-        Term: 2,
-        Index: 5,
+    }
+    resp, err := unitTestRaft.Append(req)
+    Expect(err).Should(Succeed())
+    Expect(resp.Success).Should(BeTrue())
+    lastIndex = 5
+
+    entry, err := unitTestRaft.stor.GetEntry(4)
+    Expect(err).Should(Succeed())
+    Expect(entry.Term).Should(BeEquivalentTo(2))
+
+    entry, err = unitTestRaft.stor.GetEntry(5)
+    Expect(err).Should(Succeed())
+    Expect(entry.Term).Should(BeEquivalentTo(2))
+
+    // If an existing entry conflicts with a new one (same index
+    // but different terms), delete the existing entry and all that
+    // follow it (§5.3)
+    req = &communication.AppendRequest{
+      Term: 3,
+      LeaderId: 1,
+      PrevLogIndex: 3,
+      PrevLogTerm: 2,
+      Entries: []storage.Entry{
+        storage.Entry{
+          Term: 3,
+          Index: 4,
+        },
       },
-    },
-  }
-  resp, err := unitTestRaft.Append(req)
-  if err != nil { t.Fatalf("Error in append: %v", err) }
-  if !resp.Success {
-    t.Fatalf("Expected this to be a successful append")
-  }
-  lastIndex = 5
+    }
+    resp, err = unitTestRaft.Append(req)
+    Expect(err).Should(Succeed())
+    Expect(resp.Success).Should(BeTrue())
+    lastIndex = 4
 
-  entry, err := unitTestRaft.stor.GetEntry(4)
-  if err != nil { t.Fatalf("Error in get: %v", err) }
-  if entry.Term != 2 {
-    t.Fatalf("Expected term 2 and got %d", entry.Term)
-  }
+    entry, err = unitTestRaft.stor.GetEntry(4)
+    Expect(err).Should(Succeed())
+    Expect(entry.Term).Should(BeEquivalentTo(3))
 
-  entry, err = unitTestRaft.stor.GetEntry(5)
-  if err != nil { t.Fatalf("Error in get: %v", err) }
-  if entry.Term != 2 {
-    t.Fatalf("Expected term 2 and got %d", entry.Term)
-  }
+    entry, err = unitTestRaft.stor.GetEntry(5)
+    Expect(err).Should(Succeed())
+    Expect(entry).Should(BeNil())
 
-  // If an existing entry conflicts with a new one (same index
-  // but different terms), delete the existing entry and all that
-  // follow it (§5.3)
-  req = &communication.AppendRequest{
-    Term: 3,
-    LeaderId: 1,
-    PrevLogIndex: 3,
-    PrevLogTerm: 2,
-    Entries: []storage.Entry{
-      storage.Entry{
-        Term: 3,
-        Index: 4,
+    // Append any new entries not already in the log, again
+    req = &communication.AppendRequest{
+      Term: 3,
+      LeaderId: 1,
+      PrevLogIndex: 3,
+      PrevLogTerm: 2,
+      Entries: []storage.Entry{
+        storage.Entry{
+          Term: 3,
+          Index: 5,
+        },
+        storage.Entry{
+          Term: 3,
+          Index: 6,
+        },
       },
-    },
-  }
-  resp, err = unitTestRaft.Append(req)
-  if err != nil { t.Fatalf("Error in append: %v", err) }
-  if !resp.Success {
-    t.Fatalf("Expected this to be a successful append")
-  }
-  lastIndex = 4
+    }
+    resp, err = unitTestRaft.Append(req)
+    Expect(err).Should(Succeed())
+    Expect(resp.Success).Should(BeTrue())
+    lastIndex = 6
 
-  entry, err = unitTestRaft.stor.GetEntry(4)
-  if err != nil { t.Fatalf("Error in get: %v", err) }
-  if entry.Term != 3 {
-    t.Fatalf("Expected term 3 and got %d", entry.Term)
-  }
+    entry, err = unitTestRaft.stor.GetEntry(5)
+    Expect(err).Should(Succeed())
+    Expect(entry.Term).Should(BeEquivalentTo(3))
 
-  entry, err = unitTestRaft.stor.GetEntry(5)
-  if err != nil { t.Fatalf("Error in get: %v", err) }
-  if entry != nil {
-    t.Fatalf("Expected no entry and got %d", entry.Term)
-  }
+    entry, err = unitTestRaft.stor.GetEntry(6)
+    Expect(err).Should(Succeed())
+    Expect(entry.Term).Should(BeEquivalentTo(3))
 
-  // Append any new entries not already in the log, again
-  req = &communication.AppendRequest{
-    Term: 3,
-    LeaderId: 1,
-    PrevLogIndex: 3,
-    PrevLogTerm: 2,
-    Entries: []storage.Entry{
-      storage.Entry{
-        Term: 3,
-        Index: 5,
+    // If leaderCommit > commitIndex, set commitIndex =
+    // min(leaderCommit, index of last new entry)
+    // TODO does this have to work even if we have no entries to append?
+    req = &communication.AppendRequest{
+      Term: 3,
+      LeaderId: 1,
+      LeaderCommit: 3,
+    }
+    resp, err = unitTestRaft.Append(req)
+    Expect(err).Should(Succeed())
+    Expect(resp.Success).Should(BeTrue())
+    Expect(resp.CommitIndex).Should(BeEquivalentTo(3))
+
+    req = &communication.AppendRequest{
+      Term: 3,
+      LeaderId: 1,
+      LeaderCommit: 5,
+      Entries: []storage.Entry{
+        storage.Entry{
+          Term: 3,
+          Index: 7,
+        },
       },
-      storage.Entry{
-        Term: 3,
-        Index: 6,
+    }
+    resp, err = unitTestRaft.Append(req)
+    Expect(err).Should(Succeed())
+    Expect(resp.Success).Should(BeTrue())
+    Expect(resp.CommitIndex).Should(BeEquivalentTo(5))
+
+    req = &communication.AppendRequest{
+      Term: 3,
+      LeaderId: 1,
+      LeaderCommit: 99,
+      Entries: []storage.Entry{
+        storage.Entry{
+          Term: 3,
+          Index: 8,
+        },
       },
-    },
-  }
-  resp, err = unitTestRaft.Append(req)
-  if err != nil { t.Fatalf("Error in append: %v", err) }
-  if !resp.Success {
-    t.Fatalf("Expected this to be a successful append")
-  }
-  lastIndex = 6
+    }
+    resp, err = unitTestRaft.Append(req)
+    Expect(err).Should(Succeed())
+    Expect(resp.Success).Should(BeTrue())
+    Expect(resp.CommitIndex).Should(BeEquivalentTo(8))
+    lastIndex = 8
+  })
 
-  entry, err = unitTestRaft.stor.GetEntry(5)
-  if err != nil { t.Fatalf("Error in get: %v", err) }
-  if entry.Term != 3 {
-    t.Fatalf("Expected term 3 and got %d", entry.Term)
-  }
+  /*
+   * Commit index calculation, from the spec.
+   * Testing it using an even number since this particular algorithm doesn't
+   * account for the state of the leader.
+   */
 
-  entry, err = unitTestRaft.stor.GetEntry(6)
-  if err != nil { t.Fatalf("Error in get: %v", err) }
-  if entry.Term != 3 {
-    t.Fatalf("Expected term 3 and got %d", entry.Term)
-  }
+  It("No Commit Too Old", func() {
+    matches := map[uint64]uint64{
+      1: 0,
+      2: 0,
+      3: 0,
+      4: 0,
+    }
+    state := &raftState{
+      peerMatches: matches,
+    }
+    newIndex := unitTestRaft.calculateCommitIndex(state)
+    Expect(newIndex).Should(BeEquivalentTo(unitTestRaft.GetCommitIndex()))
+  })
 
-  // If leaderCommit > commitIndex, set commitIndex =
-  // min(leaderCommit, index of last new entry)
-  // TODO does this have to work even if we have no entries to append?
-  req = &communication.AppendRequest{
-    Term: 3,
-    LeaderId: 1,
-    LeaderCommit: 3,
-  }
-  resp, err = unitTestRaft.Append(req)
-  if err != nil { t.Fatalf("Error in append: %v", err) }
-  if !resp.Success {
-    t.Fatalf("Expected this to be a successful append")
-  }
-  if resp.CommitIndex != 3 {
-    t.Fatalf("Expected new commit index at 3, not %d", resp.CommitIndex)
-  }
+  It("No commit No Consensus", func() {
+    matches := map[uint64]uint64{
+      1: lastIndex,
+      2: 1,
+      3: 1,
+      4: 1,
+    }
+    state := &raftState{
+      peerMatches: matches,
+    }
+    newIndex := unitTestRaft.calculateCommitIndex(state)
+    Expect(newIndex).Should(BeEquivalentTo(unitTestRaft.GetCommitIndex()))
+  })
 
-  req = &communication.AppendRequest{
-    Term: 3,
-    LeaderId: 1,
-    LeaderCommit: 5,
-    Entries: []storage.Entry{
-      storage.Entry{
-        Term: 3,
-        Index: 7,
-      },
-    },
-  }
-  resp, err = unitTestRaft.Append(req)
-  if err != nil { t.Fatalf("Error in append: %v", err) }
-  if !resp.Success {
-    t.Fatalf("Expected this to be a successful append")
-  }
-  if resp.CommitIndex != 5 {
-    t.Fatalf("Expected new commit index at 5, not %d", resp.CommitIndex)
-  }
+  It("Commit Consensus", func() {
+    oldIndex := unitTestRaft.GetCommitIndex()
+    defer unitTestRaft.setCommitIndex(oldIndex)
+    unitTestRaft.setCommitIndex(lastIndex - 2)
 
-  req = &communication.AppendRequest{
-    Term: 3,
-    LeaderId: 1,
-    LeaderCommit: 99,
-    Entries: []storage.Entry{
-      storage.Entry{
-        Term: 3,
-        Index: 8,
-      },
-    },
-  }
-  resp, err = unitTestRaft.Append(req)
-  if err != nil { t.Fatalf("Error in append: %v", err) }
-  if !resp.Success {
-    t.Fatalf("Expected this to be a successful append")
-  }
-  if resp.CommitIndex != 8 {
-    t.Fatalf("Expected top commit index at 8, not %d", resp.CommitIndex)
-  }
-  lastIndex = 8
-}
+    matches := map[uint64]uint64{
+      1: lastIndex,
+      2: lastIndex,
+      3: lastIndex,
+      4: 1,
+    }
+    state := &raftState{
+      peerMatches: matches,
+    }
+    newIndex := unitTestRaft.calculateCommitIndex(state)
+    Expect(newIndex).Should(BeEquivalentTo(lastIndex))
+  })
 
-/*
- * Commit index calculation, from the spec.
- * Testing it using an even number since this particular algorithm doesn't
- * account for the state of the leader.
- */
+  It("Commit Consensus 2", func() {
+    oldIndex := unitTestRaft.GetCommitIndex()
+    defer unitTestRaft.setCommitIndex(oldIndex)
+    unitTestRaft.setCommitIndex(lastIndex - 2)
 
-func TestNoCommitTooOld(t *testing.T) {
-  matches := map[uint64]uint64{
-    1: 0,
-    2: 0,
-    3: 0,
-    4: 0,
-  }
-  state := &raftState{
-    peerMatches: matches,
-  }
-  newIndex := unitTestRaft.calculateCommitIndex(state)
-  if newIndex != unitTestRaft.GetCommitIndex() {
-    t.Fatalf("commit index should be %d, not %d",
-      unitTestRaft.GetCommitIndex(), newIndex)
-  }
-}
-
-func TestNoCommitNoConsensus(t *testing.T) {
-  matches := map[uint64]uint64{
-    1: lastIndex,
-    2: 1,
-    3: 1,
-    4: 1,
-  }
-  state := &raftState{
-    peerMatches: matches,
-  }
-  newIndex := unitTestRaft.calculateCommitIndex(state)
-  if newIndex != unitTestRaft.GetCommitIndex() {
-    t.Fatalf("commit index should be %d, not %d",
-      unitTestRaft.GetCommitIndex(), newIndex)
-  }
-}
-
-func TestCommitConsensus(t *testing.T) {
-  oldIndex := unitTestRaft.GetCommitIndex()
-  defer unitTestRaft.setCommitIndex(oldIndex)
-  unitTestRaft.setCommitIndex(lastIndex - 2)
-
-  matches := map[uint64]uint64{
-    1: lastIndex,
-    2: lastIndex,
-    3: lastIndex,
-    4: 1,
-  }
-  state := &raftState{
-    peerMatches: matches,
-  }
-  newIndex := unitTestRaft.calculateCommitIndex(state)
-  if newIndex != lastIndex {
-    t.Fatalf("commit index should be %d, not %d",
-      lastIndex, newIndex)
-  }
-}
-
-func TestCommitConsensus2(t *testing.T) {
-  oldIndex := unitTestRaft.GetCommitIndex()
-  defer unitTestRaft.setCommitIndex(oldIndex)
-  unitTestRaft.setCommitIndex(lastIndex - 2)
-
-  matches := map[uint64]uint64{
-    1: 1,
-    2: lastIndex,
-    3: lastIndex - 1,
-    4: lastIndex - 1,
-  }
-  state := &raftState{
-    peerMatches: matches,
-  }
-  newIndex := unitTestRaft.calculateCommitIndex(state)
-  if newIndex != lastIndex - 1 {
-    t.Fatalf("commit index should be %d, not %d",
-      lastIndex - 1, newIndex)
-  }
-}
+    matches := map[uint64]uint64{
+      1: 1,
+      2: lastIndex,
+      3: lastIndex - 1,
+      4: lastIndex - 1,
+    }
+    state := &raftState{
+      peerMatches: matches,
+    }
+    newIndex := unitTestRaft.calculateCommitIndex(state)
+    Expect(newIndex).Should(BeEquivalentTo(lastIndex - 1))
+  })
+})

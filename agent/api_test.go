@@ -1,6 +1,7 @@
 package main
 
 import (
+  "bytes"
   "fmt"
   "regexp"
   "strings"
@@ -9,7 +10,6 @@ import (
   "io/ioutil"
   . "github.com/onsi/ginkgo"
   . "github.com/onsi/gomega"
-  "bytes"
 )
 
 const (
@@ -54,14 +54,43 @@ var _ = Describe("Basic API Test", func() {
     Expect(match).Should(BeTrue())
 
     // Check that the change was also replicated to all followers
+    correctNodes := 0
     for i, a := range (testAgents) {
-      a.raft.GetAppliedTracker().TimedWait(lastNewChange - 1, 2 * time.Second)
+      a.raft.GetAppliedTracker().TimedWait(lastNewChange, 2 * time.Second)
       peerChanges := getChanges(i, lastNewChange - 1)
       match, err := regexp.MatchString(respExpected, peerChanges)
       fmt.Fprintf(GinkgoWriter, "Get changes peer %d: \"%s\"\n", i, peerChanges)
       Expect(err).Should(Succeed())
-      Expect(match).Should(BeTrue())
+      if match {
+        correctNodes++
+      }
     }
+    Expect(correctNodes).Should(Equal(len(testAgents)))
+  })
+
+  It("POST indexed record", func() {
+    uri := getLeaderURI() + "/changes"
+    request := "{\"tenant\":\"foo\",\"collection\":\"bar\",\"key\":\"baz\",\"data\":{\"hello\":\"world!\",\"foo\":456}}"
+
+    pr, err := http.Post(uri, jsonContent, strings.NewReader(request))
+    Expect(err).Should(Succeed())
+    Expect(pr.StatusCode).Should(Equal(200))
+    defer pr.Body.Close()
+
+    reqResp, err := unmarshalJson(pr.Body)
+    Expect(err).Should(Succeed())
+    fmt.Fprintf(GinkgoWriter, "Got response %s\n", reqResp)
+
+    newChange := reqResp.Index
+    lastNewChange = newChange
+
+    respExpected :=
+      fmt.Sprintf("[{\"_id\":%d,\"_ts\":[0-9]+,\"tenant\":\"foo\",\"collection\":\"bar\",\"key\":\"baz\",\"data\":{\"hello\":\"world!\",\"foo\":456}}]", newChange)
+    peerChanges := getChanges(leaderIndex, lastNewChange - 1)
+    match, err := regexp.MatchString(respExpected, peerChanges)
+    fmt.Fprintf(GinkgoWriter, "Post response: \"%s\"\n", peerChanges)
+    Expect(err).Should(Succeed())
+    Expect(match).Should(BeTrue())
   })
 
   It("POST empty change", func() {

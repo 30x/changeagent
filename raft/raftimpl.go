@@ -50,6 +50,7 @@ type RaftImpl struct {
   lastIndex uint64
   lastTerm uint64
   appliedTracker *ChangeTracker
+  stateMachine StateMachine
 }
 
 type voteCommand struct {
@@ -77,7 +78,8 @@ var raftRand *rand.Rand = makeRand()
 func StartRaft(id uint64,
                comm communication.Communication,
                disco discovery.Discovery,
-               stor storage.Storage) (*RaftImpl, error) {
+               stor storage.Storage,
+               state StateMachine) (*RaftImpl, error) {
   r := &RaftImpl{
     state: StateFollower,
     comm: comm,
@@ -90,6 +92,7 @@ func StartRaft(id uint64,
     latch: sync.Mutex{},
     followerOnly: false,
     appliedTracker: CreateTracker(0),
+    stateMachine: state,
   }
 
   storedId, err := stor.GetMetadata(LocalIdKey)
@@ -269,8 +272,17 @@ func (r *RaftImpl) GetLastApplied() uint64 {
 }
 
 func (r *RaftImpl) setLastApplied(t uint64) {
-  err := r.stor.SetMetadata(LastAppliedKey, t)
-  if err != nil { panic("Error writing last applied key to database") }
+  err := r.stateMachine.Commit(t)
+  if err != nil {
+    glog.Errorf("Error committing change %d: %s", t, err)
+    return
+  }
+
+  err = r.stor.SetMetadata(LastAppliedKey, t)
+  if err != nil {
+    glog.Errorf("Error updating last applied key %d to the database: %s", t, err)
+    return
+  }
 
   r.latch.Lock()
   r.lastApplied = t
