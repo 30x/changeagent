@@ -3,31 +3,37 @@
 #include <string.h>
 #include "rocksdb_native.h"
 
+static rocksdb_comparator_t* intComparator;
+static rocksdb_comparator_t* indexComparator;
+
 char* go_rocksdb_get(
     rocksdb_t* db,
     const rocksdb_readoptions_t* options,
+    rocksdb_column_family_handle_t* cf,
     const void* key, size_t keylen,
     size_t* vallen,
     char** errptr) {
-  return rocksdb_get(db, options, (const char*)key, keylen, vallen, errptr);
+  return rocksdb_get_cf(db, options, cf, (const char*)key, keylen, vallen, errptr);
 }
 
 void go_rocksdb_put(
     rocksdb_t* db,
     const rocksdb_writeoptions_t* options,
+    rocksdb_column_family_handle_t* cf,
     const void* key, size_t keylen,
     const void* val, size_t vallen,
     char** errptr) {
-  rocksdb_put(db, options, (const char*)key, keylen,
+  rocksdb_put_cf(db, options, cf, (const char*)key, keylen,
               (const char*)val, vallen, errptr);
 }
 
 void go_rocksdb_delete(
     rocksdb_t* db,
     const rocksdb_writeoptions_t* options,
+    rocksdb_column_family_handle_t* cf,
     const void* key, size_t keylen,
     char** errptr) {
-  rocksdb_delete(db, options, (const char*)key, keylen, errptr);
+  rocksdb_delete_cf(db, options, cf, (const char*)key, keylen, errptr);
 }
 
 void go_rocksdb_iter_seek(rocksdb_iterator_t* it,
@@ -36,6 +42,7 @@ void go_rocksdb_iter_seek(rocksdb_iterator_t* it,
 }
 
 static int compare_int_key(
+  void* c,
   const char* a, size_t alen,
   const char* b, size_t blen)
 {
@@ -74,6 +81,7 @@ static int keycmp(const char* a, unsigned short alen, const char* b, unsigned sh
 }
 
 static int compare_index_key(
+  void* c,
   const char* a, size_t alen,
   const char* b, size_t blen)
 {
@@ -168,9 +176,9 @@ static int go_compare_bytes_impl(
   switch (type1) {
   case METADATA_KEY:
   case ENTRY_KEY:
-    return compare_int_key(a, alen, b, blen);
+    return compare_int_key(state, a, alen, b, blen);
   case INDEX_KEY:
-    return compare_index_key(a, alen, b, blen);
+    return compare_index_key(state, a, alen, b, blen);
   default:
     return 999;
   }
@@ -190,4 +198,86 @@ static const char* go_comparator_name(void* v) {
 rocksdb_comparator_t* go_create_comparator() {
   return rocksdb_comparator_create(
     NULL, NULL, go_compare_bytes_impl, go_comparator_name);
+}
+
+static const char* int_comparator_name(void* v) {
+  return INT_COMPARATOR_NAME;
+}
+
+static const char* index_comparator_name(void* v) {
+  return INDEX_COMPARATOR_NAME;
+}
+
+void go_rocksdb_init() {
+  intComparator = rocksdb_comparator_create(
+    NULL, NULL, compare_int_key, int_comparator_name);
+  indexComparator = rocksdb_comparator_create(
+    NULL, NULL, compare_index_key, index_comparator_name);
+}
+
+char* go_rocksdb_open(
+  const char* directory,
+  rocksdb_t** dbHandle,
+  rocksdb_column_family_handle_t** defaultHandle,
+  rocksdb_column_family_handle_t** metadataHandle,
+  rocksdb_column_family_handle_t** indicesHandle,
+  rocksdb_column_family_handle_t** entriesHandle,
+  rocksdb_cache_t** cacheHandle,
+  size_t cacheSize)
+{
+  char* cfNames[4];
+  rocksdb_options_t* cfOpts[4];
+  rocksdb_column_family_handle_t* cfHandles[4];
+  rocksdb_options_t* mainOptions;
+  rocksdb_cache_t* cache;
+  rocksdb_block_based_table_options_t* blockOpts;
+  char* err = NULL;
+  rocksdb_t* db;
+  int i;
+
+  cfNames[0] = "default";
+  cfNames[1] = "metadata";
+  cfNames[2] = "indices";
+  cfNames[3] = "entries";
+
+  cache = rocksdb_cache_create_lru(cacheSize);
+
+  blockOpts = rocksdb_block_based_options_create();
+  rocksdb_block_based_options_set_block_cache(blockOpts, cache);
+
+  mainOptions = rocksdb_options_create();
+  rocksdb_options_set_create_if_missing(mainOptions, 1);
+  rocksdb_options_set_create_missing_column_families(mainOptions, 1);
+  rocksdb_options_set_block_based_table_factory(mainOptions, blockOpts);
+
+  cfOpts[0] = rocksdb_options_create();
+  cfOpts[1] = rocksdb_options_create();
+  rocksdb_options_set_comparator(cfOpts[1], intComparator);
+  cfOpts[2] = rocksdb_options_create();
+  rocksdb_options_set_comparator(cfOpts[2], indexComparator);
+  cfOpts[3] = rocksdb_options_create();
+  rocksdb_options_set_comparator(cfOpts[3], intComparator);
+
+  db = rocksdb_open_column_families(
+    mainOptions, directory, 4, (const char**)cfNames,
+    (const rocksdb_options_t**)cfOpts,
+    cfHandles, &err
+  );
+
+  rocksdb_options_destroy(mainOptions);
+  for (i = 0; i < 4; i++) {
+    rocksdb_options_destroy(cfOpts[i]);
+  }
+  rocksdb_block_based_options_destroy(blockOpts);
+
+  if (err == NULL) {
+    *dbHandle = db;
+    *defaultHandle = cfHandles[0];
+    *metadataHandle = cfHandles[1];
+    *indicesHandle = cfHandles[2];
+    *entriesHandle = cfHandles[3];
+    *cacheHandle = cache;
+  }
+
+  return err;
 }

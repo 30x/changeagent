@@ -1,72 +1,73 @@
 package storage
 
 import (
-  "flag"
+  "fmt"
   "math"
+  "os"
   "reflect"
   "sort"
-  "testing"
   "testing/quick"
+  . "github.com/onsi/ginkgo"
+  . "github.com/onsi/gomega"
 )
 
-func TestLevelDBIndex(t *testing.T) {
-  flag.Set("logtostderr", "true")
-  stor, err := CreateRocksDBStorage("./indextestleveldb", 1000)
-  if err != nil { t.Fatalf("Create db failed: %v", err) }
-  defer func() {
-    //stor.Dump(os.Stdout, 25)
-    stor.Close()
-    err := stor.Delete()
-    if err != nil { t.Logf("Error deleting database: %v", err) }
-  }()
-  indexTest(t, stor)
-}
+var _ = Describe("Index test", func() {
+  It("Test Index", func() {
+    stor, err := CreateRocksDBStorage("./indextestleveldb", 1000)
+    Expect(err).Should(Succeed())
+    defer func() {
+      stor.Dump(os.Stdout, 25)
+      stor.Close()
+      err := stor.Delete()
+      Expect(err).Should(Succeed())
+    }()
+    indexTest(stor)
+  })
+})
 
-func indexTest(t *testing.T, stor Storage) {
-  if !testOneTenant(t, stor, "foo") {
-    t.Fatal("Fatal errors for tenant")
+func indexTest(stor Storage) {
+  if !testOneTenant(stor, "foo") {
+    Fail("Fatal errors for first tenant")
   }
 
   err := quick.Check(func(tenant string) bool {
-    return testOneTenant(t, stor, tenant)
+    return testOneTenant(stor, tenant)
   }, &quick.Config{
     MaxCount: 10,
   })
-  if err != nil {
-    t.Fatalf("Test failed: %v", err)
-  }
+  Expect(err).Should(Succeed())
 }
 
-func testOneTenant(t *testing.T, stor Storage, tenantName string) bool {
+func testOneTenant(stor Storage, tenantName string) bool {
   if tenantName == "" { return true }
 
   err := stor.SetIndexEntry(tenantName, "coll", "foo", 1234);
   if err != nil {
-    t.Logf("error: %v", err)
+    fmt.Fprintf(GinkgoWriter, "error: %v\n", err)
     return false
   }
 
   tenExists, err := stor.TenantExists(tenantName)
-  if err != nil { t.Fatal(err.Error()) }
+  Expect(err).Should(Succeed())
   if tenExists {
-    t.Log("Tenant exists and should not")
+    fmt.Fprintf(GinkgoWriter, "Tenant exists and should not\n")
     return false
   }
 
   err = stor.CreateTenant(tenantName)
-  if err != nil { t.Fatal(err.Error()) }
+  Expect(err).Should(Succeed())
 
   tenExists, err = stor.TenantExists(tenantName)
-  if err != nil { t.Fatal(err.Error()) }
+  Expect(err).Should(Succeed())
   if !tenExists {
-    t.Log("Tenant does not exist and should")
+    fmt.Fprintf(GinkgoWriter, "Tenant does not exist and should\n")
     return false
   }
 
   var collections []string
 
-  if !testOneCollection(t, stor, tenantName, "foocollection") {
-    t.Log("Fatal errors testing collection")
+  if !testOneCollection(stor, tenantName, "foocollection") {
+    fmt.Fprintf(GinkgoWriter, "Fatal errors testing collection\n")
     return false
   }
   collections = append(collections, "foocollection")
@@ -75,24 +76,21 @@ func testOneTenant(t *testing.T, stor Storage, tenantName string) bool {
     if coll != "" {
       collections = append(collections, coll)
     }
-    return testOneCollection(t, stor, tenantName, coll)
+    return testOneCollection(stor, tenantName, coll)
   }, nil)
-  if err != nil {
-    t.Logf("Error testing collections: %s", err)
-    return false
-  }
+  Expect(err).Should(Succeed())
 
   sort.Strings(collections)
 
   foundCollections, err := stor.GetTenantCollections(tenantName)
 
   if !reflect.DeepEqual(collections, foundCollections) {
-    t.Logf("Collection list does not match for tenant %s", tenantName)
+    fmt.Fprintf(GinkgoWriter, "Collection list does not match for tenant %s\n", tenantName)
     for i := 0; i < len(collections) && i < len(foundCollections); i++ {
       if collections[i] != foundCollections[i] {
-        t.Logf("Mismatch at position %d", i)
-        t.Logf("Expected: %s", collections[i])
-        t.Logf("Found:    %s", foundCollections[i])
+        fmt.Fprintf(GinkgoWriter, "Mismatch at position %d\n", i)
+        fmt.Fprintf(GinkgoWriter, "Expected: %s\n", collections[i])
+        fmt.Fprintf(GinkgoWriter, "Found:    %s\n", foundCollections[i])
       }
     }
     return false
@@ -101,59 +99,53 @@ func testOneTenant(t *testing.T, stor Storage, tenantName string) bool {
   return true
 }
 
-func testOneCollection(t *testing.T, stor Storage, tenantName string, collectionName string) bool {
+func testOneCollection(stor Storage, tenantName string, collectionName string) bool {
   if collectionName == "" { return true }
 
   collExists, err := stor.CollectionExists(tenantName, collectionName)
-  if err != nil { t.Fatal(err.Error()) }
+  Expect(err).Should(Succeed())
   if collExists {
-    t.Log("Collection exists and should not")
+    fmt.Fprintln(GinkgoWriter, "Collection exists and should not")
     return false
   }
 
   err = stor.CreateCollection(tenantName, collectionName)
-  if err != nil { t.Fatal(err.Error()) }
+  Expect(err).Should(Succeed())
 
   collExists, err = stor.CollectionExists(tenantName, collectionName)
-  if err != nil { t.Fatal(err.Error()) }
+  Expect(err).Should(Succeed())
   if !collExists {
-    t.Log("Collection does not exist and should")
+    fmt.Fprintln(GinkgoWriter, "Collection does not exist and should")
     return false
   }
 
   expected := make(map[string]uint64)
 
-  if !testOneKey(t, stor, tenantName, collectionName, "fookey", 1234, false) {
-    t.Log("Fatal errors testing a key")
+  if !testOneKey(stor, tenantName, collectionName, "fookey", 1234, false) {
+    fmt.Fprintln(GinkgoWriter, "Fatal errors testing a key")
     return false
   }
   expected["fookey"] = 1234
-  if !testOneKey(t, stor, tenantName, collectionName, "barkey", 1234, true) {
-    t.Log("Fatal errors testing a key")
+  if !testOneKey(stor, tenantName, collectionName, "barkey", 1234, true) {
+    fmt.Fprintln(GinkgoWriter, "Fatal errors testing a key")
     return false
   }
 
   err = quick.Check(func(key string, val uint64, shouldDelete bool) bool {
     if !shouldDelete && key != "" {
       if expected[key] != 0 {
-        t.Logf("Duplicate key %s", key)
+        fmt.Fprintf(GinkgoWriter, "Duplicate key %s\n", key)
       }
       expected[key] = val
     }
-    return testOneKey(t, stor, tenantName, collectionName, key, val, shouldDelete)
+    return testOneKey(stor, tenantName, collectionName, key, val, shouldDelete)
   }, nil)
-  if err != nil {
-    t.Logf("Error testing keys: %s", err)
-    return false
-  }
+  Expect(err).Should(Succeed())
 
   indexVals, err := stor.GetCollectionIndices(tenantName, collectionName, math.MaxUint32)
-  if err != nil {
-    t.Logf("Error getting indices: %s", err)
-    return false
-  }
-  t.Logf("Inserted %d to %s", len(expected), collectionName)
-  t.Logf("Collection %s has %d values", collectionName, len(indexVals))
+  Expect(err).Should(Succeed())
+  fmt.Fprintf(GinkgoWriter, "Inserted %d to %s\n", len(expected), collectionName)
+  fmt.Fprintf(GinkgoWriter, "Collection %s has %d values\n", collectionName, len(indexVals))
 
   var expectedVals []uint64
   for _, v := range(expected) {
@@ -163,10 +155,10 @@ func testOneCollection(t *testing.T, stor Storage, tenantName string, collection
   indexVals = sortArray(indexVals)
 
   if !reflect.DeepEqual(expectedVals, indexVals) {
-    t.Log("Values do not match")
+    fmt.Fprintln(GinkgoWriter, "Values do not match")
     for i := 0; i < len(expectedVals) && i < len(indexVals); i++ {
       if expectedVals[i] != indexVals[i] {
-        t.Logf("Mismatch at position %d (%d != %d)", i, expectedVals[i], indexVals[i])
+        fmt.Fprintf(GinkgoWriter, "Mismatch at position %d (%d != %d)\n", i, expectedVals[i], indexVals[i])
       }
     }
     return false
@@ -175,33 +167,33 @@ func testOneCollection(t *testing.T, stor Storage, tenantName string, collection
   return true
 }
 
-func testOneKey(t *testing.T, stor Storage, tenantName, collectionName, key string, val uint64, shouldDelete bool) bool {
+func testOneKey(stor Storage, tenantName, collectionName, key string, val uint64, shouldDelete bool) bool {
   if key == "" || val == 0 { return true }
 
   index, err := stor.GetIndexEntry(tenantName, collectionName, key)
-  if err != nil { t.Fatal(err.Error()) }
+  Expect(err).Should(Succeed())
   if index != 0 {
-    t.Logf("Key %s exists and should not", key)
+    fmt.Fprintf(GinkgoWriter, "Key %s exists and should not\n", key)
     return false
   }
 
   err = stor.SetIndexEntry(tenantName, collectionName, key, val)
-  if err != nil { t.Fatal(err.Error()) }
+  Expect(err).Should(Succeed())
 
   index, err = stor.GetIndexEntry(tenantName, collectionName, key)
-  if err != nil { t.Fatal(err.Error()) }
+  Expect(err).Should(Succeed())
   if index != val {
-    t.Logf("Key %s does not exist and should not", key)
+    fmt.Fprintf(GinkgoWriter, "Key %s does not exist and should\n", key)
     return false
   }
 
   if shouldDelete {
     err = stor.DeleteIndexEntry(tenantName, collectionName, key)
-    if err != nil { t.Fatal(err.Error()) }
+    Expect(err).Should(Succeed())
     index, err := stor.GetIndexEntry(tenantName, collectionName, key)
-    if err != nil { t.Fatal(err.Error()) }
+    Expect(err).Should(Succeed())
     if index != 0 {
-      t.Logf("Key %s exists after delete and should not", key)
+      fmt.Fprintf(GinkgoWriter, "Key %s exists after delete and should not\n", key)
       return false
     }
   }

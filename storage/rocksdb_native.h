@@ -12,6 +12,28 @@
 #define START_RANGE  (0xffff - 2)
 #define END_RANGE    (0xffff - 1)
 
+#define INT_COMPARATOR_NAME "CA-INT-V1"
+#define INDEX_COMPARATOR_NAME "CA-INDEX-V1"
+
+/*
+ * One-time init of comparators and stuff like that.
+ */
+extern void go_rocksdb_init();
+
+/*
+ * Do all the work around creating options and column families and opening
+ * the database.
+ */
+extern char* go_rocksdb_open(
+  const char* directory,
+  rocksdb_t** dbHandle,
+  rocksdb_column_family_handle_t** defaultHandle,
+  rocksdb_column_family_handle_t** metadataHandle,
+  rocksdb_column_family_handle_t** indicesHandle,
+  rocksdb_column_family_handle_t** entriesHandle,
+  rocksdb_cache_t** cache,
+  size_t cacheSize);
+
 /*
  * Wrapper around rocksdb_get because it's a pain to cast to and from char* in
  * go code itself.
@@ -19,6 +41,7 @@
 extern char* go_rocksdb_get(
     rocksdb_t* db,
     const rocksdb_readoptions_t* options,
+    rocksdb_column_family_handle_t* cf,
     const void* key, size_t keylen,
     size_t* vallen,
     char** errptr);
@@ -27,6 +50,7 @@ extern char* go_rocksdb_get(
 extern void go_rocksdb_put(
     rocksdb_t* db,
     const rocksdb_writeoptions_t* options,
+    rocksdb_column_family_handle_t* cf,
     const void* key, size_t keylen,
     const void* val, size_t vallen,
     char** errptr);
@@ -35,6 +59,7 @@ extern void go_rocksdb_put(
 extern void go_rocksdb_delete(
     rocksdb_t* db,
     const rocksdb_writeoptions_t* options,
+    rocksdb_column_family_handle_t* cf,
     const void* key, size_t keylen,
     char** errptr);
 
