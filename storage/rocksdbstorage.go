@@ -48,8 +48,6 @@ func CreateRocksDBStorage(baseFile string, cacheSize uint) (*LevelDBStorage, err
   stor.cache = cache
   glog.Infof("Opened RocksDB file in %s", stor.baseFile)
 
-
-
   return stor, nil
 }
 
