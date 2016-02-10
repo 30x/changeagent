@@ -11,7 +11,7 @@ import (
 
 func TestLevelDBIndex(t *testing.T) {
   flag.Set("logtostderr", "true")
-  stor, err := CreateLevelDBStorage("./indextestleveldb")
+  stor, err := CreateRocksDBStorage("./indextestleveldb", 1000)
   if err != nil { t.Fatalf("Create db failed: %v", err) }
   defer func() {
     //stor.Dump(os.Stdout, 25)

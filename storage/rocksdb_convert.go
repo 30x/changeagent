@@ -2,7 +2,7 @@ package storage
 
 /*
 #include <stdlib.h>
-#include "leveldb_native.h"
+#include "rocksdb_native.h"
 */
 import "C"
 

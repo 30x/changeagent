@@ -10,7 +10,7 @@ import (
 
 func TestLevelDBMetadata(t *testing.T) {
   flag.Set("logtostderr", "true")
-  stor, err := CreateLevelDBStorage("./metadatatestleveldb")
+  stor, err := CreateRocksDBStorage("./metadatatestleveldb", 1000)
   if err != nil { t.Fatalf("Create db failed: %v", err) }
   defer func() {
     stor.Close()
@@ -47,7 +47,7 @@ func metadataTest(t* testing.T, stor Storage) {
 
 func TestLevelDBEntries(t *testing.T) {
   flag.Set("logtostderr", "true")
-  stor, err := CreateLevelDBStorage("./entrytestleveldb")
+  stor, err := CreateRocksDBStorage("./entrytestleveldb", 1000)
   if err != nil { t.Fatalf("Create db failed: %v", err) }
   defer func() {
     stor.Dump(os.Stdout, 25)

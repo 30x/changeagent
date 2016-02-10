@@ -87,7 +87,7 @@ func startRaft(id uint64, disco discovery.Discovery, listener *net.TCPListener, 
   mux := http.NewServeMux()
   comm, err := communication.StartHttpCommunication(mux, disco)
   if err != nil { return nil, err }
-  stor, err := storage.CreateLevelDBStorage(dir)
+  stor, err := storage.CreateRocksDBStorage(dir, 1000)
   if err != nil { return nil, err }
 
   raft, err := StartRaft(id, comm, disco, stor, &dummyStateMachine{})

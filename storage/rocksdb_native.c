@@ -1,38 +1,38 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "leveldb_native.h"
+#include "rocksdb_native.h"
 
-char* go_leveldb_get(
-    leveldb_t* db,
-    const leveldb_readoptions_t* options,
+char* go_rocksdb_get(
+    rocksdb_t* db,
+    const rocksdb_readoptions_t* options,
     const void* key, size_t keylen,
     size_t* vallen,
     char** errptr) {
-  return leveldb_get(db, options, (const char*)key, keylen, vallen, errptr);
+  return rocksdb_get(db, options, (const char*)key, keylen, vallen, errptr);
 }
 
-void go_leveldb_put(
-    leveldb_t* db,
-    const leveldb_writeoptions_t* options,
+void go_rocksdb_put(
+    rocksdb_t* db,
+    const rocksdb_writeoptions_t* options,
     const void* key, size_t keylen,
     const void* val, size_t vallen,
     char** errptr) {
-  leveldb_put(db, options, (const char*)key, keylen,
+  rocksdb_put(db, options, (const char*)key, keylen,
               (const char*)val, vallen, errptr);
 }
 
-void go_leveldb_delete(
-    leveldb_t* db,
-    const leveldb_writeoptions_t* options,
+void go_rocksdb_delete(
+    rocksdb_t* db,
+    const rocksdb_writeoptions_t* options,
     const void* key, size_t keylen,
     char** errptr) {
-  leveldb_delete(db, options, (const char*)key, keylen, errptr);
+  rocksdb_delete(db, options, (const char*)key, keylen, errptr);
 }
 
-void go_leveldb_iter_seek(leveldb_iterator_t* it,
+void go_rocksdb_iter_seek(rocksdb_iterator_t* it,
     const void* k, size_t klen) {
-  leveldb_iter_seek(it, (const char*)k, klen);
+  rocksdb_iter_seek(it, (const char*)k, klen);
 }
 
 static int compare_int_key(
@@ -187,7 +187,7 @@ static const char* go_comparator_name(void* v) {
   return "ChangeAgentComparator1";
 }
 
-leveldb_comparator_t* go_create_comparator() {
-  return leveldb_comparator_create(
+rocksdb_comparator_t* go_create_comparator() {
+  return rocksdb_comparator_create(
     NULL, NULL, go_compare_bytes_impl, go_comparator_name);
 }

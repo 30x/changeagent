@@ -2,9 +2,9 @@ package storage
 
 /*
 #include <stdlib.h>
-#include "leveldb_native.h"
-#cgo CFLAGS: -O0 -g -Wall -I/usr/local/include
-#cgo LDFLAGS: -L/usr/local/lib -lleveldb
+#include "rocksdb_native.h"
+#cgo CFLAGS: -O3 -Wall -I/usr/local/include
+#cgo LDFLAGS: -L/usr/local/lib -lrocksdb
 */
 import "C"
 
@@ -16,30 +16,39 @@ import (
   "github.com/golang/glog"
 )
 
-var defaultWriteOptions *C.leveldb_writeoptions_t = C.leveldb_writeoptions_create();
-var defaultReadOptions *C.leveldb_readoptions_t = C.leveldb_readoptions_create();
+var defaultWriteOptions *C.rocksdb_writeoptions_t = C.rocksdb_writeoptions_create();
+var defaultReadOptions *C.rocksdb_readoptions_t = C.rocksdb_readoptions_create();
 
 type LevelDBStorage struct {
   baseFile string
-  db *C.leveldb_t
+  db *C.rocksdb_t
+  cache *C.rocksdb_cache_t
 }
 
-func CreateLevelDBStorage(baseFile string) (*LevelDBStorage, error) {
+func CreateRocksDBStorage(baseFile string, cacheSize uint) (*LevelDBStorage, error) {
   stor := &LevelDBStorage{
     baseFile: baseFile,
   }
 
-  opts := C.leveldb_options_create()
-  defer C.leveldb_options_destroy(opts)
-  C.leveldb_options_set_create_if_missing(opts, 1)
-  C.leveldb_options_set_comparator(opts, C.go_create_comparator())
+  cache := C.rocksdb_cache_create_lru(C.size_t(cacheSize))
+
+  opts := C.rocksdb_options_create()
+  defer C.rocksdb_options_destroy(opts)
+  C.rocksdb_options_set_create_if_missing(opts, 1)
+  C.rocksdb_options_set_comparator(opts, C.go_create_comparator())
+
+  blockOpts := C.rocksdb_block_based_options_create()
+  C.rocksdb_block_based_options_set_block_cache(blockOpts, cache)
+
+  C.rocksdb_options_set_block_based_table_factory(opts, blockOpts)
 
   db, err := stor.openDb(opts)
   if err != nil { return nil, err }
   stor.db = db
-  glog.Infof("Opened LevelDB file in %s using LevelDB %d.%d",
-    stor.baseFile,
-    C.leveldb_major_version(), C.leveldb_minor_version())
+  stor.cache = cache
+  glog.Infof("Opened RocksDB file in %s", stor.baseFile)
+
+
 
   return stor, nil
 }
@@ -48,11 +57,11 @@ func (s *LevelDBStorage) GetDataPath() string {
   return s.baseFile
 }
 
-func (s *LevelDBStorage) openDb(opts *C.leveldb_options_t) (*C.leveldb_t, error) {
+func (s *LevelDBStorage) openDb(opts *C.rocksdb_options_t) (*C.rocksdb_t, error) {
   var e *C.char
   dbCName := C.CString(s.baseFile)
   defer freeString(dbCName)
-  db := C.leveldb_open(opts, dbCName, &e)
+  db := C.rocksdb_open(opts, dbCName, &e)
 
   if db == nil {
     if e == nil {
@@ -66,17 +75,18 @@ func (s *LevelDBStorage) openDb(opts *C.leveldb_options_t) (*C.leveldb_t, error)
 }
 
 func (s *LevelDBStorage) Close() {
-  C.leveldb_close(s.db)
+  C.rocksdb_cache_destroy(s.cache)
+  C.rocksdb_close(s.db)
 }
 
 func (s *LevelDBStorage) Delete() error {
   var e *C.char
-  opts := C.leveldb_options_create()
-  defer C.leveldb_options_destroy(opts)
+  opts := C.rocksdb_options_create()
+  defer C.rocksdb_options_destroy(opts)
 
   dbCName := C.CString(s.baseFile)
   defer freeString(dbCName)
-  C.leveldb_destroy_db(opts, dbCName, &e)
+  C.rocksdb_destroy_db(opts, dbCName, &e)
   if e == nil {
     glog.Infof("Destroyed LevelDB database in %s", s.baseFile)
     return nil
@@ -90,18 +100,18 @@ func (s *LevelDBStorage) Delete() error {
 }
 
 func (s *LevelDBStorage) Dump(out io.Writer, max int) {
-  it := C.leveldb_create_iterator(s.db, defaultReadOptions)
-  defer C.leveldb_iter_destroy(it)
+  it := C.rocksdb_create_iterator(s.db, defaultReadOptions)
+  defer C.rocksdb_iter_destroy(it)
 
   fmt.Fprintln(out, "Start Dump...")
-  C.leveldb_iter_seek_to_first(it)
+  C.rocksdb_iter_seek_to_first(it)
 
-  for i := 0; i < max && C.leveldb_iter_valid(it) != 0; i++ {
+  for i := 0; i < max && C.rocksdb_iter_valid(it) != 0; i++ {
     var e *C.char
     var keyLen C.size_t
     var valLen C.size_t
 
-    C.leveldb_iter_get_error(it, &e)
+    C.rocksdb_iter_get_error(it, &e)
     if e != nil {
       defer freeString(e)
       err := stringToError(e)
@@ -109,9 +119,9 @@ func (s *LevelDBStorage) Dump(out io.Writer, max int) {
       return
     }
 
-    keyPtr := unsafe.Pointer(C.leveldb_iter_key(it, &keyLen))
+    keyPtr := unsafe.Pointer(C.rocksdb_iter_key(it, &keyLen))
     key := ptrToBytes(keyPtr, keyLen)
-    valPtr := unsafe.Pointer(C.leveldb_iter_value(it, &valLen))
+    valPtr := unsafe.Pointer(C.rocksdb_iter_value(it, &valLen))
 
     _, kt := parseKeyPrefix(key[0])
     switch kt {
@@ -148,7 +158,7 @@ func (s *LevelDBStorage) Dump(out io.Writer, max int) {
       break
     }
 
-    C.leveldb_iter_next(it)
+    C.rocksdb_iter_next(it)
   }
 
   fmt.Fprintln(out, "Done.")
@@ -223,17 +233,17 @@ func (s *LevelDBStorage) GetEntry(index uint64) (*Entry, error) {
 }
 
 func (s *LevelDBStorage) GetEntries(first uint64, last uint64) ([]Entry, error) {
-  it := C.leveldb_create_iterator(s.db, defaultReadOptions)
-  defer C.leveldb_iter_destroy(it)
+  it := C.rocksdb_create_iterator(s.db, defaultReadOptions)
+  defer C.rocksdb_iter_destroy(it)
 
   var entries []Entry
 
   firstKeyPtr, firstKeyLen := uintToKey(EntryKey, first)
   defer freePtr(firstKeyPtr)
 
-  C.go_leveldb_iter_seek(it, firstKeyPtr, firstKeyLen)
+  C.go_rocksdb_iter_seek(it, firstKeyPtr, firstKeyLen)
 
-  for C.leveldb_iter_valid(it) != 0 {
+  for C.rocksdb_iter_valid(it) != 0 {
     index, keyType, entry, err := readIterPosition(it)
     if err != nil { return nil, err }
     if (keyType != EntryKey) || (index > last) {
@@ -242,7 +252,7 @@ func (s *LevelDBStorage) GetEntries(first uint64, last uint64) ([]Entry, error) 
 
     entries = append(entries, *entry)
 
-    C.leveldb_iter_next(it)
+    C.rocksdb_iter_next(it)
   }
   var entryList []uint64
   for _, e := range(entries) {
@@ -252,12 +262,12 @@ func (s *LevelDBStorage) GetEntries(first uint64, last uint64) ([]Entry, error) 
 }
 
 func (s *LevelDBStorage) GetLastIndex() (uint64, uint64, error) {
-  it := C.leveldb_create_iterator(s.db, defaultReadOptions)
-  defer C.leveldb_iter_destroy(it)
+  it := C.rocksdb_create_iterator(s.db, defaultReadOptions)
+  defer C.rocksdb_iter_destroy(it)
 
-  C.leveldb_iter_seek_to_last(it)
+  C.rocksdb_iter_seek_to_last(it)
 
-  if C.leveldb_iter_valid(it) == 0 {
+  if C.rocksdb_iter_valid(it) == 0 {
     return 0, 0, nil
   }
 
@@ -273,9 +283,9 @@ func (s *LevelDBStorage) GetLastIndex() (uint64, uint64, error) {
  * to data returned by LevelDB. Assumes that the iterator is valid at this
  * position!
  */
-func readIterPosition(it *C.leveldb_iterator_t) (uint64, int, *Entry, error) {
+func readIterPosition(it *C.rocksdb_iterator_t) (uint64, int, *Entry, error) {
   var keyLen C.size_t
-  keyPtr := C.leveldb_iter_key(it, &keyLen)
+  keyPtr := C.rocksdb_iter_key(it, &keyLen)
 
   keyType, key, err := keyToUint(unsafe.Pointer(keyPtr), keyLen)
   if err != nil { return 0, 0, nil, err }
@@ -286,7 +296,7 @@ func readIterPosition(it *C.leveldb_iterator_t) (uint64, int, *Entry, error) {
   }
 
   var valLen C.size_t
-  valPtr := C.leveldb_iter_value(it, &valLen)
+  valPtr := C.rocksdb_iter_value(it, &valLen)
 
   entry, err := ptrToEntry(unsafe.Pointer(valPtr), valLen)
   if err != nil { return 0, 0, nil, err }
@@ -295,17 +305,17 @@ func readIterPosition(it *C.leveldb_iterator_t) (uint64, int, *Entry, error) {
 
 // Return index and term of everything from index to the end
 func (s *LevelDBStorage) GetEntryTerms(first uint64) (map[uint64]uint64, error) {
-  it := C.leveldb_create_iterator(s.db, defaultReadOptions)
-  defer C.leveldb_iter_destroy(it)
+  it := C.rocksdb_create_iterator(s.db, defaultReadOptions)
+  defer C.rocksdb_iter_destroy(it)
 
   terms := make(map[uint64]uint64)
 
   firstKeyPtr, firstKeyLen := uintToKey(EntryKey, first)
   defer freePtr(firstKeyPtr)
 
-  C.go_leveldb_iter_seek(it, firstKeyPtr, firstKeyLen)
+  C.go_rocksdb_iter_seek(it, firstKeyPtr, firstKeyLen)
 
-  for C.leveldb_iter_valid(it) != 0 {
+  for C.rocksdb_iter_valid(it) != 0 {
     index, keyType, entry, err := readIterPosition(it)
     if err != nil { return nil, err }
     if keyType != EntryKey {
@@ -314,24 +324,24 @@ func (s *LevelDBStorage) GetEntryTerms(first uint64) (map[uint64]uint64, error) 
 
     terms[index] = entry.Term
 
-    C.leveldb_iter_next(it)
+    C.rocksdb_iter_next(it)
   }
   return terms, nil
 }
 
 // Delete everything that is greater than or equal to the index
 func (s *LevelDBStorage) DeleteEntries(first uint64) error {
-  it := C.leveldb_create_iterator(s.db, defaultReadOptions)
-  defer C.leveldb_iter_destroy(it)
+  it := C.rocksdb_create_iterator(s.db, defaultReadOptions)
+  defer C.rocksdb_iter_destroy(it)
 
   firstKeyPtr, firstKeyLen := uintToKey(EntryKey, first)
   defer freePtr(firstKeyPtr)
 
-  C.go_leveldb_iter_seek(it, firstKeyPtr, firstKeyLen)
+  C.go_rocksdb_iter_seek(it, firstKeyPtr, firstKeyLen)
 
-  for C.leveldb_iter_valid(it) != 0 {
+  for C.rocksdb_iter_valid(it) != 0 {
     var keyLen C.size_t
-    keyPtr := C.leveldb_iter_key(it, &keyLen)
+    keyPtr := C.rocksdb_iter_key(it, &keyLen)
 
     keyType, key, err := keyToUint(unsafe.Pointer(keyPtr), keyLen)
     if err != nil { return err }
@@ -343,13 +353,13 @@ func (s *LevelDBStorage) DeleteEntries(first uint64) error {
     defer freePtr(delPtr)
 
     var e *C.char
-    C.go_leveldb_delete(s.db, defaultWriteOptions, delPtr, delLen, &e)
+    C.go_rocksdb_delete(s.db, defaultWriteOptions, delPtr, delLen, &e)
     if e != nil {
       defer freeString(e)
       return stringToError(e)
     }
 
-    C.leveldb_iter_next(it)
+    C.rocksdb_iter_next(it)
   }
   return nil
 }
@@ -451,7 +461,7 @@ func (s *LevelDBStorage) DeleteIndexEntry(tenantName, collectionName, key string
   if err != nil { return err }
   defer freePtr(keyPtr)
 
-  C.go_leveldb_delete(
+  C.go_rocksdb_delete(
     s.db, defaultWriteOptions,
     keyPtr, keyLen, &e)
   if e == nil {
@@ -488,19 +498,19 @@ func (s *LevelDBStorage) GetCollectionIndices(tenantName, collectionName string,
   if err != nil { return nil, err }
   defer freePtr(endPtr)
 
-  it := C.leveldb_create_iterator(s.db, defaultReadOptions)
-  defer C.leveldb_iter_destroy(it)
+  it := C.rocksdb_create_iterator(s.db, defaultReadOptions)
+  defer C.rocksdb_iter_destroy(it)
 
-  C.go_leveldb_iter_seek(it, startPtr, startLen)
+  C.go_rocksdb_iter_seek(it, startPtr, startLen)
 
   var ret []uint64
 
-  for count := uint(0); (count < max) && (C.leveldb_iter_valid(it) != 0); count++ {
+  for count := uint(0); (count < max) && (C.rocksdb_iter_valid(it) != 0); count++ {
     var keyLen C.size_t
-    keyPtr := unsafe.Pointer(C.leveldb_iter_key(it, &keyLen))
+    keyPtr := unsafe.Pointer(C.rocksdb_iter_key(it, &keyLen))
     if compareKeys(keyPtr, keyLen, startPtr, startLen) == 0 {
       // Always skip the start-of-range key
-      C.leveldb_iter_next(it)
+      C.rocksdb_iter_next(it)
       continue
     }
     if compareKeys(keyPtr, keyLen, endPtr, endLen) == 0 {
@@ -509,11 +519,11 @@ func (s *LevelDBStorage) GetCollectionIndices(tenantName, collectionName string,
     }
 
     var valLen C.size_t
-    valPtr := C.leveldb_iter_value(it, &valLen)
+    valPtr := C.rocksdb_iter_value(it, &valLen)
     index := ptrToUint(unsafe.Pointer(valPtr), valLen)
     ret = append(ret, index)
 
-    C.leveldb_iter_next(it)
+    C.rocksdb_iter_next(it)
   }
 
   return ret, nil
@@ -527,19 +537,19 @@ func (s *LevelDBStorage) GetTenantCollections(tenantName string) ([]string, erro
   if err != nil { return nil, err }
   defer freePtr(endPtr)
 
-  it := C.leveldb_create_iterator(s.db, defaultReadOptions)
-  defer C.leveldb_iter_destroy(it)
+  it := C.rocksdb_create_iterator(s.db, defaultReadOptions)
+  defer C.rocksdb_iter_destroy(it)
 
-  C.go_leveldb_iter_seek(it, startPtr, startLen)
+  C.go_rocksdb_iter_seek(it, startPtr, startLen)
 
   var ret []string
 
-  for C.leveldb_iter_valid(it) != 0 {
+  for C.rocksdb_iter_valid(it) != 0 {
     var keyLen C.size_t
-    keyPtr := unsafe.Pointer(C.leveldb_iter_key(it, &keyLen))
+    keyPtr := unsafe.Pointer(C.rocksdb_iter_key(it, &keyLen))
     if compareKeys(keyPtr, keyLen, startPtr, startLen) == 0 {
       // Always skip the start-of-range key
-      C.leveldb_iter_next(it)
+      C.rocksdb_iter_next(it)
       continue
     }
     if compareKeys(keyPtr, keyLen, endPtr, endLen) == 0 {
@@ -559,7 +569,7 @@ func (s *LevelDBStorage) GetTenantCollections(tenantName string) ([]string, erro
       ret = append(ret, collName)
     }
 
-    C.leveldb_iter_next(it)
+    C.rocksdb_iter_next(it)
   }
 
   return ret, nil
@@ -570,7 +580,7 @@ func (s *LevelDBStorage) putEntry(
   valPtr unsafe.Pointer, valLen C.size_t) error {
 
   var e *C.char
-  C.go_leveldb_put(
+  C.go_rocksdb_put(
     s.db, defaultWriteOptions,
     keyPtr, keyLen, valPtr, valLen,
     &e)
@@ -587,7 +597,7 @@ func (s *LevelDBStorage) readEntry(
   var valLen C.size_t
   var e *C.char
 
-  val := C.go_leveldb_get(
+  val := C.go_rocksdb_get(
     s.db, defaultReadOptions,
     keyPtr, keyLen,
     &valLen, &e)

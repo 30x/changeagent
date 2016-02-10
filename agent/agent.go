@@ -28,6 +28,8 @@ const (
 
   CreateTenantCommand = "CreateTenant"
   CreateCollectionCommand = "CreateCollection"
+
+  DBCacheSize = 10 * 1024 * 1024
 )
 
 func StartChangeAgent(nodeId uint64,
@@ -36,7 +38,7 @@ func StartChangeAgent(nodeId uint64,
                       mux *http.ServeMux) (*ChangeAgent, error) {
   comm, err := communication.StartHttpCommunication(mux, disco)
   if err != nil { return nil, err }
-  stor, err := storage.CreateLevelDBStorage(dbFile)
+  stor, err := storage.CreateRocksDBStorage(dbFile, DBCacheSize)
   if err != nil { return nil, err }
 
   gin.SetMode(gin.ReleaseMode)

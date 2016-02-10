@@ -1,3 +1,3 @@
-protoc --go_out=. leveldb_records.proto
+protoc --go_out=. rocksdb_records.proto
 
 
