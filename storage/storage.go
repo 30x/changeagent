@@ -9,6 +9,7 @@ import (
 
 type Entry struct {
   Index uint64
+  Type int32
   Term uint64
   Timestamp time.Time
   Tenant string
@@ -86,6 +87,7 @@ func EncodeEntry(entry *Entry) ([]byte, error) {
   ts := entry.Timestamp.UnixNano()
   pb := EntryPb{
     Index: &entry.Index,
+    Type: &entry.Type,
     Term: &entry.Term,
     Timestamp: &ts,
     Tenant: &entry.Tenant,
@@ -107,6 +109,7 @@ func DecodeEntry(bytes []byte) (*Entry, error) {
   ts := time.Unix(0, pb.GetTimestamp())
   e := &Entry{
     Index: pb.GetIndex(),
+    Type: pb.GetType(),
     Term: pb.GetTerm(),
     Timestamp: ts,
     Tenant: pb.GetTenant(),
@@ -118,7 +121,7 @@ func DecodeEntry(bytes []byte) (*Entry, error) {
 }
 
 func (e *Entry) String() string {
-  s := fmt.Sprintf("{ Index: %d Term: %d ", e.Index, e.Term)
+  s := fmt.Sprintf("{ Index: %d Term: %d Type: %d ", e.Index, e.Term, e.Type)
   if e.Tenant != "" {
     s += fmt.Sprintf("Tenant: %s ", e.Tenant)
   }

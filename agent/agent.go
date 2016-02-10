@@ -1,7 +1,9 @@
 package main
 
 import (
+  "errors"
   "fmt"
+  "time"
   "net/http"
   "github.com/golang/glog"
   "github.com/gin-gonic/gin"
@@ -16,6 +18,17 @@ type ChangeAgent struct {
   raft *raft.RaftImpl
   api *gin.Engine
 }
+
+const (
+  NormalChange = 0
+  CommandChange = 1
+
+  JSONContent = "application/json"
+  FormContent = "application/x-www-form-urlencoded"
+
+  CreateTenantCommand = "CreateTenant"
+  CreateCollectionCommand = "CreateCollection"
+)
 
 func StartChangeAgent(nodeId uint64,
                       disco discovery.Discovery,
@@ -40,6 +53,7 @@ func StartChangeAgent(nodeId uint64,
 
   agent.initDiagnosticApi()
   agent.initChangesAPI()
+  agent.initIndexAPI()
 
   mux.HandleFunc("/", agent.api.ServeHTTP)
 
@@ -59,6 +73,32 @@ func (a *ChangeAgent) GetRaftState() int {
   return a.raft.GetState()
 }
 
+func (a *ChangeAgent) makeProposal(proposal *storage.Entry) (*storage.Entry, error) {
+  // Timestamp and otherwise update the proposal
+  proposal.Timestamp = time.Now()
+
+  // Send the raft proposal. This happens asynchronously.
+  newIndex, err := a.raft.Propose(proposal)
+  if err != nil {
+    glog.Warningf("Fatal error making Raft proposal: %v", err)
+    return nil, err
+  }
+  glog.V(2).Infof("Proposed new change with index %d", newIndex)
+
+  // Wait for the new commit to be applied, or time out
+  appliedIndex :=
+    a.raft.GetAppliedTracker().TimedWait(newIndex, time.Second * CommitTimeoutSeconds)
+  glog.V(2).Infof("New index %d is now applied", appliedIndex)
+  if appliedIndex >= newIndex {
+    newEntry := storage.Entry{
+      Index: newIndex,
+    }
+    return &newEntry, nil
+  } else {
+    return nil, errors.New("Commit timeout")
+  }
+}
+
 func (a *ChangeAgent) Commit(id uint64) error {
   glog.V(2).Infof("Got a commit for entry %d")
 
@@ -72,14 +112,49 @@ func (a *ChangeAgent) Commit(id uint64) error {
     return fmt.Errorf("Missing committed entry %d", id)
   }
 
+  switch entry.Type {
+  case NormalChange:
+    return a.handleNormalChange(entry)
+  case CommandChange:
+    return a.handleChangeCommand(entry)
+  default:
+    return fmt.Errorf("Invalid change type %d", entry.Type)
+  }
+}
+
+func (a *ChangeAgent) handleNormalChange(entry *storage.Entry) error {
   if entry.Key != "" || entry.Tenant != "" || entry.Collection != "" {
     glog.V(2).Infof("Indexing %d in tenant %d collection %d key %d",
-      id, entry.Tenant, entry.Collection, entry.Key)
-    err = a.stor.SetIndexEntry(entry.Tenant, entry.Collection, entry.Key, id)
+      entry.Index, entry.Tenant, entry.Collection, entry.Key)
+    err := a.stor.SetIndexEntry(entry.Tenant, entry.Collection, entry.Key, entry.Index)
     if err != nil {
       glog.Errorf("Error indexing a committed entry: %s", err)
       return err
     }
   }
   return nil
+}
+
+func (a *ChangeAgent) handleChangeCommand(entry *storage.Entry) error {
+  cmd := string(entry.Data)
+
+  switch cmd {
+  case CreateTenantCommand:
+    if entry.Tenant == "" {
+      return errors.New("Invalid command: tenant name is missing")
+    }
+    return a.stor.CreateTenant(entry.Tenant)
+
+  case CreateCollectionCommand:
+    if entry.Tenant == "" {
+      return errors.New("Invalid command: tenant name is missing")
+    }
+    if entry.Collection == "" {
+      return errors.New("Invalid command: collection name is missing")
+    }
+    return a.stor.CreateCollection(entry.Tenant, entry.Collection)
+
+  default:
+    return fmt.Errorf("Invalid command: %s", cmd)
+  }
 }

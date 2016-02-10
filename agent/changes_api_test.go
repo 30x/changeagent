@@ -16,13 +16,13 @@ const (
   jsonContent = "application/json"
 )
 
-var _ = Describe("Basic API Test", func() {
+var lastNewChange uint64
+
+var _ = Describe("Changes API Test", func() {
   BeforeEach(func() {
     waitForLeader()
     getLeaderIndex()
   })
-
-  var lastNewChange uint64 = 1
 
   It("POST new change", func() {
     uri := getLeaderURI() + "/changes"
@@ -41,13 +41,13 @@ var _ = Describe("Basic API Test", func() {
     Expect(err).Should(Succeed())
     fmt.Fprintf(GinkgoWriter, "Got response %s\n", reqResp)
 
-    lastNewChange++
-    Expect(reqResp.Index).Should(Equal(lastNewChange))
+    lastChange := reqResp.Index
+    lastNewChange = lastChange
 
     // Upon return, change should immediately be represented at the leader
     respExpected :=
-      fmt.Sprintf("[{\"_id\":%d,\"_ts\":[0-9]+,\"data\":{\"hello\":\"world!\",\"foo\":123}}]", lastNewChange)
-    peerChanges := getChanges(leaderIndex, lastNewChange - 1)
+      fmt.Sprintf("[{\"_id\":%d,\"_ts\":[0-9]+,\"data\":{\"hello\":\"world!\",\"foo\":123}}]", lastChange)
+    peerChanges := getChanges(leaderIndex, lastChange - 1)
     match, err := regexp.MatchString(respExpected, peerChanges)
     fmt.Fprintf(GinkgoWriter, "Post response: \"%s\"\n", peerChanges)
     Expect(err).Should(Succeed())
@@ -56,8 +56,8 @@ var _ = Describe("Basic API Test", func() {
     // Check that the change was also replicated to all followers
     correctNodes := 0
     for i, a := range (testAgents) {
-      a.raft.GetAppliedTracker().TimedWait(lastNewChange, 2 * time.Second)
-      peerChanges := getChanges(i, lastNewChange - 1)
+      a.raft.GetAppliedTracker().TimedWait(lastChange, 2 * time.Second)
+      peerChanges := getChanges(i, lastChange - 1)
       match, err := regexp.MatchString(respExpected, peerChanges)
       fmt.Fprintf(GinkgoWriter, "Get changes peer %d: \"%s\"\n", i, peerChanges)
       Expect(err).Should(Succeed())
@@ -86,7 +86,7 @@ var _ = Describe("Basic API Test", func() {
 
     respExpected :=
       fmt.Sprintf("[{\"_id\":%d,\"_ts\":[0-9]+,\"tenant\":\"foo\",\"collection\":\"bar\",\"key\":\"baz\",\"data\":{\"hello\":\"world!\",\"foo\":456}}]", newChange)
-    peerChanges := getChanges(leaderIndex, lastNewChange - 1)
+    peerChanges := getChanges(leaderIndex, newChange - 1)
     match, err := regexp.MatchString(respExpected, peerChanges)
     fmt.Fprintf(GinkgoWriter, "Post response: \"%s\"\n", peerChanges)
     Expect(err).Should(Succeed())

@@ -2,10 +2,11 @@ package storage;
 
 message EntryPb {
   required uint64 index = 1;
-  optional uint64 term = 2;
-  optional int64 timestamp = 3;
-  optional string tenant = 4;
-  optional string collection  = 5;
-  optional string key = 6;
-  optional bytes data = 7;
+  required int32 type = 2;
+  optional uint64 term = 3;
+  optional int64 timestamp = 4;
+  optional string tenant = 5;
+  optional string collection  = 6;
+  optional string key = 7;
+  optional bytes data = 8;
 }

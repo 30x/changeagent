@@ -24,12 +24,13 @@ var _ = math.Inf
 
 type EntryPb struct {
 	Index            *uint64 `protobuf:"varint,1,req,name=index" json:"index,omitempty"`
-	Term             *uint64 `protobuf:"varint,2,opt,name=term" json:"term,omitempty"`
-	Timestamp        *int64  `protobuf:"varint,3,opt,name=timestamp" json:"timestamp,omitempty"`
-	Tenant           *string `protobuf:"bytes,4,opt,name=tenant" json:"tenant,omitempty"`
-	Collection       *string `protobuf:"bytes,5,opt,name=collection" json:"collection,omitempty"`
-	Key              *string `protobuf:"bytes,6,opt,name=key" json:"key,omitempty"`
-	Data             []byte  `protobuf:"bytes,7,opt,name=data" json:"data,omitempty"`
+	Type             *int32  `protobuf:"varint,2,req,name=type" json:"type,omitempty"`
+	Term             *uint64 `protobuf:"varint,3,opt,name=term" json:"term,omitempty"`
+	Timestamp        *int64  `protobuf:"varint,4,opt,name=timestamp" json:"timestamp,omitempty"`
+	Tenant           *string `protobuf:"bytes,5,opt,name=tenant" json:"tenant,omitempty"`
+	Collection       *string `protobuf:"bytes,6,opt,name=collection" json:"collection,omitempty"`
+	Key              *string `protobuf:"bytes,7,opt,name=key" json:"key,omitempty"`
+	Data             []byte  `protobuf:"bytes,8,opt,name=data" json:"data,omitempty"`
 	XXX_unrecognized []byte  `json:"-"`
 }
 
@@ -40,6 +41,13 @@ func (*EntryPb) ProtoMessage()    {}
 func (m *EntryPb) GetIndex() uint64 {
 	if m != nil && m.Index != nil {
 		return *m.Index
+	}
+	return 0
+}
+
+func (m *EntryPb) GetType() int32 {
+	if m != nil && m.Type != nil {
+		return *m.Type
 	}
 	return 0
 }
