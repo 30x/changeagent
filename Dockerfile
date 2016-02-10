@@ -22,7 +22,9 @@
 # Now run:
 #
 # docker run -it -p 8080:8080 -v /home/docker/agent/etc:/etc/changeagent \
-#   /home/docker/agent/data1:/var/changeagent/data
+#   /home/docker/agent/data1:/var/changeagent/data changeagent -id 1
+#
+# (Pass a different "-id" parameter for each different cluster node.)
 #
 # Image details:
 #
