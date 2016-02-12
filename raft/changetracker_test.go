@@ -95,6 +95,36 @@ func TestTrackerUpdate(t *testing.T) {
   tracker.Close()
 }
 
+func TestTrackerUpdateTwice(t *testing.T) {
+  tracker := CreateTracker(2)
+  doneChan := make(chan uint64, 1)
+  doneChan2 := make(chan uint64, 1)
+
+  go func() {
+    new := tracker.Wait(4)
+    doneChan <- new
+  }()
+
+  go func() {
+    new2 := tracker.Wait(4)
+    doneChan2 <- new2
+  }()
+
+  time.Sleep(250 * time.Millisecond)
+  tracker.Update(3)
+  time.Sleep(250 * time.Millisecond)
+  tracker.Update(4)
+  gotVal := <- doneChan
+  if gotVal != 4 {
+    t.Fatal("Expected routine not to finish until we got to 3")
+  }
+  gotVal = <- doneChan2
+  if gotVal != 4 {
+    t.Fatal("Expected second routine not to finish until we got to 3")
+  }
+  tracker.Close()
+}
+
 func TestTrackerMultiUpdate(t *testing.T) {
   tracker := CreateTracker(2)
   prematureDoneChan := make(chan uint64, 1)

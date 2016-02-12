@@ -3,7 +3,7 @@ package storage
 /*
 #include <stdlib.h>
 #include "rocksdb_native.h"
-#cgo CFLAGS: -g -O0 -Wall -I/usr/local/include
+#cgo CFLAGS: -g -O3 -Wall -I/usr/local/include
 #cgo LDFLAGS: -L/usr/local/lib -lrocksdb
 */
 import "C"

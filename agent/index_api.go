@@ -173,8 +173,13 @@ func (a *ChangeAgent) handleGetCollection(c *gin.Context) {
     entries = append(entries, *entry)
   }
 
-  c.Header("Content-Type", JSONContent)
-  marshalChanges(entries, c.Writer)
+  str, err := marshalChanges(entries)
+  if err == nil {
+    c.Header("Content-Type", JSONContent)
+    c.String(200, str)
+  } else {
+    writeError(c, http.StatusInternalServerError, err)
+  }
 }
 
 func (a *ChangeAgent) handlePostItem(c *gin.Context) {
@@ -219,8 +224,13 @@ func (a *ChangeAgent) handlePostItem(c *gin.Context) {
     return
   }
 
-  c.Header("Content-Type", JSONContent)
-  marshalJson(newEntry, c.Writer)
+  str, err := marshalJson(newEntry)
+  if err == nil {
+    c.Header("Content-Type", JSONContent)
+    c.String(200, str)
+  } else {
+    writeError(c, http.StatusInternalServerError, err)
+  }
 }
 
 func (a *ChangeAgent) handleGetItem(c *gin.Context) {
@@ -245,8 +255,13 @@ func (a *ChangeAgent) handleGetItem(c *gin.Context) {
     return
   }
 
-  c.Header("Content-Type", JSONContent)
-  marshalJson(entry, c.Writer)
+  str, err := marshalJson(entry)
+  if err == nil {
+    c.Header("Content-Type", JSONContent)
+    c.String(200, str)
+  } else {
+    writeError(c, http.StatusInternalServerError, err)
+  }
 }
 
 func (a *ChangeAgent) handlePutItem(c *gin.Context) {
@@ -294,8 +309,13 @@ func (a *ChangeAgent) handlePutItem(c *gin.Context) {
     return
   }
 
-  c.Header("Content-Type", JSONContent)
-  marshalJson(newEntry, c.Writer)
+  str, err := marshalJson(newEntry)
+  if err == nil {
+    c.Header("Content-Type", JSONContent)
+    c.String(200, str)
+  } else {
+    writeError(c, http.StatusInternalServerError, err)
+  }
 }
 
 func (a *ChangeAgent) handleDeleteItem(c *gin.Context) {

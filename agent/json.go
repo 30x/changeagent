@@ -69,44 +69,43 @@ func unmarshalJson(in io.Reader) (*storage.Entry, error) {
  * named "data". Any fields in "metadata" that are non-empty will also be
  * added to the message.
  */
-func marshalJson(entry *storage.Entry, out io.Writer) error {
+func marshalJson(entry *storage.Entry) (string, error) {
   jd := convertData(entry)
   outBody, err := json.Marshal(&jd)
-  if err != nil { return err }
-  _, err = out.Write(outBody)
-  return err
+  if err != nil { return "", err }
+  return string(outBody), nil
 }
 
 /*
  * Same as above but marshal a whole array of changes.
  */
-func marshalChanges(changes []storage.Entry, out io.Writer) error {
+func marshalChanges(changes []storage.Entry) (string, error) {
   if changes == nil || len(changes) == 0 {
-    out.Write([]byte("[]"))
-    return nil
+    return "[]", nil
   }
+  changeList := convertChanges(changes)
+  outBody, err := json.Marshal(changeList)
+  if err != nil { return "", err }
+  return string(outBody), nil
+}
 
+func convertChanges(changes []storage.Entry) []JsonData {
   var changeList []JsonData
   for _, change := range(changes) {
     cd := convertData(&change)
     changeList = append(changeList, *cd)
   }
-
-  outBody, err := json.Marshal(changeList)
-  if err != nil { return err }
-  _, err = out.Write(outBody)
-  return err
+  return changeList
 }
 
-func marshalError(result error, out io.Writer) error {
+func marshalError(result error) string {
   msg := &JsonError{
     Error: result.Error(),
   }
 
   outBody, err := json.Marshal(msg)
-  if err != nil { return err }
-  _, err = out.Write(outBody)
-  return err
+  if err != nil { return result.Error() }
+  return string(outBody)
 }
 
 func convertData(entry *storage.Entry) *JsonData {

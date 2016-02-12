@@ -86,15 +86,10 @@ var _ = Describe("Index API Test", func() {
   })
 
   It("POST collection entry", func() {
-    uri := getLeaderURI() + "/changes"
     request := "{\"tenant\":\"testTenant\",\"collection\":\"testCollection\",\"key\":\"baz\",\"data\":{\"hello\":\"world!\",\"foo\":789}}"
+    postChange(request)
 
-    pr, err := http.Post(uri, jsonContent, strings.NewReader(request))
-    Expect(err).Should(Succeed())
-    Expect(pr.StatusCode).Should(Equal(200))
-    defer pr.Body.Close()
-
-    uri = fmt.Sprintf("%s/tenants/testTenant/collections/testCollection/baz", getLeaderURI())
+    uri := fmt.Sprintf("%s/tenants/testTenant/collections/testCollection/baz", getLeaderURI())
     gr, err := http.Get(uri)
     Expect(err).Should(Succeed())
     Expect(gr.StatusCode).Should(Equal(200))

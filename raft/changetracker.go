@@ -17,6 +17,7 @@ import (
  type changeWaiter struct {
    change uint64
    timeout time.Time
+   fired bool
    waiter chan uint64
  }
 
@@ -100,6 +101,7 @@ func (t *ChangeTracker) doWait(curChange uint64, timeout time.Time) uint64 {
   w := changeWaiter{
     change: curChange,
     waiter: waitMe,
+    fired: false,
     timeout: timeout,
   }
   t.waiterChan <- w
@@ -152,8 +154,8 @@ func (t *ChangeTracker) handleUpdate(change uint64) {
   i := 0
   for i < len(t.waiters.items) {
     w := t.waiters.items[i]
-    if change >= w.change {
-      heap.Remove(t.waiters, i)
+    if change >= w.change && !w.fired {
+      t.waiters.items[i].fired = true
       w.waiter <- change
     } else {
       i++
@@ -174,7 +176,9 @@ func (t *ChangeTracker) handleTimeout(now time.Time) {
     it := t.waiters.items[0].timeout
     if it == now || it.Before(now) {
       w := t.waiters.Pop().(changeWaiter)
-      w.waiter <- t.lastChange
+      if !w.fired {
+        w.waiter <- t.lastChange
+      }
     } else {
       return
     }

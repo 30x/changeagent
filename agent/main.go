@@ -28,14 +28,12 @@ func runAgentMain() int {
   var port int
   var dbDir string
   var discoveryFile string
-  var debug bool
   var help bool
 
   flag.Uint64Var(&nodeId, "id", DefaultNode, "Node ID. Must be in discovery data.")
   flag.IntVar(&port, "p", DefaultPort, "Port to listen on.")
   flag.StringVar(&dbDir, "d", "", "Directory in which to place data.")
   flag.StringVar(&discoveryFile, "s", "", "File from which to read list of peers")
-  flag.BoolVar(&debug, "D", false, "Enable debugging")
   flag.BoolVar(&help, "h", false, "Print help message")
 
   flag.Parse()

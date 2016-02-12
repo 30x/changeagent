@@ -7,6 +7,7 @@ import (
   "net/http"
   "github.com/golang/glog"
   "github.com/gin-gonic/gin"
+  "revision.aeip.apigee.net/greg/changeagent/storage"
 )
 
 const (
@@ -43,7 +44,7 @@ func (a *ChangeAgent) handlePostChanges(c *gin.Context) {
   newEntry, err := a.makeProposal(proposal)
   if err == nil {
     c.Header("Content-Type", JSONContent)
-    marshalJson(newEntry, c.Writer)
+    c.JSON(200, convertData(newEntry))
   } else {
     writeError(c, 503, err)
   }
@@ -92,7 +93,7 @@ func (a *ChangeAgent) handleGetChanges(c *gin.Context) {
   // Still no changes?
   if last < first {
     c.Header("Content-Type", JSONContent)
-    marshalChanges(nil, c.Writer)
+    c.JSON(200, []string{})
     return
   }
 
@@ -100,6 +101,7 @@ func (a *ChangeAgent) handleGetChanges(c *gin.Context) {
   if (last - first) + 1 > limit {
     last = first + limit - 1
   }
+  // TODO what happens when we truncate stuff as below? handle that soon.
 
   glog.V(2).Infof("Getting changes from %d to %d", first, last)
 
@@ -111,12 +113,20 @@ func (a *ChangeAgent) handleGetChanges(c *gin.Context) {
   }
   glog.V(2).Infof("Got %d entries", len(entries))
 
-  c.Header("Content-Type", JSONContent)
-  marshalChanges(entries, c.Writer)
+  var toMarshal []storage.Entry
+  for _, entry := range(entries) {
+    if entry.Type == NormalChange {
+      toMarshal = append(toMarshal, entry)
+    }
+  }
+  glog.V(2).Infof("Final list has %d entries", len(toMarshal))
+
+  c.JSON(200, convertChanges(toMarshal))
 }
 
 func writeError(c *gin.Context, code int, err error) {
+  glog.Errorf("Returning error %d: %s", code, err)
+  msg := marshalError(err)
   c.Header("Content-Type", JSONContent)
-  c.Status(code)
-  marshalError(err, c.Writer)
+  c.String(code, msg)
 }

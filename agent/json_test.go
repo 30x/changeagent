@@ -3,7 +3,6 @@ package main
 import (
   "bytes"
   "errors"
-  "regexp"
   "time"
   "revision.aeip.apigee.net/greg/changeagent/storage"
   . "github.com/onsi/ginkgo"
@@ -39,24 +38,18 @@ var _ = Describe("JSON encoding tests", func() {
     entry, err := unmarshalJson(bytes.NewReader([]byte(testJson1In)))
     Expect(err).Should(Succeed())
 
-    outBuf := &bytes.Buffer{}
-    err = marshalJson(entry, outBuf)
+    str, err := marshalJson(entry)
     Expect(err).Should(Succeed())
-
-    match, _ := regexp.Match(testJson1Out, outBuf.Bytes())
-    Expect(match).Should(BeTrue())
+    Expect(str).Should(MatchRegexp(testJson1Out))
   })
 
   It("Marshal with metadata", func() {
     entry, err := unmarshalJson(bytes.NewReader([]byte(testJson2In)))
     Expect(err).Should(Succeed())
 
-    outBuf := &bytes.Buffer{}
-    err = marshalJson(entry, outBuf)
+    str, err := marshalJson(entry)
     Expect(err).Should(Succeed())
-
-    match, _ := regexp.Match(testJson2Out, outBuf.Bytes())
-    Expect(match).Should(BeTrue())
+    Expect(str).Should(MatchRegexp(testJson2Out))
   })
 
   It("Marshal and add metadata", func() {
@@ -69,13 +62,12 @@ var _ = Describe("JSON encoding tests", func() {
       Data: entry.Data,
       Timestamp: ts,
     }
-    outBuf := &bytes.Buffer{}
-    err = marshalJson(&md, outBuf)
-    Expect(err).Should(Succeed())
 
-    match, _ := regexp.Match(testJson1Out2, outBuf.Bytes())
-    Expect(match).Should(BeTrue())
-    entry2, err := unmarshalJson(outBuf)
+    str, err := marshalJson(&md)
+    Expect(err).Should(Succeed())
+    Expect(str).Should(MatchRegexp(testJson1Out2))
+
+    entry2, err := unmarshalJson(bytes.NewBuffer([]byte(str)))
     Expect(err).Should(Succeed())
     Expect(entry2.Timestamp).Should(Equal(ts))
   })
@@ -88,11 +80,10 @@ var _ = Describe("JSON encoding tests", func() {
       Index: 456,
       Data: entry.Data,
     }
-    outBuf := &bytes.Buffer{}
-    err = marshalJson(&md, outBuf)
 
-    match, _ := regexp.Match(testStringOut, outBuf.Bytes())
-    Expect(match).Should(BeTrue())
+    str, err := marshalJson(&md)
+    Expect(err).Should(Succeed())
+    Expect(str).Should(MatchRegexp(testStringOut))
   })
 
   It("Marshal invalid data", func() {
@@ -117,50 +108,41 @@ var _ = Describe("JSON encoding tests", func() {
       },
     }
 
-    outBuf := &bytes.Buffer{}
-    err = marshalChanges(cl, outBuf)
+    str, err := marshalChanges(cl)
     Expect(err).Should(Succeed())
 
     outStr :=
-    "[" + testJson1Out2 + "," + testStringOut + "]"
-
-    match, _ := regexp.Match(outStr, outBuf.Bytes())
-    Expect(match).Should(BeTrue())
+      "[" + testJson1Out2 + "," + testStringOut + "]"
+    Expect(str).Should(MatchRegexp(outStr))
   })
 
   It("Test marshal empty list", func() {
     cl := []storage.Entry{}
 
-    outBuf := &bytes.Buffer{}
-    err := marshalChanges(cl, outBuf)
+    str, err := marshalChanges(cl)
     Expect(err).Should(Succeed())
 
     outStr := "[]"
-
-    Expect(outBuf.Bytes()).Should(Equal([]byte(outStr)))
+    Expect(str).Should(BeEquivalentTo(outStr))
   })
 
   It("Test marshal error", func() {
     e := errors.New("Hello Error!")
 
-    outBuf := &bytes.Buffer{}
-    err := marshalError(e, outBuf)
-    Expect(err).Should(Succeed())
-
-    Expect(outBuf.Bytes()).Should(BeEquivalentTo(testErrorOut))
+    str := marshalError(e)
+    Expect(str).Should(Equal(testErrorOut))
   })
 
   It("Test marshal insert response", func() {
     e := storage.Entry{
       Index: 456,
     }
-    outBuf := &bytes.Buffer{}
-    err := marshalJson(&e, outBuf)
+
+    str, err := marshalJson(&e)
     Expect(err).Should(Succeed())
+    Expect(str).Should(MatchJSON("{\"_id\":456}"))
 
-    Expect(outBuf.Bytes()).Should(BeEquivalentTo("{\"_id\":456}"))
-
-    re, err := unmarshalJson(bytes.NewBuffer(outBuf.Bytes()))
+    re, err := unmarshalJson(bytes.NewBuffer([]byte(str)))
     Expect(err).Should(Succeed())
     Expect(re.Index).Should(BeEquivalentTo(456))
   })

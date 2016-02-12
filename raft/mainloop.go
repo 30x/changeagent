@@ -214,6 +214,11 @@ func (r *RaftImpl) leaderLoop(state *raftState) chan bool {
       // If command received from client: append entry to local log,
       // respond after entry applied to state machine (§5.3)
       index, err := r.makeProposal(&prop.entry, state)
+      if len(state.peers) == 0 {
+        // Special handling for a stand-alone node
+        r.setCommitIndex(index)
+        r.applyCommittedEntries(index)
+      }
       pr := proposalResult{
         index: index,
         err: err,

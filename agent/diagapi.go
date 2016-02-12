@@ -24,7 +24,7 @@ func handleStackCall(c *gin.Context) {
       stackBufLen *= 2
     } else {
       c.Header("Content-Type", PlainText)
-      c.Writer.Write(stackBuf)
+      c.String(200, string(stackBuf))
       return
     }
   }
