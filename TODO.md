@@ -2,10 +2,6 @@
 
 ## High Priority
 
-Fix "changes" API!
-
-Fix single-node support.
-
 Discovery.
 
 Support deletes!

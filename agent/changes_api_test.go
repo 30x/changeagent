@@ -43,10 +43,10 @@ var _ = Describe("Changes API Test", func() {
     Expect(peerChanges).Should(MatchRegexp(respExpected))
 
     // Check that the change was also replicated to all followers
+    fmt.Fprintf(GinkgoWriter, "Leader is peer %d\n", leaderIndex)
     correctNodes := 0
-    for i, a := range (testAgents) {
-      a.raft.GetAppliedTracker().TimedWait(lastNewChange, 2 * time.Second)
-      peerChanges := getChanges(i, lastNewChange - 1, 100, 0)
+    for i, _ := range (testAgents) {
+      peerChanges := getChanges(i, lastNewChange - 1, 100, 10)
       match, err := regexp.MatchString(respExpected, string(peerChanges))
       fmt.Fprintf(GinkgoWriter, "Get changes peer %d: \"%s\"\n", i, peerChanges)
       Expect(err).Should(Succeed())
