@@ -191,15 +191,6 @@ int go_compare_bytes(
     return go_compare_bytes_impl(state, a, alen, b, blen);
 }
 
-static const char* go_comparator_name(void* v) {
-  return "ChangeAgentComparator1";
-}
-
-rocksdb_comparator_t* go_create_comparator() {
-  return rocksdb_comparator_create(
-    NULL, NULL, go_compare_bytes_impl, go_comparator_name);
-}
-
 static const char* int_comparator_name(void* v) {
   return INT_COMPARATOR_NAME;
 }
@@ -217,13 +208,8 @@ void go_rocksdb_init() {
 
 char* go_rocksdb_open(
   const char* directory,
-  rocksdb_t** dbHandle,
-  rocksdb_column_family_handle_t** defaultHandle,
-  rocksdb_column_family_handle_t** metadataHandle,
-  rocksdb_column_family_handle_t** indicesHandle,
-  rocksdb_column_family_handle_t** entriesHandle,
-  rocksdb_cache_t** cacheHandle,
-  size_t cacheSize)
+  size_t cacheSize,
+  GoRocksDb** ret)
 {
   char* cfNames[4];
   rocksdb_options_t* cfOpts[4];
@@ -271,13 +257,25 @@ char* go_rocksdb_open(
   rocksdb_block_based_options_destroy(blockOpts);
 
   if (err == NULL) {
-    *dbHandle = db;
-    *defaultHandle = cfHandles[0];
-    *metadataHandle = cfHandles[1];
-    *indicesHandle = cfHandles[2];
-    *entriesHandle = cfHandles[3];
-    *cacheHandle = cache;
+    GoRocksDb* h = (GoRocksDb*)malloc(sizeof(GoRocksDb));
+    h->db = db;
+    h->dflt = cfHandles[0];
+    h->metadata = cfHandles[1];
+    h->indices = cfHandles[2];
+    h->entries = cfHandles[3];
+    h->cache = cache;
+    *ret = h;
   }
 
   return err;
+}
+
+void go_rocksdb_close(GoRocksDb* h)
+{
+  rocksdb_column_family_handle_destroy(h->dflt);
+  rocksdb_column_family_handle_destroy(h->metadata);
+  rocksdb_column_family_handle_destroy(h->entries);
+  rocksdb_column_family_handle_destroy(h->indices);
+  rocksdb_close(h->db);
+  rocksdb_cache_destroy(h->cache);
 }

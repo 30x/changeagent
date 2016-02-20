@@ -15,8 +15,17 @@
 #define INT_COMPARATOR_NAME "CA-INT-V1"
 #define INDEX_COMPARATOR_NAME "CA-INDEX-V1"
 
+typedef struct {
+  rocksdb_t* db;
+  rocksdb_column_family_handle_t* dflt;
+  rocksdb_column_family_handle_t* metadata;
+  rocksdb_column_family_handle_t* indices;
+  rocksdb_column_family_handle_t* entries;
+  rocksdb_cache_t* cache;
+} GoRocksDb;
+
 /*
- * One-time init of comparators and stuff like that.
+ * One-time init of comparators and stuff like that. Should be run using "once".
  */
 extern void go_rocksdb_init();
 
@@ -26,13 +35,13 @@ extern void go_rocksdb_init();
  */
 extern char* go_rocksdb_open(
   const char* directory,
-  rocksdb_t** dbHandle,
-  rocksdb_column_family_handle_t** defaultHandle,
-  rocksdb_column_family_handle_t** metadataHandle,
-  rocksdb_column_family_handle_t** indicesHandle,
-  rocksdb_column_family_handle_t** entriesHandle,
-  rocksdb_cache_t** cache,
-  size_t cacheSize);
+  size_t cacheSize,
+  GoRocksDb** h);
+
+/*
+ * Close the database.
+ */
+extern void go_rocksdb_close(GoRocksDb* h);
 
 /*
  * Wrapper around rocksdb_get because it's a pain to cast to and from char* in
@@ -66,12 +75,6 @@ extern void go_rocksdb_delete(
 /* Do wrapper for rocksdb_seek */
 extern void go_rocksdb_iter_seek(rocksdb_iterator_t* it,
     const void* k, size_t klen);
-
-/*
- * Create the correct comparator for the different types of keys that
- * we support.
- */
-extern rocksdb_comparator_t* go_create_comparator();
 
 /*
  * Wrapper for internal comparator to facilitate testing from Go.

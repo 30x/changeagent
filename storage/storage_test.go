@@ -2,7 +2,6 @@ package storage
 
 import (
   "time"
-  "os"
   . "github.com/onsi/ginkgo"
   . "github.com/onsi/gomega"
 )
@@ -34,7 +33,7 @@ var _ = Describe("Storage Main Test", func() {
     stor, err := CreateRocksDBStorage("./entrytestleveldb", 1000)
     Expect(err).Should(Succeed())
     defer func() {
-      stor.Dump(os.Stdout, 25)
+      //stor.Dump(os.Stdout, 25)
       stor.Close()
       err := stor.Delete()
       Expect(err).Should(Succeed())

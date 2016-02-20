@@ -23,9 +23,8 @@ var rocksInitOnce sync.Once
 
 type LevelDBStorage struct {
   baseFile string
+  dbHandle *C.GoRocksDb
   db *C.rocksdb_t
-  cache *C.rocksdb_cache_t
-  defaultCf *C.rocksdb_column_family_handle_t
   metadata *C.rocksdb_column_family_handle_t
   indices *C.rocksdb_column_family_handle_t
   entries *C.rocksdb_column_family_handle_t
@@ -40,15 +39,11 @@ func CreateRocksDBStorage(baseFile string, cacheSize uint) (*LevelDBStorage, err
     C.go_rocksdb_init()
   })
 
+  var dbh *C.GoRocksDb;
   e := C.go_rocksdb_open(
     C.CString(baseFile),
-    &stor.db,
-    &stor.defaultCf,
-    &stor.metadata,
-    &stor.indices,
-    &stor.entries,
-    &stor.cache,
-    C.size_t(cacheSize));
+    C.size_t(cacheSize),
+    &dbh);
 
   if e != nil {
     defer freeString(e)
@@ -59,6 +54,12 @@ func CreateRocksDBStorage(baseFile string, cacheSize uint) (*LevelDBStorage, err
 
   glog.Infof("Opened RocksDB file in %s", baseFile)
 
+  stor.dbHandle = dbh;
+  stor.db = dbh.db
+  stor.metadata = dbh.metadata
+  stor.entries = dbh.entries
+  stor.indices = dbh.indices
+
   return stor, nil
 }
 
@@ -67,12 +68,8 @@ func (s *LevelDBStorage) GetDataPath() string {
 }
 
 func (s *LevelDBStorage) Close() {
-  C.rocksdb_column_family_handle_destroy(s.defaultCf)
-  C.rocksdb_column_family_handle_destroy(s.metadata)
-  C.rocksdb_column_family_handle_destroy(s.indices)
-  C.rocksdb_column_family_handle_destroy(s.entries)
-  C.rocksdb_close(s.db)
-  C.rocksdb_cache_destroy(s.cache)
+  C.go_rocksdb_close(s.dbHandle)
+  freePtr(unsafe.Pointer(s.dbHandle))
 }
 
 func (s *LevelDBStorage) Delete() error {

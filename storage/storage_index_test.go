@@ -3,7 +3,6 @@ package storage
 import (
   "fmt"
   "math"
-  "os"
   "reflect"
   "sort"
   "testing/quick"
@@ -16,7 +15,7 @@ var _ = Describe("Index test", func() {
     stor, err := CreateRocksDBStorage("./indextestleveldb", 1000)
     Expect(err).Should(Succeed())
     defer func() {
-      stor.Dump(os.Stdout, 25)
+      //stor.Dump(os.Stdout, 25)
       stor.Close()
       err := stor.Delete()
       Expect(err).Should(Succeed())
