@@ -1,0 +1,336 @@
+# http://playground.apistudio.io/02ca08cf-284d-4edc-9087-b0b5eaabc582/#/
+swagger: "2.0"
+
+info:
+  version: "0.0.1"
+  title: ChangeAgent
+host: playground.apistudio.io
+basePath: /try/02ca08cf-284d-4edc-9087-b0b5eaabc582
+
+schemes:
+  - http
+  - https
+consumes:
+  - application/json
+produces:
+  - application/json
+  
+paths:
+  /changes:
+    post:
+      description: 
+        Add a new change to the database. All fields are optional except "data".
+        That field may be set to any valid JSON value (object, array, string,
+        or primitive.) 
+        
+        If the "tenant," "collection," or "key" fields are set, then
+        the data will be added to the corresponding data set. Otherwise, it will
+        only appear in the "changes" feed. 
+        
+        Note that if "collection" is set, then "tenant" must be set too, and if
+        "key" is set then both "tenant" and "collection" must be set. In order
+        for a piece of data to show up in a collection, all three must be set.
+        
+        The "_id" and "_ts" fields will be ignored on an insert.
+        
+        The response will be a "change" object with only the "_ts" and "_id"
+        fields filled in.
+        
+      parameters:
+        - name: body
+          in: body
+          schema:
+            $ref: "#/definitions/Change"
+    
+      responses:
+        "201":
+          description: Success
+          schema:
+            $ref: "#/definitions/Change"
+        default:
+          description: Error
+          schema:
+            $ref: "#/definitions/Error"
+            
+    get:
+      description:
+        Retrieve a list of changes from the database. The change list is always
+        sorted in numeric order by change ID. If there are no changes available
+        in the specified range, then return an empty array.
+        
+      parameters:
+        - name: since
+          in: query
+          type: integer
+          description: 
+            Retrieve changes starting at the next index since
+            this value.
+          default: 0
+        - name: limit
+          in: query
+          type: integer
+          description:
+            Limits the number of changes that are retrieved to no more than the
+            number specified by this parameter.
+          default: 100
+        - name: block
+          in: query
+          type: integer
+          description:
+            If greater than zero, and there are no changes available in the
+            specified range, then block for up to the specified number of seconds
+            until changes become available. If no changes become available, then
+            return an empty array.
+        
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: "#/definitions/Changes"
+        default:
+          description: Error
+          schema:
+            $ref: "#/definitions/Error"  
+            
+  /changes/{id}:
+    parameters:
+      - name: id
+        in: path
+        type: integer
+        description: The unique id of the change
+        required: true
+        
+    get:
+      description: 
+        Retrieve a single change from the database that was previously
+        inserted by posting to /changes.
+      
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: "#/definitions/Change"
+        default:
+          description: Error
+          schema:
+            $ref: "#/definitions/Error"
+            
+  /tenants:
+    get:
+      description:
+        Retrieve a list of the tenants in the system.
+        
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: "#/definitions/TenantLinks"
+        default:
+          description: Error
+          schema:
+            $ref: "#/definitions/Error"  
+    # TODO search by descriptive name and query parameter
+            
+    post:
+      description: 
+        Create a new tenant in the system. On input, supply an object containing
+        a "name" parameter. The specified tenant will be created in the system.
+        Each tenant has a descriptive name, as well as a unique ID.
+        
+      parameters:
+        - name: body
+          in: body
+          schema:
+            $ref: "#/definitions/TenantLink"
+      responses:
+        "201":
+          description: Success
+          schema:
+            $ref: "#/definitions/TenantLink"
+        default:
+          description: Error
+          schema:
+            $ref: "#/definitions/Error"  
+  
+  /tenants/{id}:
+    parameters:
+      - name: id
+        in: path
+        type: string
+        description: The unique ID of the tenant, as retured by a post to /tenants.
+        required: true
+    
+    get:
+      description:
+        Get information about the specified tenant.
+        
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: "#/definitions/TenantLink" 
+        default:
+          description: Error
+          schema:
+            $ref: "#/definitions/Error" 
+            
+  /tenants/{id}/collections:
+    parameters:
+      - name: id
+        in: path
+        type: string
+        description: The unique ID of the tenant, as retured by a post to /tenants.
+        required: true
+    
+    get:
+      description: 
+        Get the list of collections for a single tenant
+        
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: "#/definitions/CollectionLinks" 
+        default:
+          description: Error
+          schema:
+            $ref: "#/definitions/Error" 
+  # TODO search by name
+  # offset, limit, etc?
+            
+  /collections/{id}:
+    parameters:
+      - name: id
+        in: path
+        type: string
+        description: The unique ID of this collection
+        required: true
+        
+    get:
+      description:  
+        Get information about this collection
+    
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: "#/definitions/CollectionLink" 
+        default:
+          description: Error
+          schema:
+            $ref: "#/definitions/Error" 
+            
+  /collections/{id}/keys:
+    parameters:
+      - name: id
+        in: path
+        type: string
+        description: The unique ID of this collection
+        required: true
+        
+    get:
+      description: 
+        Enumerate the keys in this collection. Keys are always enumerated in
+        lexical order. The caller may use the "last" parameter to page through
+        the results by passing the value of the "key" field of each record
+        as the "last" value of the next API call until an empty list is retrieved.
+        
+      parameters:
+        - name: limit
+          in: query
+          type: integer
+          description: The maximum number of keys to retrieve
+          default: 100
+        - name: last
+          in: query
+          type: string
+          description: Retrieve keys starting at the first key after the value of this parameter
+      
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: "#/definitions/Changes" 
+        default:
+          description: Error
+          schema:
+            $ref: "#/definitions/Error" 
+      
+            
+definitions:
+  Change:
+    required:
+      - data
+    properties:
+      _id:
+        description: Returns the unique ID of this change in the database.
+        type: integer
+      _ts:
+        description: 
+          Returns the timestamp when this change was inserted, in
+          microseconds since 1970.
+        type: integer
+      tenant:
+        description: The name of the tenant where the data should be inserted.
+        type: string
+      collection:
+        description: The name of the collection where the data should be inserted.
+        type: string
+      key:
+        description: An optional key used to validate the data.
+        type: string
+      data:
+        description: Any valid JSON object, array, or primitive.
+        type: object
+        
+  Changes:
+    type: array
+    items:
+      $ref: "#/definitions/Change"
+    
+  TenantLink:
+    properties:
+      name:
+        description: The descriptive name of the tenant
+        type: string
+      _id:
+        description: The unique ID of this tenant
+        type: string
+      _self:
+        description: The URL that may be used to retrieve more information about the tenant
+        type: string
+      _collections:
+        description: The URL that may be used to list the collections for the tenant
+        type: string
+        
+  TenantLinks:
+    type: array
+    items:
+      $ref: "#/definitions/TenantLink"
+      
+  CollectionLink:
+    properties:
+      name:
+        description: The descriptive name of the collection
+        type: string
+      _id:
+        description: The unique ID of this collection
+        type: string
+      _self:
+        description: The URL that may be used to retrieve more information about the collection
+        type: string
+      _keys:
+        description: The URL that may be used to retrieve the list of keys in this collection
+        type: string
+        
+  CollectionLinks:
+    type: array
+    items:
+      $ref: "#/definitions/CollectionLink"
+        
+  Error:
+    required:
+      - error
+    properties:
+      error:
+        type: string
