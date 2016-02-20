@@ -9,8 +9,8 @@
 #define METADATA_KEY 1
 #define INDEX_KEY 2
 #define ENTRY_KEY 10
-#define START_RANGE  (0xffff - 2)
-#define END_RANGE    (0xffff - 1)
+#define START_RANGE  (0xffff - 1)
+#define END_RANGE    (0xffff)
 
 #define INT_COMPARATOR_NAME "CA-INT-V1"
 #define INDEX_COMPARATOR_NAME "CA-INDEX-V1"

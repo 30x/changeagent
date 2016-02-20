@@ -1,15 +1,33 @@
 package storage
 
 import (
-  "fmt"
-  "math"
-  "reflect"
-  "sort"
-  "testing/quick"
   . "github.com/onsi/ginkgo"
   . "github.com/onsi/gomega"
 )
 
+var _ = Describe("Index test", func() {
+  It("Tenant creation", func() {
+    id, err := indexTestDb.CreateTenant("singleTest")
+    Expect(err).Should(Succeed())
+    Expect(id).ShouldNot(BeEmpty())
+
+    idStr, err := indexTestDb.GetTenantByName("singleTest")
+    Expect(err).Should(Succeed())
+    Expect(idStr).Should(Equal(id))
+
+    name, err := indexTestDb.GetTenantByID(id)
+    Expect(err).Should(Succeed())
+    Expect(name).Should(Equal("singleTest"))
+
+    ixes, err := indexTestDb.GetTenants()
+    Expect(err).Should(Succeed())
+    Expect(len(ixes)).Should(BeEquivalentTo(1))
+    Expect(ixes[0].Id).Should(Equal(id))
+    Expect(ixes[0].Name).Should(Equal("singleTest"))
+  })
+})
+
+/*
 var _ = Describe("Index test", func() {
   It("Test Index", func() {
     stor, err := CreateRocksDBStorage("./indextestleveldb", 1000)
@@ -229,3 +247,4 @@ func (a *indexArray) Swap(i, j int) {
   a.vals[i] = a.vals[j]
   a.vals[j] = tmp
 }
+*/

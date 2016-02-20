@@ -3,7 +3,7 @@ package storage
 /*
 #include <stdlib.h>
 #include "rocksdb_native.h"
-#cgo CFLAGS: -g -O3 -I/usr/local/include
+#cgo CFLAGS: -g -O0 -I/usr/local/include
 #cgo LDFLAGS: -L/usr/local/lib -lrocksdb
 */
 import "C"
@@ -15,11 +15,17 @@ import (
   "unsafe"
   "sync"
   "github.com/golang/glog"
+  "github.com/satori/go.uuid"
+)
+
+const (
+  TenantsCollectionId = "B7404AD3-1268-4823-B7D4-E9C66F592E37"
 )
 
 var defaultWriteOptions *C.rocksdb_writeoptions_t = C.rocksdb_writeoptions_create();
 var defaultReadOptions *C.rocksdb_readoptions_t = C.rocksdb_readoptions_create();
 var rocksInitOnce sync.Once
+var tenantsCollection uuid.UUID = uuid.FromStringOrNil(TenantsCollectionId)
 
 type LevelDBStorage struct {
   baseFile string
@@ -60,6 +66,23 @@ func CreateRocksDBStorage(baseFile string, cacheSize uint) (*LevelDBStorage, err
   stor.entries = dbh.entries
   stor.indices = dbh.indices
 
+  success := false
+  defer func() {
+    if !success {
+      stor.Close()
+    }
+  }()
+
+  // Lay down the records for a special collection that will hold names and IDs of each tenant
+  collName, err := stor.readCollectionStart(&tenantsCollection)
+  if err != nil { return nil, err }
+  if collName == "" {
+    glog.V(2).Infof("Creating tenants collection %s", TenantsCollectionId)
+    err = stor.writeCollectionDelimiters(&tenantsCollection, "_tenants")
+    if err != nil { return nil, err }
+  }
+
+  success = true
   return stor, nil
 }
 
@@ -118,12 +141,13 @@ func (s *LevelDBStorage) Dump(out io.Writer, max int) {
   C.rocksdb_iter_seek_to_first(iit)
 
   for i := 0; i < max && C.rocksdb_iter_valid(iit) != 0; i++ {
-    var keyLen C.size_t
+    //var keyLen C.size_t
     var valLen C.size_t
 
-    keyPtr := unsafe.Pointer(C.rocksdb_iter_key(iit, &keyLen))
+    //keyPtr := unsafe.Pointer(C.rocksdb_iter_key(iit, &keyLen))
     C.rocksdb_iter_value(iit, &valLen)
 
+    /*
     tenName, colName, ixLen, _ := ptrToIndexType(keyPtr, keyLen)
 
     if colName == "" {
@@ -145,6 +169,7 @@ func (s *LevelDBStorage) Dump(out io.Writer, max int) {
         fmt.Fprintf(out, "Collection (%s) %d bytes\n", colName, valLen)
       }
     }
+    */
 
     C.rocksdb_iter_next(iit)
   }
@@ -372,40 +397,96 @@ func (s *LevelDBStorage) DeleteEntries(first uint64) error {
 
 // Methods for secondary indices
 
-func (s *LevelDBStorage) CreateTenant(tenantName string) error {
-  valBuf, valLen := uintToPtr(0)
-  defer freePtr(valBuf)
+func (s *LevelDBStorage) CreateTenant(tenantName string) (string, error) {
+  id := uuid.NewV4()
 
-  // TODO this could be a batch
+  // This record delimits the collection for when we are iterating on it
+  // It also lets us read the name later given the ID
+  err := s.writeCollectionDelimiters(&id, tenantName)
+  if err != nil { return "", err }
 
-  keyBuf, keyLen, err := startTenantToPtr(tenantName)
-  if err != nil { return err }
-  err = s.putEntry(s.indices, keyBuf, keyLen, valBuf, valLen)
-  freePtr(keyBuf)
-  if err != nil { return err }
+  // Put an entry in the special tenants collection that contains the new tenant ID
+  valPtr, valLen := uuidToPtr(&id)
+  defer freePtr(valPtr)
+  err = s.writeCollectionEntry(&tenantsCollection, tenantName, valPtr, valLen)
+  if err != nil { return "", err }
 
-  endBuf, endLen, err := endTenantToPtr(tenantName)
-  if err != nil { return err }
-  err = s.putEntry(s.indices, endBuf, endLen, valBuf, valLen)
-  freePtr(endBuf)
-  if err != nil { return err }
-
-  return nil
+  return id.String(), nil
 }
 
-func (s *LevelDBStorage) TenantExists(tenantName string) (bool, error) {
-  keyBuf, keyLen, err := startTenantToPtr(tenantName)
-  if err != nil { return false, err }
-  defer freePtr(keyBuf)
+func (s *LevelDBStorage) GetTenantByName(tenantName string) (string, error) {
+  // Read the entry from the special "tenants" collection
+  ptr, len, err := s.readCollectionEntry(&tenantsCollection, tenantName)
+  if err != nil { return "", err }
+  if ptr == nil { return "", nil }
+  defer freePtr(ptr)
+  id, err := ptrToUuid(ptr, len)
+  if err != nil { return "", err }
 
-  valPtr, _, err := s.readEntry(s.indices, keyBuf, keyLen)
-  if err != nil { return false, err }
-  if valPtr == nil { return false, nil }
-  freePtr(valPtr)
-  return true, nil
+  return id.String(), nil
+}
+
+func (s *LevelDBStorage) GetTenantByID(tenantId string) (string, error) {
+  // Read the special start of tenant record which happens to include the name
+  id, err := uuid.FromString(tenantId)
+  if err != nil { return "", err }
+  name, err := s.readCollectionStart(&id)
+  if err != nil { return "", err }
+  return name, nil
+}
+
+func (s *LevelDBStorage) GetTenants() ([]Collection, error) {
+  // Start from the start and read until the end!
+  startPtr, startLen, err := startIndexToPtr(&tenantsCollection)
+  if err != nil { return nil, err }
+  defer freePtr(startPtr)
+  endPtr, endLen, err := endIndexToPtr(&tenantsCollection)
+  if err != nil { return nil, err }
+  defer freePtr(endPtr)
+
+  it := C.rocksdb_create_iterator_cf(s.db, defaultReadOptions, s.indices)
+  defer C.rocksdb_iter_destroy(it)
+
+  C.go_rocksdb_iter_seek(it, startPtr, startLen)
+
+  var ret []Collection
+
+  for C.rocksdb_iter_valid(it) != 0 {
+    var keyLen C.size_t
+    keyPtr := unsafe.Pointer(C.rocksdb_iter_key(it, &keyLen))
+    if compareKeys(keyPtr, keyLen, startPtr, startLen) == 0 {
+      // Always skip the start-of-range key
+      C.rocksdb_iter_next(it)
+      continue
+    }
+    if compareKeys(keyPtr, keyLen, endPtr, endLen) == 0 {
+      // The end-of-range key indicates, its time to stop seeking
+      break
+    }
+
+    _, _, name, err := ptrToIndexKey(keyPtr, keyLen)
+    if err != nil { return nil, err }
+
+    var valLen C.size_t
+    valPtr := unsafe.Pointer(C.rocksdb_iter_value(it, &valLen))
+    id, err := ptrToUuid(valPtr, valLen)
+    if err != nil { return nil, err }
+
+    coll := Collection{
+      Id: id.String(),
+      Name: name,
+    }
+    ret = append(ret, coll)
+
+    C.rocksdb_iter_next(it)
+  }
+
+  return ret, nil
 }
 
 func (s *LevelDBStorage) CreateCollection(tenantName string, collectionName string) error {
+  return errors.New("Not implemented")
+  /*
   valBuf, valLen := uintToPtr(0)
   defer freePtr(valBuf)
 
@@ -422,9 +503,16 @@ func (s *LevelDBStorage) CreateCollection(tenantName string, collectionName stri
   if err != nil { return err }
 
   return nil
+  */
+}
+
+func (s *LevelDBStorage)  GetCollection(tenantName, collectionName string) (string, error) {
+  return "", errors.New("Not implemented")
 }
 
 func (s *LevelDBStorage) CollectionExists(tenantName, collectionName string) (bool, error) {
+  return false, errors.New("Not implemented")
+  /*
   keyBuf, keyLen, err := startCollectionToPtr(tenantName, collectionName)
   if err != nil { return false, err }
   defer freePtr(keyBuf)
@@ -434,9 +522,12 @@ func (s *LevelDBStorage) CollectionExists(tenantName, collectionName string) (bo
   if valPtr == nil { return false, nil }
   freePtr(valPtr)
   return true, nil
+  */
 }
 
 func (s *LevelDBStorage) SetIndexEntry(tenantName, collectionName, key string, index uint64) error {
+  return errors.New("Not implemented")
+  /*
   if index == 0 {
     return errors.New("Invalid index value")
   }
@@ -454,9 +545,12 @@ func (s *LevelDBStorage) SetIndexEntry(tenantName, collectionName, key string, i
   defer freePtr(valPtr)
 
   return s.putEntry(s.indices, keyPtr, keyLen, valPtr, valLen)
+  */
 }
 
 func (s *LevelDBStorage) DeleteIndexEntry(tenantName, collectionName, key string) error {
+  return errors.New("Not implemented")
+  /*
   var e *C.char
 
   entry := &Entry{
@@ -476,9 +570,12 @@ func (s *LevelDBStorage) DeleteIndexEntry(tenantName, collectionName, key string
   }
   defer freeString(e)
   return stringToError(e)
+  */
 }
 
 func (s *LevelDBStorage) GetIndexEntry(tenantName, collectionName, key string) (uint64, error) {
+  return 0, errors.New("Not implemented")
+  /*
   entry := &Entry{
     Tenant: tenantName,
     Collection: collectionName,
@@ -495,9 +592,12 @@ func (s *LevelDBStorage) GetIndexEntry(tenantName, collectionName, key string) (
   index := ptrToUint(valPtr, valLen)
   freePtr(valPtr)
   return index, nil
+  */
 }
 
 func (s *LevelDBStorage) GetCollectionIndices(tenantName, collectionName string, max uint) ([]uint64, error) {
+  return nil, errors.New("Not implemented")
+  /*
   startPtr, startLen, err := startCollectionToPtr(tenantName, collectionName)
   if err != nil { return nil, err }
   defer freePtr(startPtr)
@@ -534,9 +634,12 @@ func (s *LevelDBStorage) GetCollectionIndices(tenantName, collectionName string,
   }
 
   return ret, nil
+  */
 }
 
 func (s *LevelDBStorage) GetTenantCollections(tenantName string) ([]string, error) {
+  return nil, errors.New("Not implemented")
+  /*
   startPtr, startLen, err := startTenantToPtr(tenantName)
   if err != nil { return nil, err }
   defer freePtr(startPtr)
@@ -580,6 +683,7 @@ func (s *LevelDBStorage) GetTenantCollections(tenantName string) ([]string, erro
   }
 
   return ret, nil
+  */
 }
 
 func (s *LevelDBStorage) putEntry(

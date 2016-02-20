@@ -18,15 +18,18 @@ type Entry struct {
   Data []byte
 }
 
+type Collection struct {
+  Id   string
+  Name string
+}
+
 /*
  * This is an interface that is implemented by Storage implementations
  * so that we could swap them in the future.
  */
 
 type Storage interface {
-  GetDataPath() string
-
-  // Methods for all kinds of metadata
+  // Methods for all kinds of metadata used for maintenance and operation
   GetMetadata(key uint) (uint64, error)
   GetRawMetadata(key uint) ([]byte, error)
   SetMetadata(key uint, val uint64) error
@@ -38,6 +41,7 @@ type Storage interface {
   GetEntry(index uint64) (*Entry, error)
   // Get entries >= first and <= last
   GetEntries(first uint64, last uint64) ([]Entry, error)
+  // Return the highest index and term in the database
   GetLastIndex() (uint64, uint64, error)
   // Return index and term of everything from index to the end
   GetEntryTerms(index uint64) (map[uint64]uint64, error)
@@ -46,33 +50,36 @@ type Storage interface {
 
   // Create a tenant. Tenants must be created to match the "tenantName" field in indices
   // in order to support iteration over all the records for a tenant.
-  CreateTenant(tenantName string) error
-  // Return whether a tenant already exists
-  TenantExists(tenantName string) (bool, error)
+  CreateTenant(tenantName string) (string, error)
+  // Given the name of a tenant, return its ID, or an empty string if the tenant does not exist
+  GetTenantByName(tenantName string) (string, error)
+  // Given the ID of a tenant, return its name, or an empty string if the tenant does not exist
+  GetTenantByID(tenantID string) (string, error)
+  // Get a list of all the tenants in name order
+  GetTenants() ([]Collection, error)
+
+  // Get all the IDs of the collections for a particular tenant.
+  GetTenantCollections(tenantName string) ([]string, error)
 
   // Create a tenant. Tenants must be created to match the "collectionName" field in indices/
   // in order to support iteration over all the records for a collection.
-  CreateCollection(tenantName, collectionName string) error
-  // Return whether a collection already exists
-  CollectionExists(tenantName, collectionName string) (bool, error)
+  CreateCollection(tenantId, collectionName string) error
+  // Given the name of a collection and a tenant, return the unique ID of the collection
+  GetCollection(tenantName, collectionName string) (string, error)
 
   // insert an entry into the index. "tenantName" and "collectionName" may be empty.
   // "index" should match an index in the Raft index created usign "AppendEntry" from above.
   // Do not use zero for "index"
-  SetIndexEntry(tenantName, collectionName, key string, index uint64) error
+  SetIndexEntry(tenantId, collectionId, key string, index uint64) error
 
-  // Delete an index entry. This does not affect the index that the entry points to.
-  DeleteIndexEntry(tenantName, collectionName, key string) error
+  // Delete an index entry. This does not affect the entry that the index points to.
+  DeleteIndexEntry(tenantId, collectionId, key string) error
 
   // Retrieve the index of an index entry, or zero if there is no mapping.
-  GetIndexEntry(tenantName, collectionName, key string) (uint64, error)
+  GetIndexEntry(tenantId, collectionId, key string) (uint64, error)
 
   // Iterate through all the indices for a collection, in key order, until "max" is reached
-  GetCollectionIndices(tenantName, collectionName string, max uint) ([]uint64, error)
-
-  // Get all the names of the collections for a particular tenant. This is a fairly expensive operation
-  // because it iterates through all the records of the collection
-  GetTenantCollections(tenantName string) ([]string, error)
+  GetCollectionIndices(tenantId, collectionId string, max uint) ([]uint64, error)
 
   // Maintenance
   Close()

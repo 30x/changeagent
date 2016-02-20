@@ -60,24 +60,15 @@ static int compare_int_key(
   }
 }
 
-static unsigned short mins(unsigned short a, unsigned short b)
+static unsigned short maxs(unsigned short a, unsigned short b)
 {
-  return (a < b) ? a : b;
+  return (a > b) ? a : b;
 }
 
 static int keycmp(const char* a, unsigned short alen, const char* b, unsigned short blen)
 {
-  int cmp = strncmp(a, b, mins(alen, blen));
-  if (cmp == 0) {
-    if (alen < blen) {
-      return -1;
-    }
-    if (alen > blen) {
-      return 1;
-    }
-    return 0;
-  }
-  return cmp;
+  // Strings are null-terminated, but use strncmp so we don't overflow
+  return strcmp(a, b);
 }
 
 static int compare_index_key(
@@ -85,69 +76,35 @@ static int compare_index_key(
   const char* a, size_t alen,
   const char* b, size_t blen)
 {
-  unsigned short tenlena = *((unsigned short*)(a + 1));
-  unsigned short tenlenb = *((unsigned short*)(b + 1));
-  unsigned short colllena = *((unsigned short*)(a + 3));
-  unsigned short colllenb = *((unsigned short*)(b + 3));
-  unsigned short keylena = *((unsigned short*)(a + 5));
-  unsigned short keylenb = *((unsigned short*)(b + 5));
+  unsigned short keylena = *((unsigned short*)(a + 17));
+  unsigned short keylenb = *((unsigned short*)(b + 17));
 
-  size_t apos = 7;
-  size_t bpos = 7;
+  size_t apos = 1;
+  size_t bpos = 1;
 
-  // First compare the tenant name (always)
-  int cmp = keycmp(a + apos, tenlena, b + bpos, tenlenb);
+  // First compare the uuid (always)
+  int cmp = memcmp(a + apos, b + bpos, 16);
   if (cmp != 0) {
     return cmp;
   }
 
   // Check for special "range" flags
-  if (colllena == START_RANGE) {
-    return (colllenb == START_RANGE ? 0 : -1);
-  }
-  if (colllena == END_RANGE) {
-    return (colllenb == END_RANGE ? 0 : 1);
-  }
-  if (colllenb == START_RANGE) {
-    return 1;
-  }
-  if (colllenb == END_RANGE) {
-    return -1;
-  }
-
-  // Move into position and compare the collection name
-  if (tenlena > 0) {
-    apos += (tenlena + 1);
-  }
-  if (tenlenb > 0) {
-    bpos += (tenlenb + 1);
-  }
-  cmp = keycmp(a + apos, colllena, b + bpos, colllenb);
-  if (cmp != 0) {
-    return cmp;
-  }
-
-  // Keep going, check more "range" flags
   if (keylena == START_RANGE) {
     return (keylenb == START_RANGE ? 0 : -1);
   }
-  if (keylena == END_RANGE) {
-    return (keylenb == END_RANGE ? 0 : 1);
-  }
   if (keylenb == START_RANGE) {
     return 1;
+  }
+  if (keylena == END_RANGE) {
+    return (keylenb == END_RANGE ? 0 : 1);
   }
   if (keylenb == END_RANGE) {
     return -1;
   }
 
-  // Finally compare the key!
-  if (colllena > 0) {
-    apos += (colllena + 1);
-  }
-  if (colllenb > 0) {
-    bpos += (colllenb + 1);
-  }
+  // Move into position and compare the collection name
+  apos += 18;
+  bpos += 18;
   cmp = keycmp(a + apos, keylena, b + bpos, keylenb);
   return cmp;
 }

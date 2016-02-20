@@ -2,16 +2,145 @@ package storage
 
 import (
   "bytes"
+  "fmt"
   "time"
-  "testing"
   "testing/quick"
+  "github.com/satori/go.uuid"
+  . "github.com/onsi/ginkgo"
+  . "github.com/onsi/gomega"
 )
 
-func TestConvertIntKey(t *testing.T) {
-  if !testIntKey(1, 1234) { t.Fatal("Basic test failed") }
-  err := quick.Check(testIntKey, nil)
-  if err != nil { t.Fatal(err.Error()) }
-}
+var _ = Describe("Conversion", func() {
+  It("Int Key", func() {
+    s := testIntKey(1, 1234)
+    Expect(s).Should(BeTrue())
+    err := quick.Check(testIntKey, nil)
+    Expect(err).Should(Succeed())
+  })
+
+  It("Int", func() {
+    s := testInt(1234)
+    Expect(s).Should(BeTrue())
+    err := quick.Check(testInt, nil)
+    Expect(err).Should(Succeed())
+  })
+
+  It("String value", func() {
+    s := testStringValue("foo")
+    Expect(s).Should(BeTrue())
+    err := quick.Check(testStringValue, nil)
+    Expect(err).Should(Succeed())
+  })
+
+  It("Entry", func() {
+    s := testEntry(123, time.Now().UnixNano(), "", "", "", []byte("Hello!"))
+    Expect(s).Should(BeTrue())
+    s = testEntry(123, time.Now().UnixNano(), "foo", "bar", "baz", []byte("Hello!"))
+    Expect(s).Should(BeTrue())
+
+    err := quick.Check(testEntry, nil)
+    Expect(err).Should(Succeed())
+  })
+
+  It("Index entry", func() {
+    s := testIndexEntry("foo")
+    Expect(s).Should(BeTrue())
+
+    err := quick.Check(testIndexEntry, nil)
+    Expect(err).Should(Succeed())
+  })
+
+  It("Start index", func() {
+    id := uuid.NewV4()
+    bb, len, err := startIndexToPtr(&id)
+    Expect(err).Should(Succeed())
+    defer freePtr(bb)
+    Expect(len).ShouldNot(BeZero())
+
+    newId, newType, newKey, err := ptrToIndexKey(bb, len)
+    Expect(err).Should(Succeed())
+    Expect(newType).Should(BeEquivalentTo(startRange))
+    Expect(newKey).Should(Equal(""))
+    Expect(newId.Bytes()).Should(Equal(id.Bytes()))
+
+    keyBuf, keyLen, err := indexKeyToPtr(&id, "foo")
+    Expect(err).Should(Succeed())
+    defer freePtr(keyBuf)
+    cmp := compareKeys(bb, len, keyBuf, keyLen)
+    Expect(cmp).Should(BeNumerically("<", 0))
+    cmp = compareKeys(keyBuf, keyLen, bb, len)
+    Expect(cmp).Should(BeNumerically(">", 0))
+    cmp = compareKeys(bb, len, bb, len)
+    Expect(cmp).Should(BeZero())
+  })
+
+  It("End index", func() {
+    id := uuid.NewV4()
+    bb, len, err := endIndexToPtr(&id)
+    Expect(err).Should(Succeed())
+    defer freePtr(bb)
+    Expect(len).ShouldNot(BeZero())
+
+    newId, newType, newKey, err := ptrToIndexKey(bb, len)
+    Expect(err).Should(Succeed())
+    Expect(newType).Should(BeEquivalentTo(endRange))
+    Expect(newKey).Should(Equal(""))
+    Expect(newId.Bytes()).Should(Equal(id.Bytes()))
+
+    keyBuf, keyLen, err := indexKeyToPtr(&id, "foo")
+    Expect(err).Should(Succeed())
+    defer freePtr(keyBuf)
+
+    cmp := compareKeys(bb, len, keyBuf, keyLen)
+    Expect(cmp).Should(BeNumerically(">", 0))
+    cmp = compareKeys(keyBuf, keyLen, bb, len)
+    Expect(cmp).Should(BeNumerically("<", 0))
+    cmp = compareKeys(bb, len, bb, len)
+    Expect(cmp).Should(BeZero())
+  })
+
+  It("Key Compare", func() {
+    s := testKeyCompare(true, 1, true, 1)
+    Expect(s).Should(BeTrue())
+    s = testKeyCompare(true, 1, false, 1)
+    Expect(s).Should(BeTrue())
+    s = testKeyCompare(false, 1, true, 1)
+    Expect(s).Should(BeTrue())
+    s = testKeyCompare(false, 1, false, 2)
+    Expect(s).Should(BeTrue())
+    s = testKeyCompare(false, 2, false, 1)
+    Expect(s).Should(BeTrue())
+
+    err := quick.Check(testKeyCompare, nil)
+    Expect(err).Should(Succeed())
+  })
+
+  It("Index compare", func() {
+    s := testIndexCompare("foo", "foo")
+    Expect(s).Should(BeTrue())
+    s = testIndexCompare("foo", "bar")
+    Expect(s).Should(BeTrue())
+    s = testIndexCompare("bar", "foo")
+    Expect(s).Should(BeTrue())
+    s = testIndexCompare("barrrrrrr", "foo")
+    Expect(s).Should(BeTrue())
+    s = testIndexCompare("bar", "foooooooo")
+    Expect(s).Should(BeTrue())
+
+    err := quick.Check(testIndexCompare, nil)
+    Expect(err).Should(Succeed())
+  })
+
+  It("UUID Value", func() {
+    id := uuid.NewV4()
+    bb, len := uuidToPtr(&id)
+    defer freePtr(bb)
+
+    newId, err := ptrToUuid(bb, len)
+    Expect(err).Should(Succeed())
+    Expect(newId.Bytes()).Should(Equal(id.Bytes()))
+  })
+})
 
 func testIntKey(kt int, key uint64) bool {
   if kt < 0 || kt > (1 << 8) {
@@ -30,12 +159,6 @@ func testIntKey(kt int, key uint64) bool {
   return true
 }
 
-func TestConvertInt(t *testing.T) {
-  if !testInt(123) { t.Fatal("Basic test failed") }
-  err := quick.Check(testInt, nil)
-  if err != nil { t.Fatal(err.Error()) }
-}
-
 func testInt(val uint64) bool {
   bytes, len := uintToPtr(val)
   defer freePtr(bytes)
@@ -45,16 +168,17 @@ func testInt(val uint64) bool {
   return true
 }
 
-func TestConvertEntry(t *testing.T) {
-  if !testEntry(t, 123, time.Now().UnixNano(), "", "", "", []byte("Hello!")) { t.Fatal("Failed on empty entry") }
-  if !testEntry(t, 123, time.Now().UnixNano(), "foo", "bar", "baz", []byte("Hello!")) { t.Fatal("Failed on simple entry") }
-  err := quick.Check(func(term uint64, ts int64, tenant string, collection string, key string, data []byte) bool {
-    return testEntry(t, term, ts, tenant, collection, key, data)
-  }, nil)
-  if err != nil { t.Fatal(err.Error()) }
+func testStringValue(str string) bool {
+  bytes, len := stringToPtr(str)
+  defer freePtr(bytes)
+
+  result, err := ptrToString(bytes, len)
+  Expect(err).Should(Succeed())
+  Expect(result).Should(Equal(str))
+  return true
 }
 
-func testEntry(t *testing.T, term uint64, ts int64, tenant string, collection string, key string, data []byte) bool {
+func testEntry(term uint64, ts int64, tenant string, collection string, key string, data []byte) bool {
   tst := time.Unix(0, ts)
   e := &Entry{
     Term: term,
@@ -68,127 +192,31 @@ func testEntry(t *testing.T, term uint64, ts int64, tenant string, collection st
   defer freePtr(bb)
 
   re, err := ptrToEntry(bb, len)
-  if err != nil { t.Error(err); return false }
-  if e.Term != re.Term { t.Error("Term does not match"); return false }
-  if !e.Timestamp.Equal(re.Timestamp) { t.Error("Timestamp does not match"); return false }
-  if e.Tenant != re.Tenant { t.Errorf("Tenant %s does not match %s", re.Tenant, e.Tenant); return false }
-  if e.Collection != re.Collection { t.Error("Collection does not match"); return false }
-  if e.Key != re.Key { t.Error("Key does not match"); return false }
-  if !bytes.Equal(e.Data, re.Data) { t.Error("Data does not match"); return false }
+  Expect(err).Should(Succeed())
+  Expect(re.Term).Should(Equal(e.Term))
+  Expect(re.Timestamp).Should(Equal(e.Timestamp))
+  Expect(re.Tenant).Should(Equal(e.Tenant))
+  Expect(re.Collection).Should(Equal(e.Collection))
+  Expect(re.Key).Should(Equal(e.Key))
+  Expect(re.Data).Should(Equal(re.Data))
   return true
 }
 
-func TestConvertIndexEntry(t *testing.T) {
-  if !testIndexEntry(t, "", "", "") { t.Fatal("Empty entry fails") }
-  if !testIndexEntry(t, "foo", "bar", "baz") { t.Fatal("Simple entry fails") }
-  err := quick.Check(func(tenant string, collection string, key string) bool {
-    return testIndexEntry(t, tenant, collection, key)
-  }, nil)
-  if err != nil { t.Fatal(err.Error()) }
-}
-
-func testIndexEntry(t *testing.T, tenant string, collection string, key string) bool {
-  e := &Entry{
-    Tenant: tenant,
-    Collection: collection,
-    Key: key,
-  }
-  bb, len, err := indexKeyToPtr(e)
-  if err != nil { t.Errorf("Error on conversion: %s", err); return false }
+func testIndexEntry(key string) bool {
+  id := uuid.NewV4()
+  bb, len, err := indexKeyToPtr(&id, key)
+  Expect(err).Should(Succeed())
   defer freePtr(bb)
 
-  re, err := ptrToIndexKey(bb, len)
-  if err != nil { t.Error(err); return false }
-  if e.Tenant != re.Tenant { t.Errorf("Tenant %s does not match %s", re.Tenant, e.Tenant); return false }
-  if e.Collection != re.Collection { t.Error("Collection does not match"); return false }
-  if e.Key != re.Key { t.Error("Key does not match"); return false }
-
-  ten, col, ixLen, err := ptrToIndexType(bb, len)
-  if err != nil { t.Error(err); return false }
-  if ten != e.Tenant { t.Errorf("Tenant %s does not match %s", ten, e.Tenant); return false }
-  if col != re.Collection { t.Error("Collection does not match"); return false }
-  if ixLen >= maxKeyLen { t.Error("Key length is not correct") }
+  newId, newType, newKey, err := ptrToIndexKey(bb, len)
+  Expect(err).Should(Succeed())
+  Expect(newType).Should(BeEquivalentTo(0))
+  Expect(newKey).Should(Equal(key))
+  Expect(newId.Bytes()).Should(Equal(id.Bytes()))
   return true
 }
 
-func TestConvertStartEndIndexEntry(t *testing.T) {
-
-  startTen, startTenLen, err := startTenantToPtr("foo")
-  if err != nil { t.Fatal(err.Error()) }
-  defer freePtr(startTen)
-
-  e, err := ptrToIndexKey(startTen, startTenLen)
-  if err != nil { t.Fatal(err.Error()) }
-  if e.Tenant != "foo" { t.Fatal("Tenant does not match") }
-
-  ten, coll, len, err := ptrToIndexType(startTen, startTenLen)
-  if err != nil { t.Fatal(err.Error()) }
-  if ten != "foo" { t.Fatal("Wrong tenant name") }
-  if coll != "" { t.Fatal("Had a collection name and should not") }
-  if len != startRange { t.Fatal("Should be start range") }
-
-
-  endTen, endTenLen, err := endTenantToPtr("foo")
-  if err != nil { t.Fatal(err.Error()) }
-  defer freePtr(endTen)
-
-  e, err = ptrToIndexKey(endTen, endTenLen)
-  if err != nil { t.Fatal(err.Error()) }
-  if e.Tenant != "foo" { t.Fatal("Tenant does not match") }
-
-  ten, coll, len, err = ptrToIndexType(endTen, endTenLen)
-  if err != nil { t.Fatal(err.Error()) }
-  if ten != "foo" { t.Fatal("Wrong tenant name") }
-  if coll != "" { t.Fatal("Had a collection name and should not") }
-  if len != endRange { t.Fatal("Should be end range") }
-
-
-  startColl, startCollLen, err := startCollectionToPtr("foo", "bar")
-  if err != nil { t.Fatal(err.Error()) }
-  defer freePtr(startColl)
-
-  e, err = ptrToIndexKey(startColl, startCollLen)
-  if err != nil { t.Fatal(err.Error()) }
-  if e.Tenant != "foo" { t.Fatal("Tenant does not match") }
-  if e.Collection != "bar" { t.Fatal("Collection does not match") }
-
-  ten, coll, len, err = ptrToIndexType(startColl, startCollLen)
-  if err != nil { t.Fatal(err.Error()) }
-  if ten != "foo" { t.Fatal("Wrong tenant name") }
-  if coll != "bar" { t.Fatal("Wrong collection name") }
-  if len != startRange { t.Fatal("Should be start range") }
-
-
-  endColl, endCollLen, err := endCollectionToPtr("foo", "bar")
-  if err != nil { t.Fatal(err.Error()) }
-  defer freePtr(endColl)
-
-  e, err = ptrToIndexKey(endColl, endCollLen)
-  if err != nil { t.Fatal(err.Error()) }
-  if e.Tenant != "foo" { t.Fatal("Tenant does not match") }
-  if e.Collection != "bar" { t.Fatal("Collection does not match") }
-
-  ten, coll, len, err = ptrToIndexType(endColl, endCollLen)
-  if err != nil { t.Fatal(err.Error()) }
-  if ten != "foo" { t.Fatal("Wrong tenant name") }
-  if coll != "bar" { t.Fatal("Wrong collection name") }
-  if len != endRange { t.Fatal("Should be end range") }
-}
-
-func TestConvertKeyComp(t *testing.T) {
-  if !testKeyCompare(t, true, 1, true, 1) { t.Fatal("Equals comparison failed") }
-  if !testKeyCompare(t, true, 1, false, 1) { t.Fatal("Type less comparison failed") }
-  if !testKeyCompare(t, false, 1, true, 1) { t.Fatal("Type more comparison failed") }
-  if !testKeyCompare(t, false, 1, false, 2) { t.Fatal("val less comparison failed") }
-  if !testKeyCompare(t, false, 2, false, 1) { t.Fatal("val more comparison failed") }
-
-  err := quick.Check(func(isMetadata1 bool, k1 uint64, isMetadata2 bool, k2 uint64) bool {
-     return testKeyCompare(t, isMetadata1, k1, isMetadata2, k2)
-  }, nil)
-  if err != nil { t.Fatal(err.Error()) }
-}
-
-func testKeyCompare(t *testing.T, isMetadata1 bool, k1 uint64, isMetadata2 bool, k2 uint64) bool {
+func testKeyCompare(isMetadata1 bool, k1 uint64, isMetadata2 bool, k2 uint64) bool {
   var kt1 int
   if isMetadata1 {
     kt1 = MetadataKey
@@ -211,24 +239,72 @@ func testKeyCompare(t *testing.T, isMetadata1 bool, k1 uint64, isMetadata2 bool,
   cmp := compareKeys(keyBytes1, keyLen1, keyBytes2, keyLen2)
 
   if kt1 < kt2 {
-    t.Logf("kt1 < kt2: cmp %d", cmp)
     return cmp < 0
   }
   if kt1 > kt2 {
-    t.Logf("kt1 > kt2: cmp %d", cmp)
     return cmp > 0
   }
   if k1 < k2 {
-    t.Logf("k1 < k2: cmp %d", cmp)
     return cmp < 0
   }
   if k1 > k2 {
-    t.Logf("k1 > k2: cmp %d", cmp)
     return cmp > 0
   }
-  t.Logf("cmp %d", cmp)
   return cmp == 0
 }
+
+func testIndexCompare(key1, key2 string) bool {
+  id1 := uuid.NewV4()
+  id2 := uuid.NewV4()
+
+  kb1, kl1, err := indexKeyToPtr(&id1, key1)
+  Expect(err).Should(Succeed())
+  defer freePtr(kb1)
+  kb2, kl2, err := indexKeyToPtr(&id2, key2)
+  Expect(err).Should(Succeed())
+  defer freePtr(kb2)
+
+  cmp := compareKeys(kb1, kl1, kb2, kl2)
+
+  // UUIDs are never equal, so this should always work
+  bcmp := bytes.Compare(id1.Bytes(), id2.Bytes())
+  Expect(bcmp).ShouldNot(BeEquivalentTo(0))
+  fmt.Fprintf(GinkgoWriter, "bcmp = %d cmp = %d\n", bcmp, cmp)
+  if bcmp < 0 {
+    Expect(cmp).Should(BeNumerically("<", 0))
+  } else if bcmp > 0 {
+    Expect(cmp).Should(BeNumerically(">", 0))
+  }
+
+  kb1a, kl1a, err := indexKeyToPtr(&id1, key2)
+  Expect(err).Should(Succeed())
+  defer freePtr(kb1a)
+
+  cmp = compareKeys(kb1, kl1, kb1a, kl1a)
+
+  fmt.Fprintf(GinkgoWriter, "key1 = %s\n", key1)
+  fmt.Fprintf(GinkgoWriter, "key2 = %s\n", key2)
+  if key1 < key2 {
+    fmt.Fprintf(GinkgoWriter, "key1 < key2 cmp = %d\n", cmp)
+    Expect(cmp).Should(BeNumerically("<", 0))
+  } else if (key1 > key2) {
+    fmt.Fprintf(GinkgoWriter, "key1 > key2 cmp = %d\n", cmp)
+    Expect(cmp).Should(BeNumerically(">", 0))
+  } else {
+    fmt.Fprintf(GinkgoWriter, "key1 == key2 cmp = %d\n", cmp)
+    Expect(cmp).Should(BeEquivalentTo(0))
+  }
+
+  cmp = compareKeys(kb1, kl1, kb1, kl1)
+  Expect(cmp).Should(BeEquivalentTo(0))
+
+  return true
+}
+
+/*
+
+
+
 
 func TestIndexComp(t *testing.T) {
   if !testIndexCompare(t, "foo", "bar", "baz", "foo", "bar", "baz") { t.Fatal("Equals failed") }
@@ -468,3 +544,4 @@ func collectionRangeTest(t *testing.T, tenant string, collection string, key str
 
   return true
 }
+*/

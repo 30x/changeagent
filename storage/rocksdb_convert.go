@@ -13,6 +13,7 @@ import (
   "math"
   "unsafe"
   "encoding/binary"
+  "github.com/satori/go.uuid"
 )
 
 /* These have to match constants in leveldb_native.h */
@@ -22,11 +23,13 @@ const (
   IndexKey = 2
   EntryKey = 10
   EntryValue = 3
+  UuidValue = 4
+  StringValue = 5
 )
 
-var maxKeyLen uint16 =   math.MaxUint16 - 3
-var startRange uint16 =  math.MaxUint16 - 2
-var endRange uint16 =    math.MaxUint16 - 1
+var maxKeyLen uint16 =   math.MaxUint16 - 2
+var startRange uint16 =  math.MaxUint16 - 1
+var endRange uint16 =    math.MaxUint16
 var null []byte = []byte{ 0 }
 
 /*
@@ -60,18 +63,13 @@ var null []byte = []byte{ 0 }
  * Special formatting of index record so that we can efficiently parse it
  * in C code. All ints in "little endian" format:
  *
- * tenant length: uint16
- * collection length: uint16
+ * collection ID: eight bytes (UUID)
  * key length: uint16
- * tenant value (string, null-terminated(!)): [tenant length + 6] from start
- * collection value (string, null-terminated): [tenant length + collection length + 7] from start
- * key value (string, null-terminated): [tenant length + collection length + key length + 8] from start
+ * key value (string, null-terminated): [1 + 16 + 2] from start
  *
  * In addition:
- *   collection length = 0xfffe denotes "start of tenant" record
- *   collection length = 0xffff denotes "end of tenant" record
- *   key length = 0xfffe denotes "start of collection" record
- *   key length = 0xffff denotes "end of collection" record
+ *   collection length = 0xfffe denotes "start of collection" record
+ *   collection length = 0xffff denotes "end of collection" record
  */
 
 // Byte order needs to match the native byte order of the host,
@@ -113,18 +111,8 @@ func keyToUint(ptr unsafe.Pointer, len C.size_t) (int, uint64, error) {
 /*
  * Given a tenant, collection, and key, turn them into a composite key.
  */
-func indexKeyToPtr(entry *Entry) (unsafe.Pointer, C.size_t, error) {
-  tenantBytes := []byte(entry.Tenant)
-  tenantLen := uint16(len(tenantBytes))
-  if tenantLen > maxKeyLen {
-    return nil, 0, fmt.Errorf("Tenant name is longer than maximum of %d", maxKeyLen)
-  }
-  collBytes := []byte(entry.Collection)
-  collLen := uint16(len(collBytes))
-  if collLen > maxKeyLen {
-    return nil, 0, fmt.Errorf("Collection name is longer than maximum of %d", maxKeyLen)
-  }
-  keyBytes := []byte(entry.Key)
+func indexKeyToPtr(id *uuid.UUID, key string) (unsafe.Pointer, C.size_t, error) {
+  keyBytes := []byte(key)
   keyLen := uint16(len(keyBytes))
   if keyLen > maxKeyLen {
     return nil, 0, fmt.Errorf("Key is longer than maximum of %d", maxKeyLen)
@@ -132,22 +120,13 @@ func indexKeyToPtr(entry *Entry) (unsafe.Pointer, C.size_t, error) {
 
   buf := &bytes.Buffer{}
   buf.Write(keyPrefix(IndexKey))
-  binary.Write(buf, byteOrder, tenantLen)
-  binary.Write(buf, byteOrder, collLen)
+  buf.Write(id.Bytes())
   binary.Write(buf, byteOrder, keyLen)
 
-  if tenantLen > 0 {
-    buf.Write(tenantBytes)
-    buf.Write(null)
-  }
-  if collLen > 0 {
-    buf.Write(collBytes)
-    buf.Write(null)
-  }
   if keyLen > 0 {
     buf.Write(keyBytes)
-    buf.Write(null)
   }
+  buf.Write(null)
 
   ptr, len := bytesToPtr(buf.Bytes())
   return ptr, len, nil
@@ -156,104 +135,55 @@ func indexKeyToPtr(entry *Entry) (unsafe.Pointer, C.size_t, error) {
 /*
  * Given an encoded key, extract the parts of the key. The result will be an Entry. If the
  * key is a start or end of range key, then skip those parts.
+ * Returns: collection ID, key type, and key (or "")
+ * keyType is [startRange | endRange | 0]
  */
-func ptrToIndexKey(ptr unsafe.Pointer, len C.size_t) (*Entry, error) {
-  if len < 6 {
-    return nil, errors.New("Invalid entry")
+func ptrToIndexKey(ptr unsafe.Pointer, len C.size_t) (*uuid.UUID, uint16, string, error) {
+  if len < 19 {
+    return nil, 0, "", errors.New("Invalid entry")
   }
 
   buf := bytes.NewBuffer(ptrToBytes(ptr, len))
   pb, _ := buf.ReadByte()
   vers, kt := parseKeyPrefix(pb)
   if vers != KeyVersion {
-    return nil, fmt.Errorf("Invalid index key version %d", vers)
+    return nil, 0, "", fmt.Errorf("Invalid index key version %d", vers)
   }
   if kt != IndexKey {
-    return nil, fmt.Errorf("Invalid key type %d", kt)
+    return nil, 0, "", fmt.Errorf("Invalid key type %d", kt)
   }
 
-  var tenantLen uint16
-  binary.Read(buf, byteOrder, &tenantLen)
-  var collLen uint16
-  binary.Read(buf, byteOrder, &collLen)
+  ub := make([]byte, 16)
+  _, err := buf.Read(ub)
+  if err != nil { return nil, 0, "", fmt.Errorf("Error reading: %s", err) }
+  id, err := uuid.FromBytes(ub)
+  if err != nil { return nil, 0, "", fmt.Errorf("Invalid UUID: %s", err) }
+
   var keyLen uint16
   binary.Read(buf, byteOrder, &keyLen)
 
-  e := Entry{}
+  if keyLen < 0 || keyLen > math.MaxUint16 {
+    return nil, 0, "", errors.New("Invalid key length")
+  }
+  if keyLen == startRange {
+    return &id, startRange, "", nil
+  }
+  if keyLen == endRange {
+    return &id, endRange, "", nil
+  }
 
-  if tenantLen > 0 {
-    tb := make([]byte, tenantLen)
-    buf.Read(tb)
-    e.Tenant = string(tb)
-    buf.ReadByte()
-  }
-  if collLen > 0 && collLen <= maxKeyLen {
-    tb := make([]byte, collLen)
-    buf.Read(tb)
-    e.Collection = string(tb)
-    buf.ReadByte()
-  }
-  if keyLen > 0 && collLen <= maxKeyLen {
+  var key string
+  if keyLen > 0 {
     tb := make([]byte, keyLen)
-    buf.Read(tb)
-    e.Key = string(tb)
-    buf.ReadByte()
+    _, err = buf.Read(tb)
+    if err != nil { return nil, 0, "", fmt.Errorf("Error reading: %s", err) }
+    key = string(tb)
+  } else {
+    key = ""
   }
+  buf.ReadByte()
 
-  return &e, nil
-}
-
-/*
- * Given an encoded key, extract only the lengths, plus the tenant and collection names.
- * We will use this information in order to do index scans.
- *
- * For a tenant record, returns (tenant name, nil, [start range | end range | else], nil
- * For a collection record, returns (tenant name, collection name, [start range | end range | else], nil
- */
-func ptrToIndexType(ptr unsafe.Pointer, len C.size_t) (string, string, uint16, error) {
-  if len < 6 {
-    return "", "", 0, errors.New("Invalid entry")
-  }
-
-  buf := bytes.NewBuffer(ptrToBytes(ptr, len))
-  pb, _ := buf.ReadByte()
-  vers, kt := parseKeyPrefix(pb)
-  if vers != KeyVersion {
-    return "", "", 0, fmt.Errorf("Invalid index key version %d", vers)
-  }
-  if kt != IndexKey {
-    return "", "", 0, fmt.Errorf("Invalid key type %d", kt)
-  }
-
-  var tenantLen uint16
-  binary.Read(buf, byteOrder, &tenantLen)
-  var collLen uint16
-  binary.Read(buf, byteOrder, &collLen)
-  var keyLen uint16
-  binary.Read(buf, byteOrder, &keyLen)
-
-  var tenantName string
-  var collName string
-
-  if tenantLen > 0 {
-    tb := make([]byte, tenantLen)
-    buf.Read(tb)
-    tenantName = string(tb)
-    buf.ReadByte()
-  }
-
-  if collLen == startRange {
-    return tenantName, "", startRange, nil
-  } else if collLen == endRange {
-    return tenantName, "", endRange, nil
-  } else if collLen > 0 {
-    tb := make([]byte, collLen)
-    buf.Read(tb)
-    collName = string(tb)
-    buf.ReadByte()
-  }
-
-  return tenantName, collName, keyLen, nil
+  return &id, 0, key, nil
 }
 
 /*
@@ -289,91 +219,22 @@ func ptrToEntry(ptr unsafe.Pointer, len C.size_t) (*Entry, error) {
 /*
  * Create a special index key for the start of a collection's index records.
  */
-func startCollectionToPtr(tenantName string, collName string) (unsafe.Pointer, C.size_t, error) {
-  return collRange(tenantName, collName, false)
+func startIndexToPtr(id *uuid.UUID) (unsafe.Pointer, C.size_t, error) {
+  return indexRange(id, false)
 }
 
-func endCollectionToPtr(tenantName string, collName string) (unsafe.Pointer, C.size_t, error) {
-  return collRange(tenantName, collName, true)
+func endIndexToPtr(id *uuid.UUID) (unsafe.Pointer, C.size_t, error) {
+  return indexRange(id, true)
 }
 
-func collRange(tenantName string, collName string, isEnd bool) (unsafe.Pointer, C.size_t, error) {
-  tenantBytes := []byte(tenantName)
-  tenantLen := uint16(len(tenantBytes))
-  if tenantLen > maxKeyLen {
-    return nil, 0, fmt.Errorf("Tenant name is longer than maximum of %d", maxKeyLen)
-  }
-  collBytes := []byte(collName)
-  collLen := uint16(len(collBytes))
-  if collLen > maxKeyLen {
-    return nil, 0, fmt.Errorf("Collection name is longer than maximum of %d", maxKeyLen)
-  }
-  if collLen == 0 {
-    return nil, 0, errors.New("Collection name must be non-empty")
-  }
-
-  var keyLen uint16
-  if isEnd {
-    keyLen = endRange
-  } else {
-    keyLen = startRange
-  }
-
+func indexRange(id *uuid.UUID, isEnd bool) (unsafe.Pointer, C.size_t, error) {
   buf := &bytes.Buffer{}
   buf.Write(keyPrefix(IndexKey))
-  binary.Write(buf, byteOrder, tenantLen)
-  binary.Write(buf, byteOrder, collLen)
-  binary.Write(buf, byteOrder, keyLen)
-
-  if tenantLen > 0 {
-    buf.Write(tenantBytes)
-    buf.Write(null)
-  }
-  if collLen > 0 {
-    buf.Write(collBytes)
-    buf.Write(null)
-  }
-
-  ptr, len := bytesToPtr(buf.Bytes())
-  return ptr, len, nil
-}
-
-/*
- * Create a special index key for the start of a tenant's index records.
- */
-func startTenantToPtr(tenantName string) (unsafe.Pointer, C.size_t, error) {
-  return tenantRange(tenantName, false)
-}
-
-func endTenantToPtr(tenantName string) (unsafe.Pointer, C.size_t, error) {
-  return tenantRange(tenantName, true)
-}
-
-func tenantRange(tenantName string, isEnd bool) (unsafe.Pointer, C.size_t, error) {
-  tenantBytes := []byte(tenantName)
-  tenantLen := uint16(len(tenantBytes))
-  if tenantLen > maxKeyLen {
-    return nil, 0, fmt.Errorf("Tenant name is longer than maximum of %d", maxKeyLen)
-  }
-
-  var collLen uint16
+  buf.Write(id.Bytes())
   if isEnd {
-    collLen = endRange
+    binary.Write(buf, byteOrder, endRange)
   } else {
-    collLen = startRange
-  }
-
-  var keyLen uint16 = 0
-
-  buf := &bytes.Buffer{}
-  buf.Write(keyPrefix(IndexKey))
-  binary.Write(buf, byteOrder, tenantLen)
-  binary.Write(buf, byteOrder, collLen)
-  binary.Write(buf, byteOrder, keyLen)
-
-  if tenantLen > 0 {
-    buf.Write(tenantBytes)
-    buf.Write(null)
+    binary.Write(buf, byteOrder, startRange)
   }
 
   ptr, len := bytesToPtr(buf.Bytes())
@@ -393,9 +254,70 @@ func stringToError(c *C.char) error {
   return errors.New(es)
 }
 
+func uuidToPtr(id *uuid.UUID) (unsafe.Pointer, C.size_t) {
+  buf := &bytes.Buffer{}
+  buf.Write(keyPrefix(UuidValue))
+  buf.Write(id.Bytes())
+
+  ptr, len := bytesToPtr(buf.Bytes())
+  return ptr, len
+}
+
+func ptrToUuid(ptr unsafe.Pointer, len C.size_t) (*uuid.UUID, error) {
+  if len < 17 {
+    return nil, errors.New("Invalid entry")
+  }
+
+  buf := bytes.NewBuffer(ptrToBytes(ptr, len))
+  pb, _ := buf.ReadByte()
+  vers, kt := parseKeyPrefix(pb)
+  if vers != KeyVersion {
+    return nil, fmt.Errorf("Invalid index key version %d", vers)
+  }
+  if kt != UuidValue {
+    return nil, fmt.Errorf("Invalid key type %d", kt)
+  }
+
+  ub := make([]byte, 16)
+  _, err := buf.Read(ub)
+  if err != nil { return nil, fmt.Errorf("Error reading: %s", err) }
+  id, err := uuid.FromBytes(ub)
+  if err != nil { return nil, fmt.Errorf("Invalid UUID: %s", err) }
+
+  return &id, nil
+}
+
 func stringToPtr(s string) (unsafe.Pointer, C.size_t) {
-  bs := []byte(s)
-  return bytesToPtr(bs)
+  var sl uint16 = uint16(len(s))
+  buf := &bytes.Buffer{}
+  buf.Write(keyPrefix(StringValue))
+  binary.Write(buf, byteOrder, &sl)
+  buf.Write([]byte(s))
+
+  ptr, len := bytesToPtr(buf.Bytes())
+  return ptr, len
+}
+
+func ptrToString(ptr unsafe.Pointer, len C.size_t) (string, error) {
+  if len < 3 {
+    return "", errors.New("Invalid entry")
+  }
+
+  buf := bytes.NewBuffer(ptrToBytes(ptr, len))
+  pb, _ := buf.ReadByte()
+  vers, kt := parseKeyPrefix(pb)
+  if vers != KeyVersion {
+    return "", fmt.Errorf("Invalid index key version %d", vers)
+  }
+  if kt != StringValue {
+    return "", fmt.Errorf("Invalid key type %d", kt)
+  }
+
+  var sl uint16
+  binary.Read(buf, byteOrder, &sl)
+  sb := make([]byte, sl)
+  buf.Read(sb)
+  return string(sb), nil
 }
 
 func uintToPtr(v uint64) (unsafe.Pointer, C.size_t) {
