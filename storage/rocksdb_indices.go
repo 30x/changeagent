@@ -1,5 +1,9 @@
 package storage
 
+/*
+#include <stdlib.h>
+#include "rocksdb_native.h"
+*/
 import "C"
 
 import (
@@ -68,4 +72,64 @@ func (s *LevelDBStorage) readCollectionEntry(id *uuid.UUID, key string) (unsafe.
   ptr, len, err := s.readEntry(s.indices, ixPtr, ixLen)
   if err != nil { return nil, 0, err }
   return ptr, len, nil
+}
+
+/*
+ * Delete from an index.
+ */
+func (s *LevelDBStorage) deleteCollectionEntry(id *uuid.UUID, key string) error {
+  ixPtr, ixLen, err := indexKeyToPtr(id, key)
+  if err != nil { return err }
+  defer freePtr(ixPtr)
+
+  var e *C.char
+
+  C.go_rocksdb_delete(
+    s.db, defaultWriteOptions, s.indices,
+    ixPtr, ixLen, &e)
+  if e == nil {
+    return nil
+  }
+  defer freeString(e)
+  return stringToError(e)
+}
+
+/*
+ * Read entries from the index, using a provided function to allow each to be converted to the
+ * correct format by the caller.
+ */
+func (s *LevelDBStorage) readCollectionIndex(startPtr unsafe.Pointer, startLen C.size_t,
+                                             endPtr unsafe.Pointer, endLen C.size_t, max uint,
+                                             handle func(unsafe.Pointer, C.size_t, unsafe.Pointer, C.size_t) error) error {
+
+  it := C.rocksdb_create_iterator_cf(s.db, defaultReadOptions, s.indices)
+  defer C.rocksdb_iter_destroy(it)
+
+  C.go_rocksdb_iter_seek(it, startPtr, startLen)
+
+  var count uint = 0
+  for (count < max) && (C.rocksdb_iter_valid(it) != 0) {
+    var keyLen C.size_t
+    keyPtr := unsafe.Pointer(C.rocksdb_iter_key(it, &keyLen))
+    if compareKeys(keyPtr, keyLen, startPtr, startLen) == 0 {
+      // Always skip the start-of-range key
+      C.rocksdb_iter_next(it)
+      continue
+    }
+    if compareKeys(keyPtr, keyLen, endPtr, endLen) == 0 {
+      // The end-of-range key indicates, its time to stop seeking
+      break
+    }
+
+    var valLen C.size_t
+    valPtr := unsafe.Pointer(C.rocksdb_iter_value(it, &valLen))
+
+    err := handle(keyPtr, keyLen, valPtr, valLen)
+    if err != nil { return err }
+
+    C.rocksdb_iter_next(it)
+    count++
+  }
+
+  return nil
 }

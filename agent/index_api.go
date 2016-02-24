@@ -4,351 +4,504 @@ import (
   "errors"
   "fmt"
   "path"
+  "regexp"
   "strconv"
+  "encoding/json"
   "net/http"
-  "github.com/gin-gonic/gin"
+  "github.com/gorilla/mux"
+  "github.com/golang/protobuf/proto"
   "revision.aeip.apigee.net/greg/changeagent/storage"
+  "github.com/satori/go.uuid"
 )
 
 const (
   Tenants = "/tenants"
-  SingleTenant = Tenants + "/:tenant"
+  SingleTenant = Tenants + "/{tenant}"
   TenantCollections = SingleTenant + "/collections"
-  SingleCollection = TenantCollections + "/:collection"
-  SingleItem = SingleCollection + "/:key"
+  SingleTenantCollection = TenantCollections + "/{collection}"
+  Collections = "/collections"
+  SingleCollection = Collections + "/{collection}"
+  CollectionKeys = SingleCollection + "/keys"
+  SingleKey = CollectionKeys + "/{key}"
 )
 
+var uuidRE = regexp.MustCompile("[0-9A-Fa-f]+-[0-9A-Fa-f]+-[0-9A-Fa-f]+-[0-9A-Fa-f]+-[0-9A-Fa-f]+")
+
 func (a *ChangeAgent) initIndexAPI() {
-  a.api.POST(Tenants, a.handlePostTenants)
-  a.api.GET(SingleTenant, a.handleGetTenant)
-  a.api.DELETE(SingleTenant, a.handleDeleteTenant)
-  a.api.GET(TenantCollections, a.handleGetCollections)
-  a.api.POST(TenantCollections, a.handlePostCollections)
-  a.api.GET(SingleCollection, a.handleGetCollection)
-  a.api.POST(SingleCollection, a.handlePostItem)
-  a.api.GET(SingleItem, a.handleGetItem)
-  a.api.PUT(SingleItem, a.handlePutItem)
-  a.api.DELETE(SingleItem, a.handleDeleteItem)
+  a.router.HandleFunc(Tenants, a.handleGetTenants).Methods("GET")
+  a.router.HandleFunc(Tenants, a.handleCreateTenant).Methods("POST")
+  a.router.HandleFunc(SingleTenant, a.handleGetTenant).Methods("GET")
+  a.router.HandleFunc(TenantCollections, a.handleGetCollections).Methods("GET")
+  a.router.HandleFunc(SingleTenantCollection, a.handleGetTenantCollection).Methods("GET")
+  a.router.HandleFunc(TenantCollections, a.handleCreateCollection).Methods("POST")
+  a.router.HandleFunc(SingleCollection, a.handleGetCollection).Methods("GET")
+  a.router.HandleFunc(CollectionKeys, a.handleGetCollectionKeys).Methods("GET")
+  a.router.HandleFunc(SingleKey, a.handleGetCollectionKey).Methods("GET")
 }
 
-func (a *ChangeAgent) handlePostTenants(c *gin.Context) {
-  if c.ContentType() != FormContent {
-    c.AbortWithStatus(http.StatusUnsupportedMediaType)
+func (a *ChangeAgent) handleGetTenants(resp http.ResponseWriter, req *http.Request) {
+  tenants, err := a.stor.GetTenants()
+  if err != nil {
+    writeError(resp, http.StatusInternalServerError, err)
     return
   }
 
-  tenantName := c.PostForm("tenant")
+  links := make([]TenantLink, 0)
+  for _, t := range(tenants) {
+    l := TenantLink{
+      Name: t.Name,
+      Id: t.Id.String(),
+      Self: linkURI(req, fmt.Sprintf("%s/%s", Tenants, t.Id)),
+      Collections: linkURI(req, fmt.Sprintf("%s/%s/collections", Tenants, t.Id)),
+    }
+    links = append(links, l)
+  }
+
+  body, err := json.Marshal(links)
+  if err == nil {
+    resp.Header().Set("Content-Type", JSONContent)
+    resp.Write(body)
+  } else {
+    writeError(resp, http.StatusInternalServerError, err)
+  }
+}
+
+func (a *ChangeAgent) handleCreateTenant(resp http.ResponseWriter, req *http.Request) {
+  var tenantName string
+  var err error
+
+  if isFormContent(req) {
+    tenantName = req.FormValue("name")
+  } else if isJSONContent(req) {
+    var tenant TenantLink
+    err = unmarshalAny(req.Body, &tenant)
+    tenantName = tenant.Name
+  } else {
+    writeError(resp, http.StatusUnsupportedMediaType, errors.New("Unsupported media type"))
+    return
+  }
+
   if tenantName == "" {
-    c.AbortWithStatus(http.StatusBadRequest)
+    writeError(resp, http.StatusBadRequest, errors.New("Missing \"name\" parameter"))
+    return
+  }
+
+  cmdStr := CreateTenantCommand
+  cmd := AgentCommand{
+    Command: &cmdStr,
+    Name: &tenantName,
+  }
+
+  pb, err := proto.Marshal(&cmd)
+  if err != nil {
+    writeError(resp, http.StatusInternalServerError, err)
     return
   }
 
   entry := storage.Entry{
     Type: CommandChange,
-    Tenant: tenantName,
-    Data: []byte(CreateTenantCommand),
+    Data: pb,
   }
 
-  _, err := a.makeProposal(&entry)
+  _, err = a.makeProposal(&entry)
   if err != nil {
-    writeError(c, http.StatusInternalServerError, err)
-  } else {
-    c.JSON(200, createTenantResponse(c, tenantName))
-  }
-}
-
-func (a *ChangeAgent) handleGetTenant(c *gin.Context) {
-  tenant := c.Param("tenant")
-  exists, err := a.stor.TenantExists(tenant)
-  if err != nil {
-    writeError(c, http.StatusBadRequest, err)
+    writeError(resp, http.StatusInternalServerError, err)
     return
   }
 
-  if exists {
-    c.JSON(200, createTenantResponse(c, tenant))
-  } else {
-    c.AbortWithStatus(404)
-  }
-}
-
-func (a *ChangeAgent) handleDeleteTenant(c *gin.Context) {
-  tenant := c.Param("tenant")
-  exists, err := a.stor.TenantExists(tenant)
+  id, err := a.stor.GetTenantByName(tenantName)
   if err != nil {
-    writeError(c, http.StatusBadRequest, err)
+    writeError(resp, http.StatusInternalServerError, err)
     return
   }
 
-  if exists {
-    c.AbortWithError(400, errors.New("Not implemented"))
-  } else {
-    c.AbortWithStatus(404)
+  l := TenantLink{
+    Name: tenantName,
+    Id: id.String(),
+    Self: linkURI(req, fmt.Sprintf("%s/%s", Tenants, id)),
+    Collections: linkURI(req, fmt.Sprintf("%s/%s/collections", Tenants, id)),
   }
+
+  writeTenantLink(resp, &l)
 }
 
-func (a *ChangeAgent) handleGetCollections(c *gin.Context) {
-  tenant := c.Param("tenant")
-  exists, err := a.stor.TenantExists(tenant)
+
+func (a *ChangeAgent) handleGetTenant(resp http.ResponseWriter, req *http.Request) {
+  tenantIDStr := mux.Vars(req)["tenant"]
+
+  tenantID, tenantName, errCode, err := a.validateTenant(tenantIDStr)
   if err != nil {
-    writeError(c, http.StatusBadRequest, err)
+    writeError(resp, errCode, err)
     return
   }
 
-  if exists {
-    collections, err := a.stor.GetTenantCollections(tenant)
-    if err != nil {
-      writeError(c, http.StatusInternalServerError, err)
-      return
+  l := TenantLink{
+    Name: tenantName,
+    Id: tenantID.String(),
+    Self: linkURI(req, fmt.Sprintf("%s/%s", Tenants, tenantID)),
+    Collections: linkURI(req, fmt.Sprintf("%s/%s/collections", Tenants, tenantID)),
+  }
+  writeTenantLink(resp, &l)
+}
+
+func writeTenantLink(resp http.ResponseWriter, l *TenantLink) {
+  body, err := json.Marshal(&l)
+  if err != nil {
+    writeError(resp, http.StatusInternalServerError, err)
+    return
+  }
+
+  resp.Header().Set("Content-Type", JSONContent)
+  resp.Write(body)
+}
+
+func (a *ChangeAgent) handleGetCollections(resp http.ResponseWriter, req *http.Request) {
+  tenantIDStr := mux.Vars(req)["tenant"]
+
+  tenantID, _, errCode, err := a.validateTenant(tenantIDStr)
+  if err != nil {
+    writeError(resp, errCode, err)
+    return
+  }
+
+  collections, err := a.stor.GetTenantCollections(tenantID)
+  if err != nil {
+    writeError(resp, http.StatusInternalServerError, err)
+    return
+  }
+
+  links := make ([]CollectionLink, 0)
+
+  for _, c := range(collections) {
+    l := CollectionLink{
+      Id: c.Id.String(),
+      Name: c.Name,
+      Self: linkURI(req, fmt.Sprintf("/collections/%s", c.Id)),
+      Keys: linkURI(req, fmt.Sprintf("/collections/%s/keys", c.Id)),
     }
-
-    resp := make(map[string]string)
-    for _, collection := range(collections) {
-      resp[collection] = linkURI(c, fmt.Sprintf("/tenants/%s/collections/%s", tenant, collection))
-    }
-    c.JSON(200, resp)
-
-  } else {
-    c.AbortWithStatus(404)
+    links = append(links, l)
   }
-}
 
-func (a *ChangeAgent) handlePostCollections(c *gin.Context) {
-  if c.ContentType() != FormContent {
-    c.AbortWithStatus(http.StatusUnsupportedMediaType)
+  body, err := json.Marshal(links)
+  if err != nil {
+    writeError(resp, http.StatusInternalServerError, err)
     return
   }
 
-  tenantName := c.Param("tenant")
-  collectionName := c.PostForm("collection")
+  resp.Header().Set("Content-Type", JSONContent)
+  resp.Write(body)
+}
+
+func (a *ChangeAgent) handleCreateCollection(resp http.ResponseWriter, req *http.Request) {
+  tenantIDStr := mux.Vars(req)["tenant"]
+
+  tenantID, _, errCode, err := a.validateTenant(tenantIDStr)
+  if err != nil {
+    writeError(resp, errCode, err)
+    return
+  }
+
+  var collectionName string
+
+  if isFormContent(req) {
+    collectionName = req.FormValue("name")
+  } else if isJSONContent(req) {
+    var coll CollectionLink
+    err = unmarshalAny(req.Body, &coll)
+    collectionName = coll.Name
+  } else {
+    writeError(resp, http.StatusUnsupportedMediaType, errors.New("Unsupported media type"))
+    return
+  }
+
   if collectionName == "" {
-    c.AbortWithStatus(http.StatusBadRequest)
+    writeError(resp, http.StatusBadRequest, errors.New("Missing \"name\" parameter"))
+    return
+  }
+
+  cmdStr := CreateCollectionCommand
+  cmd := AgentCommand{
+    Command: &cmdStr,
+    Name: &collectionName,
+    Tenant: tenantID.Bytes(),
+  }
+
+  pb, err := proto.Marshal(&cmd)
+  if err != nil {
+    writeError(resp, http.StatusInternalServerError, err)
     return
   }
 
   entry := storage.Entry{
     Type: CommandChange,
-    Tenant: tenantName,
-    Collection: collectionName,
-    Data: []byte(CreateCollectionCommand),
+    Data: pb,
   }
 
-  _, err := a.makeProposal(&entry)
+  _, err = a.makeProposal(&entry)
   if err != nil {
-    writeError(c, http.StatusInternalServerError, err)
-  } else {
-    resp := make(map[string]string)
-    resp["name"] = collectionName
-    resp["tenant"] = tenantName
-    resp["self"] = linkURI(c, fmt.Sprintf("/tenants/%s/collections/%s", tenantName, collectionName))
-    c.JSON(200, resp)
+    writeError(resp, http.StatusInternalServerError, err)
+    return
   }
+
+  id, err := a.stor.GetCollectionByName(tenantID, collectionName)
+  if err != nil {
+    writeError(resp, http.StatusInternalServerError, err)
+    return
+  }
+  if id == nil {
+    writeError(resp, http.StatusInternalServerError, errors.New("Collection not created"))
+    return
+  }
+
+  l := CollectionLink{
+    Name: collectionName,
+    Id: id.String(),
+    Self: linkURI(req, fmt.Sprintf("%s/%s", Collections, id)),
+    Keys: linkURI(req, fmt.Sprintf("%s/%s/keys", Collections, id)),
+  }
+
+  writeCollectionLink(resp, &l)
 }
 
-func (a *ChangeAgent) handleGetCollection(c *gin.Context) {
-  tenantName := c.Param("tenant")
-  collectionName := c.Param("collection")
+func (a *ChangeAgent) handleGetCollection(resp http.ResponseWriter, req *http.Request) {
+  collectionIDStr := mux.Vars(req)["collection"]
+  collectionID, err := uuid.FromString(collectionIDStr)
+  if err != nil {
+    writeError(resp, http.StatusBadRequest, err)
+    return
+  }
 
-  limitStr := c.DefaultQuery("limit", DefaultLimit)
+  collectionName, err := a.stor.GetCollectionByID(&collectionID)
+  if err != nil {
+    writeError(resp, http.StatusInternalServerError, err)
+    return
+  }
+  if collectionName == "" {
+    writeError(resp, http.StatusNotFound, errors.New("Collection not found"))
+    return
+  }
+
+  l := CollectionLink{
+    Name: collectionName,
+    Id: collectionID.String(),
+    Self: linkURI(req, fmt.Sprintf("%s/%s", Collections, collectionID)),
+    Keys: linkURI(req, fmt.Sprintf("%s/%s/keys", Collections, collectionID)),
+  }
+  writeCollectionLink(resp, &l)
+}
+
+func (a *ChangeAgent) handleGetTenantCollection(resp http.ResponseWriter, req *http.Request) {
+  tenantIDStr := mux.Vars(req)["tenant"]
+
+  tenantID, _, errCode, err := a.validateTenant(tenantIDStr)
+  if err != nil {
+    writeError(resp, errCode, err)
+    return
+  }
+
+  collectionIDStr := mux.Vars(req)["collection"]
+  collectionID, collectionName, errCode, err := a.validateCollection(tenantID, collectionIDStr)
+  if err != nil {
+    writeError(resp, errCode, err)
+    return
+  }
+
+  l := CollectionLink{
+    Name: collectionName,
+    Id: collectionID.String(),
+    Self: linkURI(req, fmt.Sprintf("%s/%s", Collections, collectionID)),
+    Keys: linkURI(req, fmt.Sprintf("%s/%s/keys", Collections, collectionID)),
+  }
+  writeCollectionLink(resp, &l)
+}
+
+func writeCollectionLink(resp http.ResponseWriter, l *CollectionLink) {
+  body, err := json.Marshal(&l)
+  if err != nil {
+    writeError(resp, http.StatusInternalServerError, err)
+    return
+  }
+
+  resp.Header().Set("Content-Type", JSONContent)
+  resp.Write(body)
+}
+
+func (a *ChangeAgent) handleGetCollectionKeys(resp http.ResponseWriter, req *http.Request) {
+  collectionIDStr := mux.Vars(req)["collection"]
+  collectionID, err := uuid.FromString(collectionIDStr)
+  if err != nil {
+    writeError(resp, http.StatusBadRequest, err)
+    return
+  }
+
+  collectionName, err := a.stor.GetCollectionByID(&collectionID)
+  if err != nil {
+    writeError(resp, http.StatusInternalServerError, err)
+    return
+  }
+  if collectionName == "" {
+    writeError(resp, http.StatusNotFound, errors.New("Collection not found"))
+    return
+  }
+
+  qps := req.URL.Query()
+  limitStr := qps.Get("limit")
+  if limitStr == "" {
+    limitStr = DefaultLimit
+  }
   limit, err := strconv.ParseUint(limitStr, 10, 32)
   if err != nil {
-    writeError(c, http.StatusBadRequest, err)
+    writeError(resp, http.StatusBadRequest, err)
     return
   }
 
-  indices, err := a.stor.GetCollectionIndices(tenantName, collectionName, uint(limit))
+  lastKey := qps.Get("last")
+
+  indices, err := a.stor.GetCollectionIndices(&collectionID, lastKey, uint(limit))
   if err != nil {
-    writeError(c, http.StatusInternalServerError, err)
+    writeError(resp, http.StatusInternalServerError, err)
     return
   }
 
-  var entries []storage.Entry
+  entries := make([]storage.Entry, 0)
 
   for _, ix := range(indices) {
     entry, err := a.stor.GetEntry(ix)
     if err != nil {
-      writeError(c, http.StatusInternalServerError, err)
+      writeError(resp, http.StatusInternalServerError, err)
       return
     }
     entries = append(entries, *entry)
   }
 
-  str, err := marshalChanges(entries)
-  if err == nil {
-    c.Header("Content-Type", JSONContent)
-    c.String(200, str)
-  } else {
-    writeError(c, http.StatusInternalServerError, err)
+  body, err := marshalChanges(entries)
+  if err != nil {
+    writeError(resp, http.StatusInternalServerError, err)
+    return
   }
+
+  resp.Header().Set("Content-Type", JSONContent)
+  resp.Write(body)
 }
 
-func (a *ChangeAgent) handlePostItem(c *gin.Context) {
-  tenantName := c.Param("tenant")
-  collectionName := c.Param("collection")
-
-  if c.ContentType() != JSONContent {
-    // TODO regexp?
-    c.AbortWithStatus(http.StatusUnsupportedMediaType)
-    return
-  }
-
-  defer c.Request.Body.Close()
-  entry, err := unmarshalJson(c.Request.Body)
+func (a *ChangeAgent) handleGetCollectionKey(resp http.ResponseWriter, req *http.Request) {
+  collectionIDStr := mux.Vars(req)["collection"]
+  keyStr := mux.Vars(req)["key"]
+  collectionID, err := uuid.FromString(collectionIDStr)
   if err != nil {
-    c.AbortWithStatus(http.StatusBadRequest)
+    writeError(resp, http.StatusBadRequest, err)
     return
   }
 
-  if entry.Tenant == "" {
-    entry.Tenant = tenantName
-  } else if entry.Tenant != tenantName {
-    writeError(c, http.StatusBadRequest, errors.New("Invalid Tenant parameter"))
-    return
-  }
-
-  if entry.Collection == "" {
-    entry.Collection = collectionName
-  } else if entry.Collection != collectionName {
-    writeError(c, http.StatusBadRequest, errors.New("Invalid Collection parameter"))
-    return
-  }
-
-  if entry.Key == "" {
-    writeError(c, http.StatusBadRequest, errors.New("Key parameter is missing from entry"))
-    return
-  }
-
-  newEntry, err := a.makeProposal(entry)
+  collectionName, err := a.stor.GetCollectionByID(&collectionID)
   if err != nil {
-    writeError(c, http.StatusInternalServerError, err)
+    writeError(resp, http.StatusInternalServerError, err)
+    return
+  }
+  if collectionName == "" {
+    writeError(resp, http.StatusNotFound, errors.New("Collection not found"))
     return
   }
 
-  str, err := marshalJson(newEntry)
-  if err == nil {
-    c.Header("Content-Type", JSONContent)
-    c.String(200, str)
-  } else {
-    writeError(c, http.StatusInternalServerError, err)
-  }
-}
-
-func (a *ChangeAgent) handleGetItem(c *gin.Context) {
-  tenantName := c.Param("tenant")
-  collectionName := c.Param("collection")
-  key := c.Param("key")
-
-  ix, err := a.stor.GetIndexEntry(tenantName, collectionName, key)
+  ix, err := a.stor.GetIndexEntry(&collectionID, keyStr)
   if err != nil {
-    writeError(c, http.StatusInternalServerError, err)
-    return
-  }
-
-  if ix == 0 {
-    c.AbortWithStatus(http.StatusNotFound)
+    writeError(resp, http.StatusInternalServerError, err)
     return
   }
 
   entry, err := a.stor.GetEntry(ix)
   if err != nil {
-    writeError(c, http.StatusInternalServerError, err)
+    writeError(resp, http.StatusInternalServerError, err)
     return
   }
 
-  str, err := marshalJson(entry)
-  if err == nil {
-    c.Header("Content-Type", JSONContent)
-    c.String(200, str)
+  body, err := marshalJson(entry)
+  if err != nil {
+    writeError(resp, http.StatusInternalServerError, err)
+    return
+  }
+
+  resp.Header().Set("Content-Type", JSONContent)
+  resp.Write(body)
+}
+
+func (a *ChangeAgent) validateTenant(ten string) (*uuid.UUID, string, int, error) {
+  if uuidRE.MatchString(ten) {
+    // It's a tenant UUID
+    tenantID, err := uuid.FromString(ten)
+    if err != nil {
+      return nil, "", http.StatusBadRequest, err
+    }
+    tenantName, err := a.stor.GetTenantByID(&tenantID)
+    if err != nil {
+      return nil, "", http.StatusInternalServerError, err
+    }
+    if tenantName == "" {
+      return nil, "", http.StatusNotFound, errors.New("Tenant not found")
+    }
+    return &tenantID, tenantName, http.StatusOK, nil
+
   } else {
-    writeError(c, http.StatusInternalServerError, err)
+    // it's a tenant  name
+    tenantID, err := a.stor.GetTenantByName(ten)
+    if err != nil {
+      return nil, "", http.StatusInternalServerError, err
+    }
+    if tenantID == nil {
+      return nil, "", http.StatusNotFound, errors.New("Tenant not found")
+    }
+    return tenantID, ten, http.StatusOK, nil
   }
 }
 
-func (a *ChangeAgent) handlePutItem(c *gin.Context) {
-  tenantName := c.Param("tenant")
-  collectionName := c.Param("collection")
-  key := c.Param("key")
+func (a *ChangeAgent) validateCollection(tenantID *uuid.UUID, coll string) (*uuid.UUID, string, int, error) {
+  if uuidRE.MatchString(coll) {
+    // It's a collection UUID
+    collectionID, err := uuid.FromString(coll)
+    if err != nil {
+      return nil, "", http.StatusBadRequest, err
+    }
+    collectionName, err := a.stor.GetCollectionByID(&collectionID)
+    if err != nil {
+      return nil, "", http.StatusInternalServerError, err
+    }
+    if collectionName == "" {
+      return nil, "", http.StatusNotFound, errors.New("Collection not found")
+    }
+    return &collectionID, collectionName, http.StatusOK, nil
 
-  if c.ContentType() != JSONContent {
-    // TODO regexp?
-    c.AbortWithStatus(http.StatusUnsupportedMediaType)
-    return
-  }
-
-  defer c.Request.Body.Close()
-  entry, err := unmarshalJson(c.Request.Body)
-  if err != nil {
-    c.AbortWithStatus(http.StatusBadRequest)
-    return
-  }
-
-  if entry.Tenant == "" {
-    entry.Tenant = tenantName
-  } else if entry.Tenant != tenantName {
-    writeError(c, http.StatusBadRequest, errors.New("Invalid Tenant parameter"))
-    return
-  }
-
-  if entry.Collection == "" {
-    entry.Collection = collectionName
-  } else if entry.Collection != collectionName {
-    writeError(c, http.StatusBadRequest, errors.New("Invalid Collection parameter"))
-    return
-  }
-
-  if entry.Key == "" {
-    entry.Key = key
-  } else if entry.Key != key {
-    writeError(c, http.StatusBadRequest, errors.New("Invalid Key parameter"))
-    return
-  }
-
-  newEntry, err := a.makeProposal(entry)
-  if err != nil {
-    writeError(c, http.StatusInternalServerError, err)
-    return
-  }
-
-  str, err := marshalJson(newEntry)
-  if err == nil {
-    c.Header("Content-Type", JSONContent)
-    c.String(200, str)
   } else {
-    writeError(c, http.StatusInternalServerError, err)
+    // it's a tenant  name
+    collectionID, err := a.stor.GetCollectionByName(tenantID, coll)
+    if err != nil {
+      return nil, "", http.StatusInternalServerError, err
+    }
+    if collectionID == nil {
+      return nil, "", http.StatusNotFound, errors.New("Tenant not found")
+    }
+    return collectionID, coll, http.StatusOK, nil
   }
 }
 
-func (a *ChangeAgent) handleDeleteItem(c *gin.Context) {
-  tenantName := c.Param("tenant")
-  collectionName := c.Param("collection")
-  key := c.Param("key")
-
-  err := a.stor.DeleteIndexEntry(tenantName, collectionName, key)
-  if err != nil {
-    writeError(c, http.StatusInternalServerError, err)
-    return
-  }
-
-  c.Status(200)
-}
-
-func createTenantResponse(c *gin.Context, tenantName string) map[string]string {
-  resp := make(map[string]string)
-  resp["name"] = tenantName
-  resp["collections"] = linkURI(c, fmt.Sprintf("/tenants/%s/collections", tenantName))
-  resp["self"] = linkURI(c, fmt.Sprintf("/tenants/%s", tenantName))
-  return resp
-}
-
-func linkURI(c *gin.Context, relPath string) string {
+func linkURI(req *http.Request, relPath string) string {
   var proto string
-  if c.Request.TLS == nil {
+
+  if req.TLS == nil {
     proto = "http"
   } else {
     proto = "https"
   }
 
-  newPath := path.Join(c.Request.URL.RawPath, relPath)
+  newPath := path.Join(req.URL.RawPath, relPath)
 
-  return fmt.Sprintf("%s://%s%s", proto, c.Request.Host, newPath)
+  // TODO Deal with X-Forwarded-Host headers
+  return fmt.Sprintf("%s://%s%s", proto, req.Host, newPath)
+}
+
+func isFormContent(req *http.Request) bool {
+  return req.Header.Get("Content-Type") == FormContent
+}
+
+func isJSONContent(req *http.Request) bool {
+  return req.Header.Get("Content-Type") == JSONContent
 }

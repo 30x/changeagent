@@ -27,10 +27,9 @@ type EntryPb struct {
 	Type             *int32  `protobuf:"varint,2,req,name=type" json:"type,omitempty"`
 	Term             *uint64 `protobuf:"varint,3,opt,name=term" json:"term,omitempty"`
 	Timestamp        *int64  `protobuf:"varint,4,opt,name=timestamp" json:"timestamp,omitempty"`
-	Tenant           *string `protobuf:"bytes,5,opt,name=tenant" json:"tenant,omitempty"`
-	Collection       *string `protobuf:"bytes,6,opt,name=collection" json:"collection,omitempty"`
-	Key              *string `protobuf:"bytes,7,opt,name=key" json:"key,omitempty"`
-	Data             []byte  `protobuf:"bytes,8,opt,name=data" json:"data,omitempty"`
+	Collection       []byte  `protobuf:"bytes,5,opt,name=collection" json:"collection,omitempty"`
+	Key              *string `protobuf:"bytes,6,opt,name=key" json:"key,omitempty"`
+	Data             []byte  `protobuf:"bytes,7,opt,name=data" json:"data,omitempty"`
 	XXX_unrecognized []byte  `json:"-"`
 }
 
@@ -66,18 +65,11 @@ func (m *EntryPb) GetTimestamp() int64 {
 	return 0
 }
 
-func (m *EntryPb) GetTenant() string {
-	if m != nil && m.Tenant != nil {
-		return *m.Tenant
+func (m *EntryPb) GetCollection() []byte {
+	if m != nil {
+		return m.Collection
 	}
-	return ""
-}
-
-func (m *EntryPb) GetCollection() string {
-	if m != nil && m.Collection != nil {
-		return *m.Collection
-	}
-	return ""
+	return nil
 }
 
 func (m *EntryPb) GetKey() string {

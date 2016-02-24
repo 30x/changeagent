@@ -11,95 +11,131 @@ import (
 )
 
 var _ = Describe("Index API Test", func() {
+  var tenant string
+  var collection string
+
   BeforeEach(func() {
     waitForLeader()
     getLeaderIndex()
 
-    uri := getLeaderURI() + "/tenants"
-    request := "tenant=testTenant"
-
-    pr, err := http.Post(uri, FormContent, strings.NewReader(request))
-    Expect(err).Should(Succeed())
-    Expect(pr.StatusCode).Should(Equal(200))
-    pr.Body.Close()
-
-    uri = fmt.Sprintf("%s/tenants/testTenant/collections", getLeaderURI())
-    request = "collection=testCollection"
-
-    pr, err = http.Post(uri, FormContent, strings.NewReader(request))
-    Expect(err).Should(Succeed())
-    Expect(pr.StatusCode).Should(Equal(200))
-    pr.Body.Close()
+    tenant = ensureTenant("testTenant")
+    collection = ensureCollection(tenant, "testCollection")
   })
 
-  It("POST new tenant", func() {
+  It("Verify tenant", func() {
+    gr, err := http.Get(fmt.Sprintf("%s/tenants/%s", getLeaderURI(), tenant))
+    Expect(err).Should(Succeed())
+    Expect(gr.StatusCode).Should(Equal(200))
+
+    tenantBody := parseJson(gr)
+    Expect(tenantBody["_id"]).Should(Equal(tenant))
+    Expect(tenantBody["name"]).Should(Equal("testTenant"))
+
+    gr, err = http.Get(fmt.Sprintf("%s/tenants/%s", getLeaderURI(), "testTenant"))
+    Expect(err).Should(Succeed())
+    Expect(gr.StatusCode).Should(Equal(200))
+
+    tenantBody = parseJson(gr)
+    Expect(tenantBody["_id"]).Should(Equal(tenant))
+    Expect(tenantBody["name"]).Should(Equal("testTenant"))
+  })
+
+  It("Verify collection", func() {
+    gr, err := http.Get(fmt.Sprintf("%s/collections/%s", getLeaderURI(), collection))
+    Expect(err).Should(Succeed())
+    Expect(gr.StatusCode).Should(Equal(200))
+
+    collBody := parseJson(gr)
+    Expect(collBody["_id"]).Should(Equal(collection))
+    Expect(collBody["name"]).Should(Equal("testCollection"))
+
+    gr, err = http.Get(fmt.Sprintf("%s/tenants/%s/collections/%s", getLeaderURI(), tenant, collection))
+    Expect(err).Should(Succeed())
+    Expect(gr.StatusCode).Should(Equal(200))
+
+    collBody = parseJson(gr)
+    Expect(collBody["_id"]).Should(Equal(collection))
+    Expect(collBody["name"]).Should(Equal("testCollection"))
+
+    gr, err = http.Get(fmt.Sprintf("%s/tenants/%s/collections/%s", getLeaderURI(), tenant, "testCollection"))
+    Expect(err).Should(Succeed())
+    Expect(gr.StatusCode).Should(Equal(200))
+
+    collBody = parseJson(gr)
+    Expect(collBody["_id"]).Should(Equal(collection))
+    Expect(collBody["name"]).Should(Equal("testCollection"))
+  })
+
+  It("Create tenant", func() {
     uri := getLeaderURI() + "/tenants"
-    request := "tenant=foo"
+    request := "name=foo"
 
     pr, err := http.Post(uri, FormContent, strings.NewReader(request))
     Expect(err).Should(Succeed())
     Expect(pr.StatusCode).Should(Equal(200))
-    defer pr.Body.Close()
 
-    respBody, err := ioutil.ReadAll(pr.Body)
-    Expect(err).Should(Succeed())
-    fmt.Fprintf(GinkgoWriter, "Got response body %s\n", respBody)
+    createResponse := parseJson(pr)
 
-    jsonBody := make(map[string]string)
-    err = json.Unmarshal(respBody, &jsonBody)
-    Expect(err).Should(Succeed())
-    fmt.Fprintf(GinkgoWriter, "Got JSON response %v\n", jsonBody)
+    Expect(createResponse["name"]).Should(Equal("foo"))
 
-    Expect(jsonBody["name"]).Should(Equal("foo"))
-
-    gr, err := http.Get(jsonBody["self"])
+    gr, err := http.Get(createResponse["_self"])
     Expect(err).Should(Succeed())
     Expect(gr.StatusCode).Should(Equal(200))
-    defer gr.Body.Close()
 
-    selfBody, err := ioutil.ReadAll(gr.Body)
-    Expect(err).Should(Succeed())
-    fmt.Fprintf(GinkgoWriter, "Got \"self\" response body %s\n", selfBody)
+    getResponse := parseJson(gr)
 
-    gcr, err := http.Get(jsonBody["collections"])
+    Expect(getResponse).Should(Equal(createResponse))
+
+    gcr, err := http.Get(createResponse["_collections"])
     Expect(err).Should(Succeed())
     Expect(gcr.StatusCode).Should(Equal(200))
-    defer gcr.Body.Close()
 
-    collectionsBody, err := ioutil.ReadAll(gcr.Body)
+    defer gcr.Body.Close()
+    bytes, err := ioutil.ReadAll(gcr.Body)
     Expect(err).Should(Succeed())
-    Expect(strings.TrimSpace(string(collectionsBody))).Should(Equal("{}"))
+    Expect(string(bytes)).Should(Equal("[]"))
   })
 
-  It("POST new collection", func() {
-    uri := fmt.Sprintf("%s/tenants/foo/collections", getLeaderURI())
-    request := "collection=bar"
+  It("Create collection", func() {
+    uri := fmt.Sprintf("%s/tenants/%s/collections", getLeaderURI(), tenant)
+    request := "name=bar"
 
     pr, err := http.Post(uri, FormContent, strings.NewReader(request))
     Expect(err).Should(Succeed())
     Expect(pr.StatusCode).Should(Equal(200))
-    defer pr.Body.Close()
 
-    respBody, err := ioutil.ReadAll(pr.Body)
-    Expect(err).Should(Succeed())
-    fmt.Fprintf(GinkgoWriter, "Got response body %s\n", respBody)
-  })
+    createResponse := parseJson(pr)
 
-  It("POST collection entry", func() {
-    request := "{\"tenant\":\"testTenant\",\"collection\":\"testCollection\",\"key\":\"baz\",\"data\":{\"hello\":\"world!\",\"foo\":789}}"
-    postChange(request)
+    Expect(createResponse["name"]).Should(Equal("bar"))
 
-    uri := fmt.Sprintf("%s/tenants/testTenant/collections/testCollection/baz", getLeaderURI())
-    gr, err := http.Get(uri)
+    gr, err := http.Get(createResponse["_self"])
     Expect(err).Should(Succeed())
     Expect(gr.StatusCode).Should(Equal(200))
-    defer gr.Body.Close()
 
-    collBody, err := ioutil.ReadAll(gr.Body)
+    getResponse := parseJson(gr)
+
+    Expect(getResponse).Should(Equal(createResponse))
+
+    gcr, err := http.Get(createResponse["_keys"])
     Expect(err).Should(Succeed())
-    fmt.Fprintf(GinkgoWriter, "Got collection response: %s\n", collBody)
-  })
+    Expect(gcr.StatusCode).Should(Equal(200))
 
-  // TODO test PUT and DELETE
-  // Write some easy way to verify that we got back what we sent
+    defer gcr.Body.Close()
+    bytes, err := ioutil.ReadAll(gcr.Body)
+    Expect(err).Should(Succeed())
+    Expect(string(bytes)).Should(Equal("[]"))
+  })
 })
+
+func parseJson(resp *http.Response) map[string]string {
+  defer resp.Body.Close()
+  bytes, err := ioutil.ReadAll(resp.Body)
+  Expect(err).Should(Succeed())
+
+  jsonBody := make(map[string]string)
+  err = json.Unmarshal(bytes, &jsonBody)
+  Expect(err).Should(Succeed())
+
+  fmt.Fprintf(GinkgoWriter, "Got JSON response %v\n", jsonBody)
+  return jsonBody
+}

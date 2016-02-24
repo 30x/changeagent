@@ -7,6 +7,7 @@ import (
   "net"
   "net/http"
   "path"
+  "strings"
   "testing"
   "time"
   "revision.aeip.apigee.net/greg/changeagent/discovery"
@@ -152,4 +153,58 @@ func getListenerURI(index int) string {
   _, port, err := net.SplitHostPort(testListener[index].Addr().String())
   if err != nil { panic("Error parsing leader port") }
   return fmt.Sprintf("http://localhost:%s", port)
+}
+
+func ensureTenant(name string) string {
+  gr, err := http.Get(fmt.Sprintf("%s/tenants/%s", getLeaderURI(), name))
+  Expect(err).Should(Succeed())
+
+  if gr.StatusCode == 404 {
+    // Need to make that tenant the first time
+    uri := getLeaderURI() + "/tenants"
+    request := fmt.Sprintf("name=%s", name)
+
+    pr, err := http.Post(uri, FormContent, strings.NewReader(request))
+    Expect(err).Should(Succeed())
+    Expect(pr.StatusCode).Should(Equal(200))
+    lastNewChange++
+
+    resp := parseJson(pr)
+    return resp["_id"]
+
+  } else if gr.StatusCode == 200 {
+    resp := parseJson(gr)
+    return resp["_id"]
+
+  } else {
+    Expect(gr.StatusCode).Should(Equal(200))
+    return ""
+  }
+}
+
+func ensureCollection(tenant, name string) string {
+  gr, err := http.Get(fmt.Sprintf("%s/tenants/%s/collections/%s", getLeaderURI(), tenant, name))
+  Expect(err).Should(Succeed())
+
+  if gr.StatusCode == 404 {
+    // Need to make that tenant the first time
+    uri := fmt.Sprintf("%s/tenants/%s/collections", getLeaderURI(), tenant)
+    request := fmt.Sprintf("name=%s", name)
+
+    pr, err := http.Post(uri, FormContent, strings.NewReader(request))
+    Expect(err).Should(Succeed())
+    Expect(pr.StatusCode).Should(Equal(200))
+    lastNewChange++
+
+    resp := parseJson(pr)
+    return resp["_id"]
+
+  } else if gr.StatusCode == 200 {
+    resp := parseJson(gr)
+    return resp["_id"]
+
+  } else {
+    Expect(gr.StatusCode).Should(Equal(200))
+    return ""
+  }
 }

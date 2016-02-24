@@ -1,6 +1,11 @@
 package storage
 
 import (
+  "fmt"
+  "sort"
+  "math"
+  "testing/quick"
+  "github.com/satori/go.uuid"
   . "github.com/onsi/ginkgo"
   . "github.com/onsi/gomega"
 )
@@ -9,7 +14,7 @@ var _ = Describe("Index test", func() {
   It("Tenant creation", func() {
     id, err := indexTestDb.CreateTenant("singleTest")
     Expect(err).Should(Succeed())
-    Expect(id).ShouldNot(BeEmpty())
+    Expect(id).ShouldNot(BeNil())
 
     idStr, err := indexTestDb.GetTenantByName("singleTest")
     Expect(err).Should(Succeed())
@@ -21,132 +26,154 @@ var _ = Describe("Index test", func() {
 
     ixes, err := indexTestDb.GetTenants()
     Expect(err).Should(Succeed())
-    Expect(len(ixes)).Should(BeEquivalentTo(1))
-    Expect(ixes[0].Id).Should(Equal(id))
-    Expect(ixes[0].Name).Should(Equal("singleTest"))
-  })
-})
+    Expect(len(ixes)).Should(BeNumerically(">", 0))
 
-/*
-var _ = Describe("Index test", func() {
-  It("Test Index", func() {
-    stor, err := CreateRocksDBStorage("./indextestleveldb", 1000)
+    c := Collection{
+      Id: id,
+      Name: "singleTest",
+    }
+    Expect(ixes).Should(ContainElement(c))
+  })
+
+  It("Collection creation", func() {
+    tenant, err := indexTestDb.CreateTenant("collectionTest")
     Expect(err).Should(Succeed())
-    defer func() {
-      //stor.Dump(os.Stdout, 25)
-      stor.Close()
-      err := stor.Delete()
-      Expect(err).Should(Succeed())
-    }()
-    indexTest(stor)
+    Expect(tenant).ShouldNot(BeNil())
+
+    id, err := indexTestDb.CreateCollection(tenant, "singleCollection")
+    Expect(err).Should(Succeed())
+    Expect(id).ShouldNot(BeNil())
+
+    idStr, err := indexTestDb.GetCollectionByName(tenant, "singleCollection")
+    Expect(err).Should(Succeed())
+    Expect(idStr).Should(Equal(id))
+
+    name, err := indexTestDb.GetCollectionByID(id)
+    Expect(err).Should(Succeed())
+    Expect(name).Should(Equal("singleCollection"))
+
+    ixes, err := indexTestDb.GetTenantCollections(tenant)
+    Expect(err).Should(Succeed())
+    Expect(len(ixes)).Should(BeNumerically(">", 0))
+
+    c := Collection{
+      Id: id,
+      Name: "singleCollection",
+    }
+    Expect(ixes).Should(ContainElement(c))
+  })
+
+  It("Collection insert, delete, iterate", func() {
+    tenant, err := indexTestDb.CreateTenant("collectionInsert")
+    Expect(err).Should(Succeed())
+    Expect(tenant).ShouldNot(BeNil())
+
+    id, err := indexTestDb.CreateCollection(tenant, "insertCollection")
+    Expect(err).Should(Succeed())
+    Expect(id).ShouldNot(BeNil())
+
+    err = indexTestDb.SetIndexEntry(id, "one", 1)
+    Expect(err).Should(Succeed())
+    ix, err := indexTestDb.GetIndexEntry(id, "one")
+    Expect(err).Should(Succeed())
+    Expect(ix).Should(BeEquivalentTo(1))
+    err = indexTestDb.DeleteIndexEntry(id, "one")
+    Expect(err).Should(Succeed())
+    ix, err = indexTestDb.GetIndexEntry(id, "one")
+    Expect(err).Should(Succeed())
+    Expect(ix).Should(BeZero())
+
+    err = indexTestDb.SetIndexEntry(id, "two", 2)
+    Expect(err).Should(Succeed())
+
+    ixes, err := indexTestDb.GetCollectionIndices(id, "", 100)
+    Expect(err).Should(Succeed())
+    expected := []uint64{2}
+    Expect(expected).Should(Equal(ixes))
+
+    err = indexTestDb.SetIndexEntry(id, "three", 3)
+    Expect(err).Should(Succeed())
+    err = indexTestDb.SetIndexEntry(id, "four", 4)
+    Expect(err).Should(Succeed())
+
+    ixes, err = indexTestDb.GetCollectionIndices(id, "", 100)
+    Expect(err).Should(Succeed())
+    expected = []uint64{4, 3, 2}
+    Expect(ixes).Should(Equal(expected))
+
+    ixes, err = indexTestDb.GetCollectionIndices(id, "", 1)
+    Expect(err).Should(Succeed())
+    expected = []uint64{4}
+    Expect(ixes).Should(Equal(expected))
+
+    ixes, err = indexTestDb.GetCollectionIndices(id, "", 2)
+    Expect(err).Should(Succeed())
+    expected = []uint64{4, 3}
+    Expect(ixes).Should(Equal(expected))
+
+    ixes, err = indexTestDb.GetCollectionIndices(id, "three", 1)
+    Expect(err).Should(Succeed())
+    expected = []uint64{2}
+    Expect(ixes).Should(Equal(expected))
+
+    ixes, err = indexTestDb.GetCollectionIndices(id, "two", 100)
+    Expect(err).Should(Succeed())
+    expected = []uint64{}
+    Expect(ixes).Should(BeEmpty())
+  })
+
+  It("Single collection stress", func() {
+    s := testOneTenant(indexTestDb, "foo")
+    Expect(s).Should(BeTrue())
+  })
+
+  It("Collection stress", func() {
+    err := quick.Check(func(tenant string) bool {
+      return testOneTenant(indexTestDb, tenant)
+    }, &quick.Config{
+      MaxCount: 10,
+    })
+    Expect(err).Should(Succeed())
   })
 })
-
-func indexTest(stor Storage) {
-  if !testOneTenant(stor, "foo") {
-    Fail("Fatal errors for first tenant")
-  }
-
-  err := quick.Check(func(tenant string) bool {
-    return testOneTenant(stor, tenant)
-  }, &quick.Config{
-    MaxCount: 10,
-  })
-  Expect(err).Should(Succeed())
-}
 
 func testOneTenant(stor Storage, tenantName string) bool {
   if tenantName == "" { return true }
 
-  err := stor.SetIndexEntry(tenantName, "coll", "foo", 1234);
-  if err != nil {
-    fmt.Fprintf(GinkgoWriter, "error: %v\n", err)
-    return false
-  }
-
-  tenExists, err := stor.TenantExists(tenantName)
+  tenantID, err := stor.CreateTenant(tenantName)
   Expect(err).Should(Succeed())
-  if tenExists {
-    fmt.Fprintf(GinkgoWriter, "Tenant exists and should not\n")
-    return false
-  }
-
-  err = stor.CreateTenant(tenantName)
-  Expect(err).Should(Succeed())
-
-  tenExists, err = stor.TenantExists(tenantName)
-  Expect(err).Should(Succeed())
-  if !tenExists {
-    fmt.Fprintf(GinkgoWriter, "Tenant does not exist and should\n")
-    return false
-  }
 
   var collections []string
-
-  if !testOneCollection(stor, tenantName, "foocollection") {
-    fmt.Fprintf(GinkgoWriter, "Fatal errors testing collection\n")
-    return false
-  }
-  collections = append(collections, "foocollection")
 
   err = quick.Check(func(coll string) bool {
     if coll != "" {
       collections = append(collections, coll)
     }
-    return testOneCollection(stor, tenantName, coll)
+    return testOneCollection(stor, tenantID, coll)
   }, nil)
   Expect(err).Should(Succeed())
 
-  sort.Strings(collections)
+  var foundCollections []string
+  tenantCollections, err := stor.GetTenantCollections(tenantID)
+  Expect(err).Should(Succeed())
 
-  foundCollections, err := stor.GetTenantCollections(tenantName)
-
-  if !reflect.DeepEqual(collections, foundCollections) {
-    fmt.Fprintf(GinkgoWriter, "Collection list does not match for tenant %s\n", tenantName)
-    for i := 0; i < len(collections) && i < len(foundCollections); i++ {
-      if collections[i] != foundCollections[i] {
-        fmt.Fprintf(GinkgoWriter, "Mismatch at position %d\n", i)
-        fmt.Fprintf(GinkgoWriter, "Expected: %s\n", collections[i])
-        fmt.Fprintf(GinkgoWriter, "Found:    %s\n", foundCollections[i])
-      }
-    }
-    return false
+  for _, c := range(tenantCollections) {
+    foundCollections = append(foundCollections, c.Name)
   }
+
+  sort.Strings(collections)
+  Expect(foundCollections).Should(Equal(collections))
 
   return true
 }
 
-func testOneCollection(stor Storage, tenantName string, collectionName string) bool {
+func testOneCollection(stor Storage, tenantID *uuid.UUID, collectionName string) bool {
   if collectionName == "" { return true }
 
-  collExists, err := stor.CollectionExists(tenantName, collectionName)
+  collectionID, err := stor.CreateCollection(tenantID, collectionName)
   Expect(err).Should(Succeed())
-  if collExists {
-    fmt.Fprintln(GinkgoWriter, "Collection exists and should not")
-    return false
-  }
-
-  err = stor.CreateCollection(tenantName, collectionName)
-  Expect(err).Should(Succeed())
-
-  collExists, err = stor.CollectionExists(tenantName, collectionName)
-  Expect(err).Should(Succeed())
-  if !collExists {
-    fmt.Fprintln(GinkgoWriter, "Collection does not exist and should")
-    return false
-  }
 
   expected := make(map[string]uint64)
-
-  if !testOneKey(stor, tenantName, collectionName, "fookey", 1234, false) {
-    fmt.Fprintln(GinkgoWriter, "Fatal errors testing a key")
-    return false
-  }
-  expected["fookey"] = 1234
-  if !testOneKey(stor, tenantName, collectionName, "barkey", 1234, true) {
-    fmt.Fprintln(GinkgoWriter, "Fatal errors testing a key")
-    return false
-  }
 
   err = quick.Check(func(key string, val uint64, shouldDelete bool) bool {
     if !shouldDelete && key != "" {
@@ -155,11 +182,11 @@ func testOneCollection(stor Storage, tenantName string, collectionName string) b
       }
       expected[key] = val
     }
-    return testOneKey(stor, tenantName, collectionName, key, val, shouldDelete)
+    return testOneKey(stor, collectionID, key, val, shouldDelete)
   }, nil)
   Expect(err).Should(Succeed())
 
-  indexVals, err := stor.GetCollectionIndices(tenantName, collectionName, math.MaxUint32)
+  indexVals, err := stor.GetCollectionIndices(collectionID, "", math.MaxUint32)
   Expect(err).Should(Succeed())
   fmt.Fprintf(GinkgoWriter, "Inserted %d to %s\n", len(expected), collectionName)
   fmt.Fprintf(GinkgoWriter, "Collection %s has %d values\n", collectionName, len(indexVals))
@@ -171,33 +198,25 @@ func testOneCollection(stor Storage, tenantName string, collectionName string) b
   expectedVals = sortArray(expectedVals)
   indexVals = sortArray(indexVals)
 
-  if !reflect.DeepEqual(expectedVals, indexVals) {
-    fmt.Fprintln(GinkgoWriter, "Values do not match")
-    for i := 0; i < len(expectedVals) && i < len(indexVals); i++ {
-      if expectedVals[i] != indexVals[i] {
-        fmt.Fprintf(GinkgoWriter, "Mismatch at position %d (%d != %d)\n", i, expectedVals[i], indexVals[i])
-      }
-    }
-    return false
-  }
+  Expect(indexVals).Should(Equal(expectedVals))
 
   return true
 }
 
-func testOneKey(stor Storage, tenantName, collectionName, key string, val uint64, shouldDelete bool) bool {
+func testOneKey(stor Storage, collectionID *uuid.UUID, key string, val uint64, shouldDelete bool) bool {
   if key == "" || val == 0 { return true }
 
-  index, err := stor.GetIndexEntry(tenantName, collectionName, key)
+  index, err := stor.GetIndexEntry(collectionID, key)
   Expect(err).Should(Succeed())
   if index != 0 {
     fmt.Fprintf(GinkgoWriter, "Key %s exists and should not\n", key)
     return false
   }
 
-  err = stor.SetIndexEntry(tenantName, collectionName, key, val)
+  err = stor.SetIndexEntry(collectionID, key, val)
   Expect(err).Should(Succeed())
 
-  index, err = stor.GetIndexEntry(tenantName, collectionName, key)
+  index, err = stor.GetIndexEntry(collectionID, key)
   Expect(err).Should(Succeed())
   if index != val {
     fmt.Fprintf(GinkgoWriter, "Key %s does not exist and should\n", key)
@@ -205,9 +224,9 @@ func testOneKey(stor Storage, tenantName, collectionName, key string, val uint64
   }
 
   if shouldDelete {
-    err = stor.DeleteIndexEntry(tenantName, collectionName, key)
+    err = stor.DeleteIndexEntry(collectionID, key)
     Expect(err).Should(Succeed())
-    index, err := stor.GetIndexEntry(tenantName, collectionName, key)
+    index, err := stor.GetIndexEntry(collectionID, key)
     Expect(err).Should(Succeed())
     if index != 0 {
       fmt.Fprintf(GinkgoWriter, "Key %s exists after delete and should not\n", key)
@@ -247,4 +266,3 @@ func (a *indexArray) Swap(i, j int) {
   a.vals[i] = a.vals[j]
   a.vals[j] = tmp
 }
-*/

@@ -33,9 +33,9 @@ var _ = Describe("Conversion", func() {
   })
 
   It("Entry", func() {
-    s := testEntry(123, time.Now().UnixNano(), "", "", "", []byte("Hello!"))
+    s := testEntry(123, time.Now().UnixNano(), "", []byte("Hello!"))
     Expect(s).Should(BeTrue())
-    s = testEntry(123, time.Now().UnixNano(), "foo", "bar", "baz", []byte("Hello!"))
+    s = testEntry(123, time.Now().UnixNano(), "baz", []byte("Hello!"))
     Expect(s).Should(BeTrue())
 
     err := quick.Check(testEntry, nil)
@@ -178,13 +178,13 @@ func testStringValue(str string) bool {
   return true
 }
 
-func testEntry(term uint64, ts int64, tenant string, collection string, key string, data []byte) bool {
+func testEntry(term uint64, ts int64, key string, data []byte) bool {
   tst := time.Unix(0, ts)
+  coll := uuid.NewV4()
   e := &Entry{
     Term: term,
-    Tenant: tenant,
     Timestamp: tst,
-    Collection: collection,
+    Collection: &coll,
     Key: key,
     Data: data,
   }
@@ -195,7 +195,6 @@ func testEntry(term uint64, ts int64, tenant string, collection string, key stri
   Expect(err).Should(Succeed())
   Expect(re.Term).Should(Equal(e.Term))
   Expect(re.Timestamp).Should(Equal(e.Timestamp))
-  Expect(re.Tenant).Should(Equal(e.Tenant))
   Expect(re.Collection).Should(Equal(e.Collection))
   Expect(re.Key).Should(Equal(e.Key))
   Expect(re.Data).Should(Equal(re.Data))

@@ -5,8 +5,10 @@ import (
   "fmt"
   "time"
   "net/http"
+  "github.com/golang/protobuf/proto"
   "github.com/golang/glog"
-  "github.com/gin-gonic/gin"
+  "github.com/gorilla/mux"
+  "github.com/satori/go.uuid"
   "revision.aeip.apigee.net/greg/changeagent/communication"
   "revision.aeip.apigee.net/greg/changeagent/discovery"
   "revision.aeip.apigee.net/greg/changeagent/raft"
@@ -16,7 +18,7 @@ import (
 type ChangeAgent struct {
   stor storage.Storage
   raft *raft.RaftImpl
-  api *gin.Engine
+  router *mux.Router
 }
 
 const (
@@ -35,17 +37,15 @@ const (
 func StartChangeAgent(nodeId uint64,
                       disco discovery.Discovery,
                       dbFile string,
-                      mux *http.ServeMux) (*ChangeAgent, error) {
-  comm, err := communication.StartHttpCommunication(mux, disco)
+                      httpMux *http.ServeMux) (*ChangeAgent, error) {
+  comm, err := communication.StartHttpCommunication(httpMux, disco)
   if err != nil { return nil, err }
   stor, err := storage.CreateRocksDBStorage(dbFile, DBCacheSize)
   if err != nil { return nil, err }
 
-  gin.SetMode(gin.ReleaseMode)
-
   agent := &ChangeAgent{
     stor: stor,
-    api: gin.New(),
+    router: mux.NewRouter(),
   }
 
   raft, err := raft.StartRaft(nodeId, comm, disco, stor, agent)
@@ -57,7 +57,7 @@ func StartChangeAgent(nodeId uint64,
   agent.initChangesAPI()
   agent.initIndexAPI()
 
-  mux.HandleFunc("/", agent.api.ServeHTTP)
+  httpMux.Handle("/", agent.router)
 
   return agent, nil
 }
@@ -102,7 +102,7 @@ func (a *ChangeAgent) makeProposal(proposal *storage.Entry) (*storage.Entry, err
 }
 
 func (a *ChangeAgent) Commit(id uint64) error {
-  glog.V(2).Infof("Got a commit for entry %d")
+  glog.V(2).Infof("Got a commit for entry %d", id)
 
   entry, err := a.stor.GetEntry(id)
   if err != nil {
@@ -125,10 +125,10 @@ func (a *ChangeAgent) Commit(id uint64) error {
 }
 
 func (a *ChangeAgent) handleNormalChange(entry *storage.Entry) error {
-  if entry.Key != "" || entry.Tenant != "" || entry.Collection != "" {
-    glog.V(2).Infof("Indexing %d in tenant %d collection %d key %d",
-      entry.Index, entry.Tenant, entry.Collection, entry.Key)
-    err := a.stor.SetIndexEntry(entry.Tenant, entry.Collection, entry.Key, entry.Index)
+  glog.V(2).Info("Handling a normal change")
+  if entry.Key != "" || entry.Collection != nil {
+    glog.V(2).Infof("Inserting change into collection %s", entry.Collection)
+    err := a.stor.SetIndexEntry(entry.Collection, entry.Key, entry.Index)
     if err != nil {
       glog.Errorf("Error indexing a committed entry: %s", err)
       return err
@@ -138,25 +138,36 @@ func (a *ChangeAgent) handleNormalChange(entry *storage.Entry) error {
 }
 
 func (a *ChangeAgent) handleChangeCommand(entry *storage.Entry) error {
-  cmd := string(entry.Data)
+  var cmd AgentCommand
+  err := proto.Unmarshal(entry.Data, &cmd)
+  if err != nil { return err }
 
-  switch cmd {
+  glog.V(2).Infof("Received command \"%s\"", cmd.GetCommand())
+
+  switch cmd.GetCommand() {
   case CreateTenantCommand:
-    if entry.Tenant == "" {
+    if cmd.GetName() == "" {
       return errors.New("Invalid command: tenant name is missing")
     }
-    return a.stor.CreateTenant(entry.Tenant)
+    glog.V(2).Infof("Creating tenant %s", cmd.GetName())
+    _, err := a.stor.CreateTenant(cmd.GetName())
+    return err
 
   case CreateCollectionCommand:
-    if entry.Tenant == "" {
-      return errors.New("Invalid command: tenant name is missing")
+    if cmd.GetTenant() == nil {
+      return errors.New("Invalid command: tenant ID is missing")
     }
-    if entry.Collection == "" {
+    if cmd.GetName() == "" {
       return errors.New("Invalid command: collection name is missing")
     }
-    return a.stor.CreateCollection(entry.Tenant, entry.Collection)
+
+    tenantID, err := uuid.FromBytes(cmd.GetTenant())
+    if err != nil { return err }
+    glog.V(2).Infof("Creating collection %s for tenant %s", cmd.GetName(), tenantID)
+    _, err = a.stor.CreateCollection(&tenantID, cmd.GetName())
+    return err
 
   default:
-    return fmt.Errorf("Invalid command: %s", cmd)
+    return fmt.Errorf("Invalid command: %s", cmd.GetCommand())
   }
 }

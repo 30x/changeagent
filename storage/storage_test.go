@@ -1,6 +1,7 @@
 package storage
 
 import (
+  "fmt"
   "time"
   . "github.com/onsi/ginkgo"
   . "github.com/onsi/gomega"
@@ -97,6 +98,8 @@ func entriesTest(stor Storage) {
     Term: 1,
     Timestamp: time.Now(),
   }
+  fmt.Fprintf(GinkgoWriter, "Collection 1 is %v", entry1.Collection)
+
   err = stor.AppendEntry(entry1)
   Expect(err).Should(Succeed())
 
@@ -111,7 +114,8 @@ func entriesTest(stor Storage) {
 
   re, err := stor.GetEntry(1)
   Expect(err).Should(Succeed())
-  compareEntries(entry1, re)
+  fmt.Fprintf(GinkgoWriter, "Decoded collection 1 is %v", re.Collection)
+  compareEntries(re, entry1)
 
   re, err = stor.GetEntry(2)
   Expect(err).Should(Succeed())
@@ -152,7 +156,6 @@ func compareEntries(e1 *Entry, e2 *Entry) {
   Expect(e1.Index).Should(Equal(e2.Index))
   Expect(e1.Term).Should(Equal(e2.Term))
   Expect(e1.Timestamp).Should(Equal(e2.Timestamp))
-  Expect(e1.Tenant).Should(Equal(e2.Tenant))
   Expect(e1.Collection).Should(Equal(e2.Collection))
   Expect(e1.Key).Should(Equal(e2.Key))
   Expect(e1.Data).Should(Equal(e2.Data))

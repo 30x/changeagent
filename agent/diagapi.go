@@ -2,7 +2,7 @@ package main
 
 import (
   "runtime"
-  "github.com/gin-gonic/gin"
+  "net/http"
 )
 
 const (
@@ -11,10 +11,10 @@ const (
 )
 
 func (a *ChangeAgent) initDiagnosticApi() {
-  a.api.GET(StackURI, handleStackCall)
+  a.router.HandleFunc(StackURI, handleStackCall).Methods("GET")
 }
 
-func handleStackCall(c *gin.Context) {
+func handleStackCall(resp http.ResponseWriter, req *http.Request) {
   stackBufLen := 64
   for {
     stackBuf := make([]byte, stackBufLen)
@@ -23,8 +23,8 @@ func handleStackCall(c *gin.Context) {
       // Must be truncated
       stackBufLen *= 2
     } else {
-      c.Header("Content-Type", PlainText)
-      c.String(200, string(stackBuf))
+      resp.Header().Set("Content-Type", PlainText)
+      resp.Write(stackBuf)
       return
     }
   }

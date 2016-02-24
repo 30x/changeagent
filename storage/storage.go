@@ -5,6 +5,7 @@ import (
   "io"
   "time"
   "github.com/golang/protobuf/proto"
+  "github.com/satori/go.uuid"
 )
 
 type Entry struct {
@@ -12,14 +13,13 @@ type Entry struct {
   Type int32
   Term uint64
   Timestamp time.Time
-  Tenant string
-  Collection string
+  Collection *uuid.UUID
   Key string
   Data []byte
 }
 
 type Collection struct {
-  Id   string
+  Id   *uuid.UUID
   Name string
 }
 
@@ -50,40 +50,45 @@ type Storage interface {
 
   // Create a tenant. Tenants must be created to match the "tenantName" field in indices
   // in order to support iteration over all the records for a tenant.
-  CreateTenant(tenantName string) (string, error)
+  CreateTenant(tenantName string) (*uuid.UUID, error)
   // Given the name of a tenant, return its ID, or an empty string if the tenant does not exist
-  GetTenantByName(tenantName string) (string, error)
+  GetTenantByName(tenantName string) (*uuid.UUID, error)
   // Given the ID of a tenant, return its name, or an empty string if the tenant does not exist
-  GetTenantByID(tenantID string) (string, error)
+  GetTenantByID(tenantID *uuid.UUID) (string, error)
   // Get a list of all the tenants in name order
   GetTenants() ([]Collection, error)
 
-  // Get all the IDs of the collections for a particular tenant.
-  GetTenantCollections(tenantName string) ([]string, error)
-
-  // Create a tenant. Tenants must be created to match the "collectionName" field in indices/
+  // Create a collection. Tenants must be created to match the "collectionName" field in indices
   // in order to support iteration over all the records for a collection.
-  CreateCollection(tenantId, collectionName string) error
-  // Given the name of a collection and a tenant, return the unique ID of the collection
-  GetCollection(tenantName, collectionName string) (string, error)
+  // Parameters are the NAME (pretty name) of the tenant, and the ID (UUID) of the collection.
+  // Returns the UUID of the new collection.
+  CreateCollection(tenantID *uuid.UUID, collectionName string) (*uuid.UUID, error)
+  // Given the NAME of a collection and a tenant, return the unique ID of the collection
+  GetCollectionByName(tenantID *uuid.UUID, collectionName string) (*uuid.UUID, error)
+  // Given a collection ID, return the tenant name
+  GetCollectionByID(collectionID *uuid.UUID) (string, error)
+  // Get all the IDs of the collections for a particular tenant.
+  GetTenantCollections(tenantID *uuid.UUID) ([]Collection, error)
 
-  // insert an entry into the index. "tenantName" and "collectionName" may be empty.
+  // insert an entry into the index. "collectionID" must match a previous ID.
   // "index" should match an index in the Raft index created usign "AppendEntry" from above.
-  // Do not use zero for "index"
-  SetIndexEntry(tenantId, collectionId, key string, index uint64) error
+  // Do not use zero for "index."
+  SetIndexEntry(collectionId *uuid.UUID, key string, index uint64) error
 
   // Delete an index entry. This does not affect the entry that the index points to.
-  DeleteIndexEntry(tenantId, collectionId, key string) error
+  DeleteIndexEntry(collectionId *uuid.UUID, key string) error
 
   // Retrieve the index of an index entry, or zero if there is no mapping.
-  GetIndexEntry(tenantId, collectionId, key string) (uint64, error)
+  GetIndexEntry(collectionId *uuid.UUID, key string) (uint64, error)
 
-  // Iterate through all the indices for a collection, in key order, until "max" is reached
-  GetCollectionIndices(tenantId, collectionId string, max uint) ([]uint64, error)
+  // Iterate through all the indices for a collection, in key order, until "max" is reached.
+  // If "lastKey" is non-empty, then begin iterating with the key right AFTER that one.
+  GetCollectionIndices(collectionId *uuid.UUID, lastKey string, max uint) ([]uint64, error)
 
   // Maintenance
   Close()
   Delete() error
+  GetDataPath() string
   Dump(out io.Writer, max int)
 }
 
@@ -92,13 +97,19 @@ type Storage interface {
  */
 func EncodeEntry(entry *Entry) ([]byte, error) {
   ts := entry.Timestamp.UnixNano()
+  var collectionID []byte
+  if entry.Collection != nil {
+    collectionID = entry.Collection.Bytes()
+  } else {
+    collectionID = nil
+  }
+
   pb := EntryPb{
     Index: &entry.Index,
     Type: &entry.Type,
     Term: &entry.Term,
     Timestamp: &ts,
-    Tenant: &entry.Tenant,
-    Collection: &entry.Collection,
+    Collection: collectionID,
     Key: &entry.Key,
     Data: entry.Data,
   }
@@ -114,13 +125,18 @@ func DecodeEntry(bytes []byte) (*Entry, error) {
   if err != nil { return nil, err }
 
   ts := time.Unix(0, pb.GetTimestamp())
+  var collectionID *uuid.UUID
+  if pb.GetCollection() != nil {
+    id := uuid.FromBytesOrNil(pb.GetCollection())
+    collectionID = &id
+  }
+
   e := &Entry{
     Index: pb.GetIndex(),
     Type: pb.GetType(),
     Term: pb.GetTerm(),
     Timestamp: ts,
-    Tenant: pb.GetTenant(),
-    Collection: pb.GetCollection(),
+    Collection: collectionID,
     Key: pb.GetKey(),
     Data: pb.GetData(),
   }
@@ -129,10 +145,7 @@ func DecodeEntry(bytes []byte) (*Entry, error) {
 
 func (e *Entry) String() string {
   s := fmt.Sprintf("{ Index: %d Term: %d Type: %d ", e.Index, e.Term, e.Type)
-  if e.Tenant != "" {
-    s += fmt.Sprintf("Tenant: %s ", e.Tenant)
-  }
-  if e.Collection != "" {
+  if e.Collection != nil {
     s += fmt.Sprintf("Collection: %s ", e.Collection)
   }
   if e.Key != "" {

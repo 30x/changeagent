@@ -6,6 +6,7 @@ import (
   "io/ioutil"
   "time"
   "revision.aeip.apigee.net/greg/changeagent/storage"
+  "github.com/satori/go.uuid"
 )
 
 var defaultTime time.Time = time.Time{}
@@ -21,6 +22,28 @@ type JsonData struct {
 
 type JsonError struct {
   Error string `json:"error"`
+}
+
+type TenantLink struct {
+  Name string `json:"name"`
+  Id string `json:"_id,omitempty"`
+  Self string `json:"_self,omitempty"`
+  Collections string `json:"_collections,omitempty"`
+}
+
+type CollectionLink struct {
+  Name string `json:"name"`
+  Id string `json:"_id,omitempty"`
+  Self string `json:"_self,omitempty"`
+  Keys string `json:"_keys,omitempty"`
+}
+
+func unmarshalAny(in io.Reader, v interface{}) error {
+  body, err := ioutil.ReadAll(in)
+  if err != nil { return err }
+
+  err = json.Unmarshal(body, v)
+  return err
 }
 
 /*
@@ -45,21 +68,24 @@ func unmarshalJson(in io.Reader) (*storage.Entry, error) {
       Data: rawJson,
     }, nil
   }
-
-  var ts time.Time
-  if fullData.Timestamp == 0 {
-    ts = time.Time{}
-  } else {
-    ts = time.Unix(0, fullData.Timestamp)
-  }
   entry := storage.Entry{
     Index: fullData.Id,
-    Timestamp: ts,
-    Tenant: fullData.Tenant,
-    Collection: fullData.Collection,
     Key: fullData.Key,
     Data: fullData.Data,
   }
+
+  if fullData.Timestamp == 0 {
+    entry.Timestamp = time.Time{}
+  } else {
+    entry.Timestamp = time.Unix(0, fullData.Timestamp)
+  }
+
+  if fullData.Collection != "" {
+    collectionID, err := uuid.FromString(fullData.Collection)
+    if err != nil { return nil, err }
+    entry.Collection = &collectionID
+  }
+
   return &entry, nil
 }
 
@@ -69,24 +95,24 @@ func unmarshalJson(in io.Reader) (*storage.Entry, error) {
  * named "data". Any fields in "metadata" that are non-empty will also be
  * added to the message.
  */
-func marshalJson(entry *storage.Entry) (string, error) {
+func marshalJson(entry *storage.Entry) ([]byte, error) {
   jd := convertData(entry)
   outBody, err := json.Marshal(&jd)
-  if err != nil { return "", err }
-  return string(outBody), nil
+  if err != nil { return nil, err }
+  return outBody, nil
 }
 
 /*
  * Same as above but marshal a whole array of changes.
  */
-func marshalChanges(changes []storage.Entry) (string, error) {
+func marshalChanges(changes []storage.Entry) ([]byte, error) {
   if changes == nil || len(changes) == 0 {
-    return "[]", nil
+    return []byte("[]"), nil
   }
   changeList := convertChanges(changes)
   outBody, err := json.Marshal(changeList)
-  if err != nil { return "", err }
-  return string(outBody), nil
+  if err != nil { return nil, err }
+  return outBody, nil
 }
 
 func convertChanges(changes []storage.Entry) []JsonData {
@@ -109,16 +135,18 @@ func marshalError(result error) string {
 }
 
 func convertData(entry *storage.Entry) *JsonData {
-  var ts int64
-  if entry.Timestamp != defaultTime {
-    ts = entry.Timestamp.UnixNano()
-  }
-  return &JsonData{
+  ret := JsonData{
     Id: entry.Index,
-    Timestamp: ts,
-    Tenant: entry.Tenant,
-    Collection: entry.Collection,
     Key: entry.Key,
     Data: entry.Data,
   }
+
+  if entry.Timestamp != defaultTime {
+    ret.Timestamp = entry.Timestamp.UnixNano()
+  }
+  if entry.Collection != nil {
+    ret.Collection = entry.Collection.String()
+  }
+
+  return &ret
 }

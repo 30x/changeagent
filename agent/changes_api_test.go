@@ -20,9 +20,15 @@ var lastNewChange uint64
 var numPosts int
 
 var _ = Describe("Changes API Test", func() {
+  var tenant string
+  var collection string
+
   BeforeEach(func() {
     waitForLeader()
     getLeaderIndex()
+
+    tenant = ensureTenant("indexTest")
+    collection = ensureCollection(tenant, "indexTestCollection")
   })
 
   It("POST new change", func() {
@@ -58,7 +64,8 @@ var _ = Describe("Changes API Test", func() {
   })
 
   It("POST indexed record", func() {
-    request := "{\"tenant\":\"foo\",\"collection\":\"bar\",\"key\":\"baz\",\"data\":{\"hello\":\"world!\",\"foo\":456}}"
+    request :=
+      fmt.Sprintf("{\"collection\":\"%s\",\"key\":\"baz\",\"data\":{\"hello\":\"world!\",\"foo\":456}}", collection)
     resp := postChange(request)
 
     lastNewChange++
@@ -66,7 +73,8 @@ var _ = Describe("Changes API Test", func() {
     Expect(resp).Should(MatchJSON(expected))
 
     respExpected :=
-      fmt.Sprintf("[{\"_id\":%d,\"_ts\":[0-9]+,\"tenant\":\"foo\",\"collection\":\"bar\",\"key\":\"baz\",\"data\":{\"hello\":\"world!\",\"foo\":456}}]", lastNewChange)
+      fmt.Sprintf("[{\"_id\":%d,\"_ts\":[0-9]+,\"collection\":\"%s\",\"key\":\"baz\",\"data\":{\"hello\":\"world!\",\"foo\":456}}]",
+        lastNewChange, collection)
     peerChanges := getChanges(leaderIndex, lastNewChange - 1, 100, 0)
 
     Expect(peerChanges).Should(MatchRegexp(respExpected))
@@ -80,54 +88,39 @@ var _ = Describe("Changes API Test", func() {
   })
 
   It("Post and retrieve multiple", func() {
-    request := "{\"tenant\":\"foo\",\"collection\":\"bar\",\"key\":\"baz\",\"data\":{\"hello\":\"world!\",\"foo\":888}}"
-    resp := postChange(request)
-
-    lastNewChange++
-    expected := fmt.Sprintf("{\"_id\":%d}", lastNewChange)
-    Expect(resp).Should(MatchJSON(expected))
-
-    request = "{\"tenant\":\"foo\",\"collection\":\"bar\",\"key\":\"baz\",\"data\":{\"hello\":\"world!\",\"foo\":999}}"
-    resp = postChange(request)
-
-    lastNewChange++
-    expected = fmt.Sprintf("{\"_id\":%d}", lastNewChange)
-    Expect(resp).Should(MatchJSON(expected))
+    changes := postChanges(collection, 2)
 
     templ :=
-      "[{\"_id\":%d,\"_ts\":[0-9]+,\"tenant\":\"foo\",\"collection\":\"bar\",\"key\":\"baz\",\"data\":{\"hello\":\"world!\",\"foo\":888}}," +
-      "{\"_id\":%d,\"_ts\":[0-9]+,\"tenant\":\"foo\",\"collection\":\"bar\",\"key\":\"baz\",\"data\":{\"hello\":\"world!\",\"foo\":999}}]"
-    respExpected := fmt.Sprintf(templ, lastNewChange - 1, lastNewChange)
-    peerChanges := getChanges(leaderIndex, lastNewChange - 2, 100, 0)
+      "[{\"_id\":%d,\"_ts\":[0-9]+,\"collection\":\"%s\",\"key\":\"baz\",\"data\":{\"hello\":\"world!\",\"count\":1}}," +
+      "{\"_id\":%d,\"_ts\":[0-9]+,\"collection\":\"%s\",\"key\":\"baz\",\"data\":{\"hello\":\"world!\",\"count\":2}}]"
+    respExpected := fmt.Sprintf(templ, lastNewChange - 1, collection, lastNewChange, collection)
+    peerChanges := getChanges(leaderIndex, changes[0] - 1, 100, 0)
 
     Expect(peerChanges).Should(MatchRegexp(respExpected))
   })
 
   It("Retrieve all", func() {
+    changes := postChanges(collection, 3)
+
     respBody := getChanges(leaderIndex, 0, 100, 0)
     var results []JsonData
     err := json.Unmarshal(respBody, &results)
     Expect(err).Should(Succeed())
-    Expect(len(results)).Should(BeEquivalentTo(numPosts))
-
-    ids := make([]uint64, len(results))
-    for i := range(results) {
-      ids[i] = results[i].Id
-    }
+    Expect(len(results)).Should(BeNumerically(">=", 3))
 
     // Test various permutations of offset and limit now.
-    respBody = getChanges(leaderIndex, ids[0] - 1, 1, 0)
+    respBody = getChanges(leaderIndex, changes[0] - 1, 1, 0)
     err = json.Unmarshal(respBody, &results)
     Expect(err).Should(Succeed())
     Expect(len(results)).Should(Equal(1))
-    Expect(results[0].Id).Should(Equal(ids[0]))
+    Expect(results[0].Id).Should(Equal(changes[0]))
 
-    respBody = getChanges(leaderIndex, ids[0] - 1, 2, 0)
+    respBody = getChanges(leaderIndex, changes[0] - 1, 2, 0)
     err = json.Unmarshal(respBody, &results)
     Expect(err).Should(Succeed())
     Expect(len(results)).Should(Equal(2))
-    Expect(results[0].Id).Should(Equal(ids[0]))
-    Expect(results[1].Id).Should(Equal(ids[1]))
+    Expect(results[0].Id).Should(Equal(changes[0]))
+    Expect(results[1].Id).Should(Equal(changes[1]))
   })
 
   It("Blocking retrieval", func() {
@@ -163,6 +156,22 @@ var _ = Describe("Changes API Test", func() {
     Expect(waitResult).Should(Equal(postResult.Id))
   })
 })
+
+func postChanges(collection string, count int) []uint64 {
+  changes := make([]uint64, count)
+  for n := 0; n < count; n++ {
+    request :=
+    fmt.Sprintf("{\"collection\":\"%s\",\"key\":\"baz\",\"data\":{\"hello\":\"world!\",\"count\":%d}}",
+      collection, n + 1)
+    resp := postChange(request)
+
+    lastNewChange++
+    expected := fmt.Sprintf("{\"_id\":%d}", lastNewChange)
+    Expect(resp).Should(MatchJSON(expected))
+    changes[n] = lastNewChange
+  }
+  return changes
+}
 
 func postChange(request string) string {
   uri := getLeaderURI() + "/changes"

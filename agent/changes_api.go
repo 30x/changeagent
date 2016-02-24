@@ -6,7 +6,6 @@ import (
   "time"
   "net/http"
   "github.com/golang/glog"
-  "github.com/gin-gonic/gin"
   "revision.aeip.apigee.net/greg/changeagent/storage"
 )
 
@@ -19,35 +18,43 @@ const (
 )
 
 func (a *ChangeAgent) initChangesAPI() {
-  a.api.POST(ChangesURI, a.handlePostChanges)
-  a.api.GET(ChangesURI, a.handleGetChanges)
+  a.router.HandleFunc(ChangesURI, a.handlePostChanges).Methods("POST")
+  a.router.HandleFunc(ChangesURI, a.handleGetChanges).Methods("GET")
+  // TODO GET /changes/{id}
 }
 
 /*
  * POST a new change. Change must be valid JSON. Result will include the index
  * of the change.
  */
-func (a *ChangeAgent) handlePostChanges(c *gin.Context) {
-  if c.ContentType() != JSONContent {
+func (a *ChangeAgent) handlePostChanges(resp http.ResponseWriter, req *http.Request) {
+  if req.Header.Get("Content-Type")!= JSONContent {
     // TODO regexp?
-    c.AbortWithStatus(http.StatusUnsupportedMediaType)
+    writeError(resp, http.StatusUnsupportedMediaType, errors.New("Unsupported content type"))
     return
   }
 
-  defer c.Request.Body.Close()
-  proposal, err := unmarshalJson(c.Request.Body)
+  defer req.Body.Close()
+  proposal, err := unmarshalJson(req.Body)
   if err != nil {
-    c.AbortWithError(http.StatusBadRequest, errors.New("Invalid JSON"))
+    writeError(resp, http.StatusBadRequest, errors.New("Invalid JSON"))
     return
   }
 
   newEntry, err := a.makeProposal(proposal)
-  if err == nil {
-    c.Header("Content-Type", JSONContent)
-    c.JSON(200, convertData(newEntry))
-  } else {
-    writeError(c, 503, err)
+  if err != nil {
+    writeError(resp, http.StatusInternalServerError, err)
+    return
   }
+
+  body, err := marshalJson(newEntry)
+  if err != nil {
+    writeError(resp, http.StatusInternalServerError, err)
+    return
+  }
+
+  resp.Header().Set("Content-Type", JSONContent)
+  resp.Write(body)
 }
 
 /*
@@ -59,26 +66,31 @@ func (a *ChangeAgent) handlePostChanges(c *gin.Context) {
  *     until there are some changes to return
  * Result will be an array of objects, with metadata plus original JSON data.
  */
-func (a *ChangeAgent) handleGetChanges(c *gin.Context) {
-  limitStr := c.DefaultQuery("limit", DefaultLimit)
+func (a *ChangeAgent) handleGetChanges(resp http.ResponseWriter, req *http.Request) {
+  qps := req.URL.Query()
+
+  limitStr := qps.Get("limit")
+  if limitStr == "" { limitStr = DefaultLimit }
   limit, err := strconv.ParseUint(limitStr, 10, 32)
   if err != nil {
-    c.AbortWithError(http.StatusBadRequest, errors.New("Invalid limit"))
+    writeError(resp, http.StatusBadRequest, errors.New("Invalid limit"))
     return
   }
 
-  sinceStr := c.DefaultQuery("since", DefaultSince)
+  sinceStr := qps.Get("since")
+  if sinceStr == "" { sinceStr = DefaultSince }
   since, err := strconv.ParseUint(sinceStr, 10, 64)
   if err != nil {
-    c.AbortWithError(http.StatusBadRequest, errors.New("Invalid since"))
+    writeError(resp, http.StatusBadRequest, errors.New("Invalid since"))
     return
   }
   first := since + 1
 
-  blockStr := c.DefaultQuery("block", DefaultBlock)
+  blockStr := qps.Get("block")
+  if blockStr == "" { blockStr = DefaultBlock }
   bk, err := strconv.ParseUint(blockStr, 10, 32)
   if err != nil {
-    c.AbortWithError(http.StatusBadRequest, errors.New("Invalid block"))
+    writeError(resp, http.StatusBadRequest, errors.New("Invalid block"))
     return
   }
   block := time.Duration(bk)
@@ -92,8 +104,8 @@ func (a *ChangeAgent) handleGetChanges(c *gin.Context) {
 
   // Still no changes?
   if last < first {
-    c.Header("Content-Type", JSONContent)
-    c.JSON(200, []string{})
+    resp.Header().Set("Content-Type", JSONContent)
+    resp.Write([]byte("[]"))
     return
   }
 
@@ -108,12 +120,12 @@ func (a *ChangeAgent) handleGetChanges(c *gin.Context) {
   entries, err := a.stor.GetEntries(first, last)
   if err != nil {
     glog.Errorf("Error getting changes from DB: %v", err)
-    writeError(c, http.StatusInternalServerError, err)
+    writeError(resp, http.StatusInternalServerError, err)
     return
   }
   glog.V(2).Infof("Got %d entries", len(entries))
 
-  var toMarshal []storage.Entry
+  toMarshal := make([]storage.Entry, 0)
   for _, entry := range(entries) {
     if entry.Type == NormalChange {
       toMarshal = append(toMarshal, entry)
@@ -121,12 +133,20 @@ func (a *ChangeAgent) handleGetChanges(c *gin.Context) {
   }
   glog.V(2).Infof("Final list has %d entries", len(toMarshal))
 
-  c.JSON(200, convertChanges(toMarshal))
+  outBody, err := marshalChanges(toMarshal)
+  if err != nil {
+    writeError(resp, http.StatusInternalServerError, err)
+    return
+  }
+
+  resp.Header().Set("Content-Type", JSONContent)
+  resp.Write(outBody)
 }
 
-func writeError(c *gin.Context, code int, err error) {
+func writeError(resp http.ResponseWriter, code int, err error) {
   glog.Errorf("Returning error %d: %s", code, err)
   msg := marshalError(err)
-  c.Header("Content-Type", JSONContent)
-  c.String(code, msg)
+  resp.Header().Set("Content-Type", JSONContent)
+  resp.WriteHeader(code)
+  resp.Write([]byte(msg))
 }
