@@ -36,6 +36,7 @@ func (a *ChangeAgent) initIndexAPI() {
   a.router.HandleFunc(TenantCollections, a.handleCreateCollection).Methods("POST")
   a.router.HandleFunc(SingleCollection, a.handleGetCollection).Methods("GET")
   a.router.HandleFunc(CollectionKeys, a.handleGetCollectionKeys).Methods("GET")
+  a.router.HandleFunc(CollectionKeys, a.handleCreateCollectionKey).Methods("POST")
   a.router.HandleFunc(SingleKey, a.handleGetCollectionKey).Methods("GET")
 }
 
@@ -265,19 +266,9 @@ func (a *ChangeAgent) handleCreateCollection(resp http.ResponseWriter, req *http
 
 func (a *ChangeAgent) handleGetCollection(resp http.ResponseWriter, req *http.Request) {
   collectionIDStr := mux.Vars(req)["collection"]
-  collectionID, err := uuid.FromString(collectionIDStr)
+  collectionID, collectionName, errCode, err := a.validateCollectionID(collectionIDStr)
   if err != nil {
-    writeError(resp, http.StatusBadRequest, err)
-    return
-  }
-
-  collectionName, err := a.stor.GetCollectionByID(&collectionID)
-  if err != nil {
-    writeError(resp, http.StatusInternalServerError, err)
-    return
-  }
-  if collectionName == "" {
-    writeError(resp, http.StatusNotFound, errors.New("Collection not found"))
+    writeError(resp, errCode, err)
     return
   }
 
@@ -328,19 +319,9 @@ func writeCollectionLink(resp http.ResponseWriter, l *CollectionLink) {
 
 func (a *ChangeAgent) handleGetCollectionKeys(resp http.ResponseWriter, req *http.Request) {
   collectionIDStr := mux.Vars(req)["collection"]
-  collectionID, err := uuid.FromString(collectionIDStr)
+  collectionID, _, errCode, err := a.validateCollectionID(collectionIDStr)
   if err != nil {
-    writeError(resp, http.StatusBadRequest, err)
-    return
-  }
-
-  collectionName, err := a.stor.GetCollectionByID(&collectionID)
-  if err != nil {
-    writeError(resp, http.StatusInternalServerError, err)
-    return
-  }
-  if collectionName == "" {
-    writeError(resp, http.StatusNotFound, errors.New("Collection not found"))
+    writeError(resp, errCode, err)
     return
   }
 
@@ -357,7 +338,7 @@ func (a *ChangeAgent) handleGetCollectionKeys(resp http.ResponseWriter, req *htt
 
   lastKey := qps.Get("last")
 
-  indices, err := a.stor.GetCollectionIndices(&collectionID, lastKey, uint(limit))
+  indices, err := a.stor.GetCollectionIndices(collectionID, lastKey, uint(limit))
   if err != nil {
     writeError(resp, http.StatusInternalServerError, err)
     return
@@ -384,26 +365,63 @@ func (a *ChangeAgent) handleGetCollectionKeys(resp http.ResponseWriter, req *htt
   resp.Write(body)
 }
 
-func (a *ChangeAgent) handleGetCollectionKey(resp http.ResponseWriter, req *http.Request) {
+func (a *ChangeAgent) handleCreateCollectionKey(resp http.ResponseWriter, req *http.Request) {
   collectionIDStr := mux.Vars(req)["collection"]
-  keyStr := mux.Vars(req)["key"]
-  collectionID, err := uuid.FromString(collectionIDStr)
+  collectionID, _, errCode, err := a.validateCollectionID(collectionIDStr)
   if err != nil {
-    writeError(resp, http.StatusBadRequest, err)
+    writeError(resp, errCode, err)
     return
   }
 
-  collectionName, err := a.stor.GetCollectionByID(&collectionID)
+  if req.Header.Get("Content-Type")!= JSONContent {
+    // TODO regexp?
+    writeError(resp, http.StatusUnsupportedMediaType, errors.New("Unsupported content type"))
+    return
+  }
+
+  defer req.Body.Close()
+  proposal, err := unmarshalJson(req.Body)
+  if err != nil {
+    writeError(resp, http.StatusBadRequest, errors.New("Invalid JSON"))
+    return
+  }
+
+  if proposal.Key == "" {
+    writeError(resp, http.StatusBadRequest, errors.New("Missing \"key\" parameter"))
+    return
+  }
+  if (proposal.Collection != nil) && !uuid.Equal(*proposal.Collection, *collectionID) {
+    writeError(resp, http.StatusBadRequest, errors.New("Invalid collection ID"))
+    return
+  }
+  proposal.Collection = collectionID
+
+  newEntry, err := a.makeProposal(proposal)
   if err != nil {
     writeError(resp, http.StatusInternalServerError, err)
     return
   }
-  if collectionName == "" {
-    writeError(resp, http.StatusNotFound, errors.New("Collection not found"))
+
+  body, err := marshalJson(newEntry)
+  if err != nil {
+    writeError(resp, http.StatusInternalServerError, err)
     return
   }
 
-  ix, err := a.stor.GetIndexEntry(&collectionID, keyStr)
+  resp.Header().Set("Content-Type", JSONContent)
+  resp.Write(body)
+}
+
+func (a *ChangeAgent) handleGetCollectionKey(resp http.ResponseWriter, req *http.Request) {
+  collectionIDStr := mux.Vars(req)["collection"]
+  keyStr := mux.Vars(req)["key"]
+  collectionID, _, errCode, err := a.validateCollectionID(collectionIDStr)
+  if err != nil {
+    writeError(resp, errCode, err)
+    return
+  }
+
+  ix, err := a.stor.GetIndexEntry(collectionID, keyStr)
   if err != nil {
     writeError(resp, http.StatusInternalServerError, err)
     return
@@ -456,19 +474,7 @@ func (a *ChangeAgent) validateTenant(ten string) (*uuid.UUID, string, int, error
 
 func (a *ChangeAgent) validateCollection(tenantID *uuid.UUID, coll string) (*uuid.UUID, string, int, error) {
   if uuidRE.MatchString(coll) {
-    // It's a collection UUID
-    collectionID, err := uuid.FromString(coll)
-    if err != nil {
-      return nil, "", http.StatusBadRequest, err
-    }
-    collectionName, err := a.stor.GetCollectionByID(&collectionID)
-    if err != nil {
-      return nil, "", http.StatusInternalServerError, err
-    }
-    if collectionName == "" {
-      return nil, "", http.StatusNotFound, errors.New("Collection not found")
-    }
-    return &collectionID, collectionName, http.StatusOK, nil
+    return a.validateCollectionID(coll)
 
   } else {
     // it's a tenant  name
@@ -481,6 +487,21 @@ func (a *ChangeAgent) validateCollection(tenantID *uuid.UUID, coll string) (*uui
     }
     return collectionID, coll, http.StatusOK, nil
   }
+}
+
+func (a *ChangeAgent) validateCollectionID(coll string) (*uuid.UUID, string, int, error) {
+  collectionID, err := uuid.FromString(coll)
+  if err != nil {
+    return nil, "", http.StatusBadRequest, err
+  }
+  collectionName, err := a.stor.GetCollectionByID(&collectionID)
+  if err != nil {
+    return nil, "", http.StatusInternalServerError, err
+  }
+  if collectionName == "" {
+    return nil, "", http.StatusNotFound, errors.New("Collection not found")
+  }
+  return &collectionID, collectionName, http.StatusOK, nil
 }
 
 func linkURI(req *http.Request, relPath string) string {

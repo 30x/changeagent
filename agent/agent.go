@@ -151,7 +151,10 @@ func (a *ChangeAgent) handleChangeCommand(entry *storage.Entry) error {
     }
     glog.V(2).Infof("Creating tenant %s", cmd.GetName())
     _, err := a.stor.CreateTenant(cmd.GetName())
-    return err
+    if err == nil {
+      return nil
+    }
+    return fmt.Errorf("Error creating tenant %s: %s", cmd.GetName(), err)
 
   case CreateCollectionCommand:
     if cmd.GetTenant() == nil {
@@ -165,9 +168,20 @@ func (a *ChangeAgent) handleChangeCommand(entry *storage.Entry) error {
     if err != nil { return err }
     glog.V(2).Infof("Creating collection %s for tenant %s", cmd.GetName(), tenantID)
     _, err = a.stor.CreateCollection(&tenantID, cmd.GetName())
-    return err
+    if err == nil {
+      return nil
+    }
+    return fmt.Errorf("Error creating collection %s for tenant %s: %s", cmd.GetName(), tenantID, err)
 
   default:
     return fmt.Errorf("Invalid command: %s", cmd.GetCommand())
   }
+}
+
+func writeError(resp http.ResponseWriter, code int, err error) {
+  glog.Errorf("Returning error %d: %s", code, err)
+  msg := marshalError(err)
+  resp.Header().Set("Content-Type", JSONContent)
+  resp.WriteHeader(code)
+  resp.Write([]byte(msg))
 }

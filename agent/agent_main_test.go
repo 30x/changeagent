@@ -156,6 +156,7 @@ func getListenerURI(index int) string {
 }
 
 func ensureTenant(name string) string {
+  fmt.Fprintf(GinkgoWriter, "Checking for tenant %s\n", name)
   gr, err := http.Get(fmt.Sprintf("%s/tenants/%s", getLeaderURI(), name))
   Expect(err).Should(Succeed())
 
@@ -164,16 +165,19 @@ func ensureTenant(name string) string {
     uri := getLeaderURI() + "/tenants"
     request := fmt.Sprintf("name=%s", name)
 
+    fmt.Fprintf(GinkgoWriter, "Creating tenant %s\n", name)
     pr, err := http.Post(uri, FormContent, strings.NewReader(request))
     Expect(err).Should(Succeed())
     Expect(pr.StatusCode).Should(Equal(200))
     lastNewChange++
 
     resp := parseJson(pr)
+    fmt.Fprintf(GinkgoWriter, "New tenant %s created\n", resp["_id"])
     return resp["_id"]
 
   } else if gr.StatusCode == 200 {
     resp := parseJson(gr)
+    fmt.Fprintf(GinkgoWriter, "Tenant %s exists\n", resp["_id"])
     return resp["_id"]
 
   } else {
@@ -183,6 +187,7 @@ func ensureTenant(name string) string {
 }
 
 func ensureCollection(tenant, name string) string {
+  fmt.Fprintf(GinkgoWriter, "Checking for collection %s\n", name)
   gr, err := http.Get(fmt.Sprintf("%s/tenants/%s/collections/%s", getLeaderURI(), tenant, name))
   Expect(err).Should(Succeed())
 
@@ -191,16 +196,19 @@ func ensureCollection(tenant, name string) string {
     uri := fmt.Sprintf("%s/tenants/%s/collections", getLeaderURI(), tenant)
     request := fmt.Sprintf("name=%s", name)
 
+    fmt.Fprintf(GinkgoWriter, "Creating collection %s for tenant %s\n", name, tenant)
     pr, err := http.Post(uri, FormContent, strings.NewReader(request))
     Expect(err).Should(Succeed())
     Expect(pr.StatusCode).Should(Equal(200))
     lastNewChange++
 
     resp := parseJson(pr)
+    fmt.Fprintf(GinkgoWriter, "New collection %s created\n", resp["_id"])
     return resp["_id"]
 
   } else if gr.StatusCode == 200 {
     resp := parseJson(gr)
+    fmt.Fprintf(GinkgoWriter, "Collection %s exists\n", resp["_id"])
     return resp["_id"]
 
   } else {

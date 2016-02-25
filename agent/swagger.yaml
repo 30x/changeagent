@@ -1,6 +1,4 @@
-# http://playground.apistudio.io/02ca08cf-284d-4edc-9087-b0b5eaabc582/#/
 swagger: "2.0"
-
 info:
   version: "0.0.1"
   title: ChangeAgent
@@ -157,7 +155,9 @@ paths:
       - name: id
         in: path
         type: string
-        description: The unique ID of the tenant, as retured by a post to /tenants.
+        description: 
+          The unique ID of the tenant, as retured by a post to /tenants OR the
+          descriptive name of the tenant. 
         required: true
     
     get:
@@ -197,13 +197,81 @@ paths:
             $ref: "#/definitions/Error" 
   # TODO search by name
   # offset, limit, etc?
+  
+    post:
+      description:
+        Create a new collection
+        
+      parameters:
+        - name: body
+          in: body
+          schema:
+            $ref: "#/definitions/CollectionLink"
+            
+      responses:
+        "200":
+          description: Succeess
+          schema:
+            $ref: "#/definitions/CollectionLink" 
+        default:
+          description: Error
+          schema:
+            $ref: "#/definitions/Error"   
+            
+  /tenants/{id}/collections/{collection}:
+    parameters:
+      - name: id
+        in: path
+        type: string
+        description: The unique ID of the tenant, as retured by a post to /tenants.
+        required: true
+      - name: collection
+        in: path
+        type: string
+        description: The unique ID OR the descriptive name of the collection
+        required: true
+    
+    get:
+      description: 
+        Get information about a single collection
+        
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: "#/definitions/CollectionLink" 
+        default:
+          description: Error
+          schema:
+            $ref: "#/definitions/Error" 
+  
+    post:
+      description:
+        Create a new collection
+        
+      parameters:
+        - name: body
+          in: body
+          schema:
+            $ref: "#/definitions/CollectionLink"
+            
+      responses:
+        "200":
+          description: Succeess
+          schema:
+            $ref: "#/definitions/CollectionLink" 
+        default:
+          description: Error
+          schema:
+            $ref: "#/definitions/Error"   
             
   /collections/{id}:
     parameters:
       - name: id
         in: path
         type: string
-        description: The unique ID of this collection
+        description: 
+          The unique ID of this collection, but not the descriptive name.
         required: true
         
     get:
@@ -255,7 +323,57 @@ paths:
           description: Error
           schema:
             $ref: "#/definitions/Error" 
-      
+    
+    post:
+      description: 
+        Insert a new key into the collection. This has the same effect as
+        posting to the "/changes" endpoint with the "collection" field set.
+        The item posted must have a "key" field, plus a "data" field in order
+        to be valid.
+        
+      parameters:
+        - name: body
+          in: body
+          schema:
+            $ref: "#/definitions/Change"
+          required: true
+        
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: "#/definitions/Changes" 
+        default:
+          description: Error
+          schema:
+            $ref: "#/definitions/Error" 
+        
+  /collections/{id}/keys/{key}:
+    parameters:
+      - name: id
+        in: path
+        type: string
+        description: The unique ID of this collection
+        required: true
+      - name: key
+        in: path
+        type: string
+        description: The primary key of the collection item
+        required: true
+        
+    get:
+      description:
+        Return a single item from the collection, or 404 if not found.
+        
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: "#/definitions/Change"
+        default:
+          description: Error
+          schema:
+            $ref: "#/definitions/Error" 
             
 definitions:
   Change:

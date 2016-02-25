@@ -61,6 +61,17 @@ var _ = Describe("Changes API Test", func() {
       }
     }
     Expect(correctNodes).Should(Equal(len(testAgents)))
+
+    url := fmt.Sprintf("%s/changes/%d", getLeaderURI(), lastNewChange)
+    gr, err := http.Get(url)
+    Expect(err).Should(Succeed())
+    defer gr.Body.Close()
+    Expect(gr.StatusCode).Should(Equal(200))
+
+    change, err := unmarshalJson(gr.Body)
+    Expect(err).Should(Succeed())
+    Expect(gr.StatusCode).Should(Equal(200))
+    Expect(change.Index).Should(Equal(lastNewChange))
   })
 
   It("POST indexed record", func() {
@@ -74,6 +85,31 @@ var _ = Describe("Changes API Test", func() {
 
     respExpected :=
       fmt.Sprintf("[{\"_id\":%d,\"_ts\":[0-9]+,\"collection\":\"%s\",\"key\":\"baz\",\"data\":{\"hello\":\"world!\",\"foo\":456}}]",
+        lastNewChange, collection)
+    peerChanges := getChanges(leaderIndex, lastNewChange - 1, 100, 0)
+
+    Expect(peerChanges).Should(MatchRegexp(respExpected))
+  })
+
+  It("POST indexed record 2", func() {
+    request := "{\"key\":\"fooey\",\"data\":{\"hello\":\"world!\",\"foo\":888}}"
+
+    pr, err := http.Post(
+      fmt.Sprintf("%s/collections/%s/keys", getLeaderURI(), collection),
+      jsonContent, strings.NewReader(request))
+    Expect(err).Should(Succeed())
+    Expect(pr.StatusCode).Should(Equal(200))
+
+    body, err := ioutil.ReadAll(pr.Body)
+    Expect(err).Should(Succeed())
+    resp := string(body)
+
+    lastNewChange++
+    expected := fmt.Sprintf("{\"_id\":%d}", lastNewChange)
+    Expect(resp).Should(MatchJSON(expected))
+
+    respExpected :=
+      fmt.Sprintf("[{\"_id\":%d,\"_ts\":[0-9]+,\"collection\":\"%s\",\"key\":\"fooey\",\"data\":{\"hello\":\"world!\",\"foo\":888}}]",
         lastNewChange, collection)
     peerChanges := getChanges(leaderIndex, lastNewChange - 1, 100, 0)
 

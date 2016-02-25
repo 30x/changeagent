@@ -6,21 +6,24 @@ import (
   "time"
   "net/http"
   "github.com/golang/glog"
+  "github.com/gorilla/mux"
   "revision.aeip.apigee.net/greg/changeagent/storage"
 )
 
 const (
-  ChangesURI = "/changes"
   DefaultSince = "0"
   DefaultLimit = "100"
   DefaultBlock = "0"
   CommitTimeoutSeconds = 10
+
+  ChangesURI = "/changes"
+  SingleChange = ChangesURI + "/{change}"
 )
 
 func (a *ChangeAgent) initChangesAPI() {
   a.router.HandleFunc(ChangesURI, a.handlePostChanges).Methods("POST")
   a.router.HandleFunc(ChangesURI, a.handleGetChanges).Methods("GET")
-  // TODO GET /changes/{id}
+  a.router.HandleFunc(SingleChange, a.handleGetChange).Methods("GET")
 }
 
 /*
@@ -143,10 +146,30 @@ func (a *ChangeAgent) handleGetChanges(resp http.ResponseWriter, req *http.Reque
   resp.Write(outBody)
 }
 
-func writeError(resp http.ResponseWriter, code int, err error) {
-  glog.Errorf("Returning error %d: %s", code, err)
-  msg := marshalError(err)
-  resp.Header().Set("Content-Type", JSONContent)
-  resp.WriteHeader(code)
-  resp.Write([]byte(msg))
+func (a *ChangeAgent) handleGetChange(resp http.ResponseWriter, req *http.Request) {
+  idStr := mux.Vars(req)["change"]
+  id, err := strconv.ParseUint(idStr, 10, 64)
+  if err != nil {
+    writeError(resp, http.StatusBadRequest, errors.New("Invalid ID"))
+    return
+  }
+
+  entry, err := a.stor.GetEntry(id)
+  if err != nil {
+    writeError(resp, http.StatusInternalServerError, err)
+    return
+  }
+
+  if entry == nil {
+    writeError(resp, http.StatusNotFound, errors.New("Not found"))
+
+  } else {
+    outBody, err := marshalJson(entry)
+    if err != nil {
+      writeError(resp, http.StatusInternalServerError, err)
+      return
+    }
+    resp.Header().Set("Content-Type", JSONContent)
+    resp.Write(outBody)
+  }
 }

@@ -6,13 +6,19 @@ Discovery.
 
 Support deletes!
 
-Restructure API with less hierarchiality and more UUIDs.
+Create tenant-specific "changes" collections. Put them all together, but in a separate column family.
+Copy change data from main CF to "collection change" CF on each update.
 
-Redesign API and key space.
+Prune changes from tenant-specific changes DB on every update, and eventually every delete.
 
-RocksDB key prefixes.
-
-Internal collections for handling collection and tenant API queries.
+Create a lock manager. Lock on collection modifications. Prevent non-serializable behaviors as much
+as possible while maintaining weak guarantees in general:
+  Acquire locks at master on first API call and drop after commit.
+  Read-lock collection and tenant on modification of the collection
+  Write-lock collection and tenant on delete of collection (when we support that)
+  Read-lock collection entry on any read of a single entry
+  Write-lock collection entry on any write
+  No writes beyond that!
 
 Support API queries that filter by tenant ID and key.
 
