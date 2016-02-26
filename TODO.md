@@ -11,6 +11,8 @@ Copy change data from main CF to "collection change" CF on each update.
 
 Prune changes from tenant-specific changes DB on every update, and eventually every delete.
 
+Add a callback to each storage iteration function that will filter the entries.
+
 Create a lock manager. Lock on collection modifications. Prevent non-serializable behaviors as much
 as possible while maintaining weak guarantees in general:
   Acquire locks at master on first API call and drop after commit.

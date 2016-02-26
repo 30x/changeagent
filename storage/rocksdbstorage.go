@@ -33,6 +33,7 @@ type LevelDBStorage struct {
   db *C.rocksdb_t
   metadata *C.rocksdb_column_family_handle_t
   indices *C.rocksdb_column_family_handle_t
+  tenantIndices *C.rocksdb_column_family_handle_t
   entries *C.rocksdb_column_family_handle_t
 }
 
@@ -64,6 +65,7 @@ func CreateRocksDBStorage(baseFile string, cacheSize uint) (*LevelDBStorage, err
   stor.db = dbh.db
   stor.metadata = dbh.metadata
   stor.entries = dbh.entries
+  stor.tenantIndices = dbh.tenantIndices
   stor.indices = dbh.indices
 
   success := false
@@ -613,6 +615,82 @@ func (s *LevelDBStorage) GetCollectionIndices(collectionID *uuid.UUID, lastKey s
     })
 
   return ret, err
+}
+
+func (s *LevelDBStorage) CreateTenantEntry(entry *Entry) error {
+  keyPtr, keyLen := tenantIndexToPtr(entry.Tenant, entry.Index)
+  defer freePtr(keyPtr)
+
+  valPtr, valLen := entryToPtr(entry)
+  defer freePtr(valPtr)
+
+  glog.V(2).Infof("Appending entry: %s", entry)
+  return s.putEntry(s.tenantIndices, keyPtr, keyLen, valPtr, valLen)
+}
+
+func (s *LevelDBStorage) GetTenantEntry(tenant *uuid.UUID, ix uint64) (*Entry, error) {
+  keyPtr, keyLen := tenantIndexToPtr(tenant, ix)
+  defer freePtr(keyPtr)
+
+  valPtr, valLen, err := s.readEntry(s.tenantIndices, keyPtr, keyLen)
+  if err != nil { return nil, err }
+  if valPtr == nil { return nil, nil }
+
+  defer freePtr(valPtr)
+  return ptrToEntry(valPtr, valLen)
+}
+
+func (s *LevelDBStorage) DeleteTenantEntry(tenant *uuid.UUID, ix uint64) error {
+  ixPtr, ixLen := tenantIndexToPtr(tenant, ix)
+  defer freePtr(ixPtr)
+
+  var e *C.char
+
+  C.go_rocksdb_delete(
+    s.db, defaultWriteOptions, s.tenantIndices,
+    ixPtr, ixLen, &e)
+  if e == nil {
+    return nil
+  }
+  defer freeString(e)
+  return stringToError(e)
+}
+
+func (s *LevelDBStorage) GetTenantEntries(tenant *uuid.UUID, last uint64, max uint) ([]Entry, error) {
+  it := C.rocksdb_create_iterator_cf(s.db, defaultReadOptions, s.tenantIndices)
+  defer C.rocksdb_iter_destroy(it)
+
+  var entries []Entry
+  var count uint = 0
+
+  firstKeyPtr, firstKeyLen := tenantIndexToPtr(tenant, last + 1)
+  defer freePtr(firstKeyPtr)
+
+  C.go_rocksdb_iter_seek(it, firstKeyPtr, firstKeyLen)
+
+  for (count < max) && (C.rocksdb_iter_valid(it) != 0) {
+    var keyLen C.size_t
+    keyPtr := unsafe.Pointer(C.rocksdb_iter_key(it, &keyLen))
+
+    ixId, _, err := ptrToTenantIndex(keyPtr, keyLen)
+    if err != nil { return nil, err }
+
+    if !uuid.Equal(*tenant, *ixId) {
+      return entries, nil
+    }
+
+    var valLen C.size_t
+    valPtr := unsafe.Pointer(C.rocksdb_iter_value(it, &valLen))
+
+    entry, err := ptrToEntry(valPtr, valLen)
+    if err != nil { return nil, err }
+
+    entries = append(entries, *entry)
+
+    C.rocksdb_iter_next(it)
+    count++
+  }
+  return entries, nil
 }
 
 func (s *LevelDBStorage) putEntry(

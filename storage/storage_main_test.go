@@ -10,8 +10,8 @@ import (
 var indexTestDb Storage
 
 func TestStorage(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "Storage Suite")
+  RegisterFailHandler(Fail)
+  RunSpecs(t, "Storage Suite")
 }
 
 var _ = BeforeSuite(func() {

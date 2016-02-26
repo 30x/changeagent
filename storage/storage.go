@@ -49,6 +49,12 @@ type Storage interface {
   // Delete everything that is greater than or equal to the index
   DeleteEntries(index uint64) error
 
+  // Methods for the tenant-specific index
+  CreateTenantEntry(e *Entry) error
+  GetTenantEntry(tenant *uuid.UUID, ix uint64) (*Entry, error)
+  DeleteTenantEntry(tenant *uuid.UUID, ix uint64) error
+  GetTenantEntries(tenant *uuid.UUID, last uint64, max uint) ([]Entry, error)
+
   // Create a tenant. Tenants must be created to match the "tenantName" field in indices
   // in order to support iteration over all the records for a tenant.
   CreateTenant(tenantName string) (*uuid.UUID, error)

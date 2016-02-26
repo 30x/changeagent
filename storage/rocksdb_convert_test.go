@@ -50,6 +50,11 @@ var _ = Describe("Conversion", func() {
     Expect(err).Should(Succeed())
   })
 
+  It("Tenant Index entry", func() {
+    err := quick.Check(testTenantIndex, nil)
+    Expect(err).Should(Succeed())
+  })
+
   It("Start index", func() {
     id := uuid.NewV4()
     bb, len, err := startIndexToPtr(&id)
@@ -128,6 +133,20 @@ var _ = Describe("Conversion", func() {
     Expect(s).Should(BeTrue())
 
     err := quick.Check(testIndexCompare, nil)
+    Expect(err).Should(Succeed())
+  })
+
+  It("Tenant index compare", func() {
+    s := testTenantIndexCompare(123, 123, true)
+    Expect(s).Should(BeTrue())
+    s = testTenantIndexCompare(123, 123, false)
+    Expect(s).Should(BeTrue())
+    s = testTenantIndexCompare(123, 456, true)
+    Expect(s).Should(BeTrue())
+    s = testTenantIndexCompare(123, 456, false)
+    Expect(s).Should(BeTrue())
+
+    err := quick.Check(testTenantIndexCompare, nil)
     Expect(err).Should(Succeed())
   })
 
@@ -211,6 +230,18 @@ func testIndexEntry(key string) bool {
   Expect(err).Should(Succeed())
   Expect(newType).Should(BeEquivalentTo(0))
   Expect(newKey).Should(Equal(key))
+  Expect(newId.Bytes()).Should(Equal(id.Bytes()))
+  return true
+}
+
+func testTenantIndex(ix uint64) bool {
+  id := uuid.NewV4()
+  bb, len := tenantIndexToPtr(&id, ix)
+  defer freePtr(bb)
+
+  newId, newIx, err := ptrToTenantIndex(bb, len)
+  Expect(err).Should(Succeed())
+  Expect(newIx).Should(Equal(ix))
   Expect(newId.Bytes()).Should(Equal(id.Bytes()))
   return true
 }
@@ -300,109 +331,35 @@ func testIndexCompare(key1, key2 string) bool {
   return true
 }
 
+func testTenantIndexCompare(ix1, ix2 uint64, sameId bool) bool {
+  id1 := uuid.NewV4()
+  var id2 uuid.UUID
+  if sameId {
+    id2 = id1
+  } else {
+    id2 = uuid.NewV4()
+  }
+
+  ptr1, len1 := tenantIndexToPtr(&id1, ix1)
+  defer freePtr(ptr1)
+  ptr2, len2 := tenantIndexToPtr(&id2, ix2)
+  defer freePtr(ptr2)
+
+  cmp := compareKeys(ptr1, len1, ptr2, len2)
+
+  if !sameId {
+    Expect(cmp).ShouldNot(BeEquivalentTo(0))
+  } else if ix1 < ix2 {
+    Expect(cmp).Should(BeNumerically("<", 0))
+  } else if ix1 > ix2 {
+    Expect(cmp).Should(BeNumerically(">", 0))
+  } else {
+    Expect(cmp).Should(BeEquivalentTo(0))
+  }
+  return true
+}
+
 /*
-
-
-
-
-func TestIndexComp(t *testing.T) {
-  if !testIndexCompare(t, "foo", "bar", "baz", "foo", "bar", "baz") { t.Fatal("Equals failed") }
-  if !testIndexCompare(t, "aaa", "bar", "baz", "foo", "bar", "baz") { t.Fatal("Tenant < failed") }
-  if !testIndexCompare(t, "aaa", "bar", "baz", "aaaa", "bar", "baz") { t.Fatal("Tenant < failed") }
-  if !testIndexCompare(t, "foo", "bar", "baz", "aaa", "bar", "baz") { t.Fatal("Tenant > failed") }
-  if !testIndexCompare(t, "foo", "aaaa", "baz", "foo", "bar", "baz") { t.Fatal("Collection < failed") }
-  if !testIndexCompare(t, "foo", "bar", "baz", "foo", "a", "baz") { t.Fatal("Collection > failed") }
-  if !testIndexCompare(t, "foo", "bar", "aaaaaa", "foo", "bar", "baz") { t.Fatal("Key < failed") }
-  if !testIndexCompare(t, "foo", "bar", "baz", "foo", "bar", "a") { t.Fatal("Key > failed") }
-  if !testIndexCompare(t, "", "", "aaaaaa", "", "", "baz") { t.Fatal("Key only < failed") }
-  if !testIndexCompare(t, "", "", "baz", "", "", "a") { t.Fatal("Key only > failed") }
-
-  err := quick.Check(func(tenant1 string, collection1 string, key1 string,
-                          tenant2 string, collection2 string, key2 string) bool {
-     return testIndexCompare(t, tenant1, collection1, key1, tenant2, collection2, key2)
-  }, nil)
-  if err != nil { t.Fatal(err.Error()) }
-
-  err = quick.Check(func(collection1 string, key1 string,
-                          collection2 string, key2 string) bool {
-     return testIndexCompare(t, "", collection1, key1, "", collection2, key2)
-  }, nil)
-  if err != nil { t.Fatal(err.Error()) }
-
-  err = quick.Check(func(key1 string, key2 string) bool {
-     return testIndexCompare(t, "", "", key1, "", "", key2)
-  }, nil)
-  if err != nil { t.Fatal(err.Error()) }
-}
-
-func testIndexCompare(t *testing.T, tenant1 string, collection1 string, key1 string,
-                      tenant2 string, collection2 string, key2 string) bool {
-  e1 := &Entry{
-    Tenant: tenant1,
-    Collection: collection1,
-    Key: key1,
-  }
-  keyBytes1, keyLen1, err := indexKeyToPtr(e1)
-  if err != nil {
-    t.Logf("Ignoring error: %s", err)
-    return true
-  }
-  defer freePtr(keyBytes1)
-
-  e2 := &Entry{
-    Tenant: tenant2,
-    Collection: collection2,
-    Key: key2,
-  }
-  keyBytes2, keyLen2, err := indexKeyToPtr(e2)
-  if err != nil {
-    t.Logf("Ignoring error: %s", err)
-    return true
-  }
-  defer freePtr(keyBytes2)
-
-  cmp := compareKeys(keyBytes1, keyLen1, keyBytes2, keyLen2)
-
-  if tenant1 < tenant2 {
-    t.Logf("tenant1 < tenant2: %d", cmp)
-    return (cmp < 0)
-  }
-  if tenant1 > tenant2 {
-    t.Logf("tenant1 > tenant2: %d", cmp)
-    return (cmp > 0)
-  }
-
-  if collection1 < collection2 {
-    t.Logf("collection1 < collection1: %d", cmp)
-    return (cmp < 0)
-  }
-  if collection1 > collection2 {
-    t.Logf("collection1 > collection1: %d", cmp)
-    return (cmp > 0)
-  }
-
-  if key1 < key2 {
-    t.Logf("key1 < key2: %d", cmp)
-    return (cmp < 0)
-  }
-  if key1 > key2 {
-    t.Logf("key1 > key2: %d", cmp)
-    return (cmp > 0)
-  }
-
-  t.Logf("Equal. %d", cmp)
-  return (cmp == 0)
-}
-
-func TestTenantRange(t *testing.T) {
-  if !tenantRangeTest(t, "foo", "bar", "baz") { t.Fatal("Range test failed") }
-
-  err := quick.Check(func(tenant string, collection string, key string) bool {
-     return tenantRangeTest(t, tenant, collection, key)
-  }, nil)
-  if err != nil { t.Fatal(err.Error()) }
-}
-
 func tenantRangeTest(t *testing.T, tenant string, collection string, key string) bool {
   if tenant == "" || collection == "" {
     // Skip for testing
@@ -442,16 +399,6 @@ func tenantRangeTest(t *testing.T, tenant string, collection string, key string)
   }
 
   return true
-}
-
-func TestCollectionRange(t *testing.T) {
-  if !collectionRangeTest(t, "foo", "bar", "baz") { t.Fatal("End range test failed") }
-  if !collectionRangeTest(t, "foo", "bar", "baz") { t.Fatal("Start range test failed") }
-
-  err := quick.Check(func(tenant string, collection string, key string) bool {
-     return collectionRangeTest(t, tenant, collection, key)
-  }, nil)
-  if err != nil { t.Fatal(err.Error()) }
 }
 
 func collectionRangeTest(t *testing.T, tenant string, collection string, key string) bool {

@@ -5,6 +5,7 @@
 
 static rocksdb_comparator_t* intComparator;
 static rocksdb_comparator_t* indexComparator;
+static rocksdb_comparator_t* tenantIndexComparator;
 
 char* go_rocksdb_get(
     rocksdb_t* db,
@@ -68,7 +69,7 @@ static unsigned short maxs(unsigned short a, unsigned short b)
 static int keycmp(const char* a, unsigned short alen, const char* b, unsigned short blen)
 {
   // Strings are null-terminated, but use strncmp so we don't overflow
-  return strcmp(a, b);
+  return strncmp(a, b, maxs(alen, blen));
 }
 
 static int compare_index_key(
@@ -109,6 +110,37 @@ static int compare_index_key(
   return cmp;
 }
 
+static int compare_tenant_index_key(
+  void* c,
+  const char* a, size_t alen,
+  const char* b, size_t blen)
+{
+  if ((alen != 25) || (blen != 25)) {
+    return 0;
+  }
+
+  size_t pos = 1;
+
+  // First compare the uuid (always)
+  int cmp = memcmp(a + pos, b + pos, 16);
+  if (cmp != 0) {
+    return cmp;
+  }
+
+  pos += 16;
+
+  unsigned long long* av = (unsigned long long*)(a + pos);
+  unsigned long long* bv = (unsigned long long*)(b + pos);
+
+  if (*av > *bv) {
+    return 1;
+  } else if (*av < *bv) {
+    return -1;
+  } else {
+    return 0;
+  }
+}
+
 static int go_compare_bytes_impl(
   void* state,
   const char* a, size_t alen,
@@ -136,6 +168,8 @@ static int go_compare_bytes_impl(
     return compare_int_key(state, a, alen, b, blen);
   case INDEX_KEY:
     return compare_index_key(state, a, alen, b, blen);
+  case TENANT_INDEX_KEY:
+    return compare_tenant_index_key(state, a, alen, b, blen);
   default:
     return 999;
   }
@@ -156,11 +190,17 @@ static const char* index_comparator_name(void* v) {
   return INDEX_COMPARATOR_NAME;
 }
 
+static const char* tenant_index_comparator_name(void* v) {
+  return TENANT_INDEX_COMPARATOR_NAME;
+}
+
 void go_rocksdb_init() {
   intComparator = rocksdb_comparator_create(
     NULL, NULL, compare_int_key, int_comparator_name);
   indexComparator = rocksdb_comparator_create(
     NULL, NULL, compare_index_key, index_comparator_name);
+  tenantIndexComparator = rocksdb_comparator_create(
+    NULL, NULL, compare_tenant_index_key, tenant_index_comparator_name);
 }
 
 char* go_rocksdb_open(
@@ -168,9 +208,9 @@ char* go_rocksdb_open(
   size_t cacheSize,
   GoRocksDb** ret)
 {
-  char* cfNames[4];
-  rocksdb_options_t* cfOpts[4];
-  rocksdb_column_family_handle_t* cfHandles[4];
+  char* cfNames[NUM_CFS];
+  rocksdb_options_t* cfOpts[NUM_CFS];
+  rocksdb_column_family_handle_t* cfHandles[NUM_CFS];
   rocksdb_options_t* mainOptions;
   rocksdb_cache_t* cache;
   rocksdb_block_based_table_options_t* blockOpts;
@@ -181,7 +221,8 @@ char* go_rocksdb_open(
   cfNames[0] = "default";
   cfNames[1] = "metadata";
   cfNames[2] = "indices";
-  cfNames[3] = "entries";
+  cfNames[3] = "tenantIndices";
+  cfNames[4] = "entries";
 
   cache = rocksdb_cache_create_lru(cacheSize);
 
@@ -199,16 +240,18 @@ char* go_rocksdb_open(
   cfOpts[2] = rocksdb_options_create();
   rocksdb_options_set_comparator(cfOpts[2], indexComparator);
   cfOpts[3] = rocksdb_options_create();
-  rocksdb_options_set_comparator(cfOpts[3], intComparator);
+  rocksdb_options_set_comparator(cfOpts[3], tenantIndexComparator);
+  cfOpts[4] = rocksdb_options_create();
+  rocksdb_options_set_comparator(cfOpts[4], intComparator);
 
   db = rocksdb_open_column_families(
-    mainOptions, directory, 4, (const char**)cfNames,
+    mainOptions, directory, NUM_CFS, (const char**)cfNames,
     (const rocksdb_options_t**)cfOpts,
     cfHandles, &err
   );
 
   rocksdb_options_destroy(mainOptions);
-  for (i = 0; i < 4; i++) {
+  for (i = 0; i < NUM_CFS; i++) {
     rocksdb_options_destroy(cfOpts[i]);
   }
   rocksdb_block_based_options_destroy(blockOpts);
@@ -219,7 +262,8 @@ char* go_rocksdb_open(
     h->dflt = cfHandles[0];
     h->metadata = cfHandles[1];
     h->indices = cfHandles[2];
-    h->entries = cfHandles[3];
+    h->tenantIndices = cfHandles[3];
+    h->entries = cfHandles[4];
     h->cache = cache;
     *ret = h;
   }
@@ -232,6 +276,7 @@ void go_rocksdb_close(GoRocksDb* h)
   rocksdb_column_family_handle_destroy(h->dflt);
   rocksdb_column_family_handle_destroy(h->metadata);
   rocksdb_column_family_handle_destroy(h->entries);
+  rocksdb_column_family_handle_destroy(h->tenantIndices);
   rocksdb_column_family_handle_destroy(h->indices);
   rocksdb_close(h->db);
   rocksdb_cache_destroy(h->cache);

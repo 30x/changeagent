@@ -21,6 +21,7 @@ const (
   KeyVersion = 1
   MetadataKey = 1
   IndexKey = 2
+  TenantIndexKey = 3
   EntryKey = 10
   EntryValue = 3
   UuidValue = 4
@@ -47,6 +48,10 @@ var null []byte = []byte{ 0 }
  * Format 2: Index Record
  *   See below for key format
  *   Value should exactly match the key to the index entry
+ *
+ * Format 3: Tenant Index key
+ *   This key format is used for the tenant-specific change table. It consists of the
+ * tenant ID as an eight-byte UUID, followed by the index as a uint64.
  *
  * Format 10: Indexed Entry Record
  *   Key is a uint64 in "little endian". Sorted based on that.
@@ -184,6 +189,45 @@ func ptrToIndexKey(ptr unsafe.Pointer, len C.size_t) (*uuid.UUID, uint16, string
   buf.ReadByte()
 
   return &id, 0, key, nil
+}
+
+/*
+ * Tenant ID and index key, used for the tenant-specific change table.
+ */
+func tenantIndexToPtr(id *uuid.UUID, ix uint64) (unsafe.Pointer, C.size_t) {
+  buf := &bytes.Buffer{}
+  buf.Write(keyPrefix(TenantIndexKey))
+  buf.Write(id.Bytes())
+  binary.Write(buf, byteOrder, ix)
+
+  return bytesToPtr(buf.Bytes())
+}
+
+func ptrToTenantIndex(ptr unsafe.Pointer, len C.size_t) (*uuid.UUID, uint64, error) {
+  if len < 25 {
+    return nil, 0, errors.New("Invalid index entry")
+  }
+
+  buf := bytes.NewBuffer(ptrToBytes(ptr, len))
+  pb, _ := buf.ReadByte()
+  vers, kt := parseKeyPrefix(pb)
+  if vers != KeyVersion {
+    return nil, 0, fmt.Errorf("Invalid index key version %d", vers)
+  }
+  if kt != TenantIndexKey {
+    return nil, 0, fmt.Errorf("Invalid key type %d", kt)
+  }
+
+  ub := make([]byte, 16)
+  _, err := buf.Read(ub)
+  if err != nil { return nil, 0, fmt.Errorf("Error reading: %s", err) }
+  id, err := uuid.FromBytes(ub)
+  if err != nil { return nil, 0, fmt.Errorf("Invalid UUID: %s", err) }
+
+  var ix uint64
+  binary.Read(buf, byteOrder, &ix)
+
+  return &id, ix, nil
 }
 
 /*
