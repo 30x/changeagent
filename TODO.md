@@ -60,6 +60,87 @@ Filter API responses to eliminate duplicate changes by key.
 
 Garbage-collect old data by key.
 
+## Transaction Proposal
+
+What happens when a proposal is not committed within a reasonable period of time? Today we end up with
+"at most once" semantics:
+
+1) Leader has been elected, but since then followers went away
+1) Proposal written to leader log
+1) Proposal is not committed in a timely fashion
+1) Time out -- return "failure" to clients
+1) Later followers come up
+1) Proposal is committed
+
+(This is a worst-case scenario. It's also possible that a new leader was elected and followers rolled back.)
+
+What if instead we used a presumed-abort protocol?
+
+1) Leader has been elected, but since then followers went away
+1) Proposal written to leader log
+1) Proposal is not committed in a timely fashion
+1) Leader writes abort record to log
+1) Time out -- return "failure" to clients
+1) Later followers come up
+1) Followers do not commit transaction
+1) Followers see abort record and clean up any locks
+
+But what if this happens?
+
+1) Leader has been elected, but since then followers went away
+1) Proposal written to leader log
+1) Proposal commits
+1) Leader writes commit record to log
+1) Time out -- return "failure" to clients
+1) Later followers come up
+1) Followers see original transaction
+1) Followers do not see commit and have to wait for it
+1) Followers have to wait forever because new leader is elected or something
+
+How about this for a proposal?
+
+1) All proposals include a transaction ID (also allows, well, transactions)
+1) Once first proposal commits, a second "commit" proposal is made
+1) Or, if the proposal is not committed in time, an "abort" proposal is made
+1) Client return is after commit or abort proposal recorded (and committed in case of commit)
+1) Followers record transaction records but do not apply changes
+1) Followers apply changes to database only when commit record is received
+1) Followers assume all transactions are aborted when a new term starts
+  
+The last bit is important to handle the case in which the followers see transaction
+records, but never see a commit because a new leader was elected and the commit was never
+made part of the committed history.
+
+It is still possible that the commit will be appended to the raft log, and it will still
+be delivered to all followers, but that the client will see an error because the commit took
+too long.
+
+In this proposal, followers need not worry about locking, since the leader takes care of all
+that, and we assume that all changes will be propagated in order. Followers, however, must 
+save all transaction data and not apply any database changes until the commit happens.
+(This means that in the case of a simple database failure, the follower should stop processing,
+or even panic.)
+
+However, in order to ensure serializable ordering, the leader should impose a locking hierarchy
+on the transactions so that we do not have any ordering issues. 
+
+One way for the leader to do this would again be to store information about uncommitted transactions
+in memory (but with a write lock on the data) and apply them to the database on commit. If the write
+lock does not block a read lock, then readers can still read old, committed data until the commit
+happens.
+
+Possible locking of key "X":
+
+1) Leader takes out intention write lock on X
+1) Any new writers at this point will be blocked
+1) Leader records new value in raft log (there already) and in in-memory transaction table
+1) Any readers at this point still read the old version of X
+1) On commit, leader upgrades lock on X to write lock (to block both reads and writes)
+1) Leader reads transaction table and reads each new value from the raft log and updates database
+1) Leader drops all locks associated with transaction
+
+What about deadlock detection? Not sure what to do there.
+
 ## Discovery Proposal
 
 Each node has a unique ID. (This may be stored in a separate file so that the RocksDB data is theoretically

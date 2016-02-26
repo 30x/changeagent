@@ -1,11 +1,12 @@
 package storage;
 
 message EntryPb {
-  required uint64 index = 1;
-  required int32 type = 2;
-  optional uint64 term = 3;
-  optional int64 timestamp = 4;
-  optional bytes collection  = 5;
-  optional string key = 6;
-  optional bytes data = 7;
+  required uint64 index = 1;        // Unique sequential index
+  optional int32 type = 2;          // User-defined record type field
+  optional uint64 term = 3;         // Raft term of this index
+  optional int64 timestamp = 4;     // Time when the record was created, in nanoseconds since 1970
+  optional bytes tenant = 5;        // Change agent tenant ID of this record
+  optional bytes collection  = 6;   // Change agent collection ID
+  optional string key = 7;          // Key within the collection
+  optional bytes data = 8;         // Actual user-defined data
 }

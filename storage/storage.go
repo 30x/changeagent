@@ -13,6 +13,7 @@ type Entry struct {
   Type int32
   Term uint64
   Timestamp time.Time
+  Tenant *uuid.UUID
   Collection *uuid.UUID
   Key string
   Data []byte
@@ -97,6 +98,7 @@ type Storage interface {
  */
 func EncodeEntry(entry *Entry) ([]byte, error) {
   ts := entry.Timestamp.UnixNano()
+
   var collectionID []byte
   if entry.Collection != nil {
     collectionID = entry.Collection.Bytes()
@@ -104,11 +106,19 @@ func EncodeEntry(entry *Entry) ([]byte, error) {
     collectionID = nil
   }
 
+  var tenantID []byte
+  if entry.Tenant != nil {
+    tenantID = entry.Tenant.Bytes()
+  } else {
+    tenantID = nil
+  }
+
   pb := EntryPb{
     Index: &entry.Index,
     Type: &entry.Type,
     Term: &entry.Term,
     Timestamp: &ts,
+    Tenant: tenantID,
     Collection: collectionID,
     Key: &entry.Key,
     Data: entry.Data,
@@ -125,10 +135,16 @@ func DecodeEntry(bytes []byte) (*Entry, error) {
   if err != nil { return nil, err }
 
   ts := time.Unix(0, pb.GetTimestamp())
+
   var collectionID *uuid.UUID
   if pb.GetCollection() != nil {
     id := uuid.FromBytesOrNil(pb.GetCollection())
     collectionID = &id
+  }
+  var tenantID *uuid.UUID
+  if pb.GetTenant() != nil {
+    id := uuid.FromBytesOrNil(pb.GetTenant())
+    tenantID = &id
   }
 
   e := &Entry{
@@ -136,6 +152,7 @@ func DecodeEntry(bytes []byte) (*Entry, error) {
     Type: pb.GetType(),
     Term: pb.GetTerm(),
     Timestamp: ts,
+    Tenant: tenantID,
     Collection: collectionID,
     Key: pb.GetKey(),
     Data: pb.GetData(),
@@ -144,7 +161,11 @@ func DecodeEntry(bytes []byte) (*Entry, error) {
 }
 
 func (e *Entry) String() string {
-  s := fmt.Sprintf("{ Index: %d Term: %d Type: %d ", e.Index, e.Term, e.Type)
+  s := fmt.Sprintf("{ Index: %d Term: %d Type: %d ",
+    e.Index, e.Term, e.Type)
+  if e.Tenant != nil {
+    s += fmt.Sprintf("Tenant: %s ", e.Tenant)
+  }
   if e.Collection != nil {
     s += fmt.Sprintf("Collection: %s ", e.Collection)
   }
