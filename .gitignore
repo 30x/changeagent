@@ -1,4 +1,8 @@
+.DS_Store
 .vscode
 agent/agent
+loader/loader
+agent/Godeps/Readme
+agent/Godeps/_workspace
 *.iml
 .idea/
