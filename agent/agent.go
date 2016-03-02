@@ -134,6 +134,14 @@ func (a *ChangeAgent) handleNormalChange(entry *storage.Entry) error {
       return err
     }
   }
+  if entry.Tenant != nil {
+    glog.V(2).Infof("Inserting change into tenant %s\n", entry.Tenant)
+    err := a.stor.CreateTenantEntry(entry)
+    if err != nil {
+      glog.Errorf("Error indexing a committed entry: %s", err)
+      return err
+    }
+  }
   return nil
 }
 

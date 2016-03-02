@@ -62,17 +62,17 @@ var _ = Describe("Tenant Index Test", func() {
     Expect(err).Should(Succeed())
     Expect(found3.Index).Should(Equal(entry3.Index))
 
-    entries, err := indexTestDb.GetTenantEntries(&tenant1, 0, 1)
+    entries, err := indexTestDb.GetTenantEntries(&tenant1, 0, 1, everTrue)
     Expect(err).Should(Succeed())
     Expect(len(entries)).Should(Equal(1))
     Expect(entries[0].Index).Should(Equal(entry1.Index))
 
-    entries, err = indexTestDb.GetTenantEntries(&tenant1, 1, 1)
+    entries, err = indexTestDb.GetTenantEntries(&tenant1, 1, 1, everTrue)
     Expect(err).Should(Succeed())
     Expect(len(entries)).Should(Equal(1))
     Expect(entries[0].Index).Should(Equal(entry3.Index))
 
-    entries, err = indexTestDb.GetTenantEntries(&tenant1, 3, 1)
+    entries, err = indexTestDb.GetTenantEntries(&tenant1, 3, 1, everTrue)
     Expect(err).Should(Succeed())
     Expect(entries).Should(BeEmpty())
   })
@@ -81,7 +81,7 @@ var _ = Describe("Tenant Index Test", func() {
 func verifyTenantIndex(id *uuid.UUID, ixes []uint64) {
   var found []uint64
 
-  entries, err := indexTestDb.GetTenantEntries(id, 0, 1000)
+  entries, err := indexTestDb.GetTenantEntries(id, 0, 1000, everTrue)
   Expect(err).Should(Succeed())
 
   for _, e := range(entries) {

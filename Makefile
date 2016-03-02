@@ -1,5 +1,5 @@
 ALLDEPS = \
-  agent/*.go log/*.go communication/*.go \
+  agent/*.go communication/*.go \
 	discovery/*.go storage/*.go raft/*.go agent/*.go
 
 all: agent

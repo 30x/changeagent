@@ -265,32 +265,34 @@ func (s *LevelDBStorage) GetEntry(index uint64) (*Entry, error) {
   return ptrToEntry(valPtr, valLen)
 }
 
-func (s *LevelDBStorage) GetEntries(first uint64, last uint64) ([]Entry, error) {
+func (s *LevelDBStorage) GetEntries(since uint64, max uint, filter func(*Entry) bool) ([]Entry, error) {
   it := C.rocksdb_create_iterator_cf(s.db, defaultReadOptions, s.entries)
   defer C.rocksdb_iter_destroy(it)
 
   var entries []Entry
+  var count uint = 0
 
-  firstKeyPtr, firstKeyLen := uintToKey(EntryKey, first)
+  firstKeyPtr, firstKeyLen := uintToKey(EntryKey, since + 1)
   defer freePtr(firstKeyPtr)
 
   C.go_rocksdb_iter_seek(it, firstKeyPtr, firstKeyLen)
 
-  for C.rocksdb_iter_valid(it) != 0 {
-    index, keyType, entry, err := readIterPosition(it)
+  for (count < max) && (C.rocksdb_iter_valid(it) != 0) {
+    _, keyType, entry, err := readIterPosition(it)
     if err != nil { return nil, err }
-    if (keyType != EntryKey) || (index > last) {
-      return entries, nil
+
+    if (keyType != EntryKey) {
+      break
     }
 
-    entries = append(entries, *entry)
+    if filter(entry) {
+      entries = append(entries, *entry)
+      count++
+    }
 
     C.rocksdb_iter_next(it)
   }
-  var entryList []uint64
-  for _, e := range(entries) {
-    entryList = append(entryList, e.Index)
-  }
+
   return entries, nil
 }
 
@@ -656,7 +658,9 @@ func (s *LevelDBStorage) DeleteTenantEntry(tenant *uuid.UUID, ix uint64) error {
   return stringToError(e)
 }
 
-func (s *LevelDBStorage) GetTenantEntries(tenant *uuid.UUID, last uint64, max uint) ([]Entry, error) {
+func (s *LevelDBStorage) GetTenantEntries(
+    tenant *uuid.UUID, last uint64,
+    max uint, filter func(*Entry) bool) ([]Entry, error) {
   it := C.rocksdb_create_iterator_cf(s.db, defaultReadOptions, s.tenantIndices)
   defer C.rocksdb_iter_destroy(it)
 
@@ -676,7 +680,7 @@ func (s *LevelDBStorage) GetTenantEntries(tenant *uuid.UUID, last uint64, max ui
     if err != nil { return nil, err }
 
     if !uuid.Equal(*tenant, *ixId) {
-      return entries, nil
+      break
     }
 
     var valLen C.size_t
@@ -685,10 +689,12 @@ func (s *LevelDBStorage) GetTenantEntries(tenant *uuid.UUID, last uint64, max ui
     entry, err := ptrToEntry(valPtr, valLen)
     if err != nil { return nil, err }
 
-    entries = append(entries, *entry)
+    if filter(entry) {
+      entries = append(entries, *entry)
+      count++
+    }
 
     C.rocksdb_iter_next(it)
-    count++
   }
   return entries, nil
 }

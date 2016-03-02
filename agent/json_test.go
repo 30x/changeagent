@@ -18,9 +18,9 @@ const (
     "{\"_id\":123,\"_ts\":[0123456789]+,\"data\":{\"one\":\"one\",\"two\":2,\"three\":3.0,\"four\":true}}"
 
   testJson2In =
-    "{\"collection\": \"C344ED17-5E73-4520-A940-0A80251E3B7A\", \"key\": \"baz\", \"data\": {\"one\": \"one\", \"two\": 2, \"three\": 3.0, \"four\": true}}"
+    "{\"tenant\": \"99442130-fa86-40f4-928a-911faa86cafa\", \"collection\": \"C344ED17-5E73-4520-A940-0A80251E3B7A\", \"key\": \"baz\", \"data\": {\"one\": \"one\", \"two\": 2, \"three\": 3.0, \"four\": true}}"
   testJson2Out =
-    "{\"collection\":\"c344ed17-5e73-4520-a940-0a80251e3b7a\",\"key\":\"baz\",\"data\":{\"one\":\"one\",\"two\":2,\"three\":3.0,\"four\":true}}"
+    "{\"tenant\":\"99442130-fa86-40f4-928a-911faa86cafa\",\"collection\":\"c344ed17-5e73-4520-a940-0a80251e3b7a\",\"key\":\"baz\",\"data\":{\"one\":\"one\",\"two\":2,\"three\":3.0,\"four\":true}}"
 
   testStringIn =
     "\"Hello, World!\""

@@ -85,6 +85,11 @@ func unmarshalJson(in io.Reader) (*storage.Entry, error) {
     if err != nil { return nil, err }
     entry.Collection = &collectionID
   }
+  if fullData.Tenant != "" {
+    tenantID, err := uuid.FromString(fullData.Tenant)
+    if err != nil { return nil, err }
+    entry.Tenant = &tenantID
+  }
 
   return &entry, nil
 }
@@ -146,6 +151,9 @@ func convertData(entry *storage.Entry) *JsonData {
   }
   if entry.Collection != nil {
     ret.Collection = entry.Collection.String()
+  }
+  if entry.Tenant != nil {
+    ret.Tenant = entry.Tenant.String()
   }
 
   return &ret

@@ -74,7 +74,7 @@ func entriesTest(stor Storage) {
   Expect(max).Should(BeEquivalentTo(0))
   Expect(term).Should(BeEquivalentTo(0))
 
-  entries, err := stor.GetEntries(1, 3)
+  entries, err := stor.GetEntries(0, 2, everTrue)
   Expect(err).Should(Succeed())
   Expect(len(entries)).Should(BeEquivalentTo(0))
 
@@ -135,7 +135,7 @@ func entriesTest(stor Storage) {
   Expect(err).Should(Succeed())
   Expect(len(ets)).Should(Equal(0))
 
-  entries, err = stor.GetEntries(1, 2)
+  entries, err = stor.GetEntries(0, 3, everTrue)
   Expect(err).Should(Succeed())
   Expect(len(entries)).Should(Equal(2))
   compareEntries(entry1, &entries[0])
@@ -159,4 +159,8 @@ func compareEntries(e1 *Entry, e2 *Entry) {
   Expect(e1.Collection).Should(Equal(e2.Collection))
   Expect(e1.Key).Should(Equal(e2.Key))
   Expect(e1.Data).Should(Equal(e2.Data))
+}
+
+func everTrue(e *Entry) bool {
+  return true
 }

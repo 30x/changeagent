@@ -10,6 +10,7 @@ import (
   "time"
   "github.com/golang/glog"
   "revision.aeip.apigee.net/greg/changeagent/communication"
+  "revision.aeip.apigee.net/greg/changeagent/storage"
 )
 
 type rpcResponse struct {
@@ -155,26 +156,35 @@ func (p *raftPeer) sendHeartbeat(index uint64, rc chan rpcResponse) {
 func (p *raftPeer) sendUpdates(desired uint64, next uint64, rc chan rpcResponse) error {
   // If last log index ≥ nextIndex for a follower: send AppendEntries RPC
   // with log entries starting at nextIndex
-  // TODO Why not only get stuff since "next" and then slice it to avoid two queries?
-  entries, err := p.r.stor.GetEntries(next, desired)
+  var start uint64
+  if next == 0 {
+    start = 0
+  } else {
+    start = next - 1
+  }
+
+  allEntries, err := p.r.stor.GetEntries(start, uint(desired - start),
+    func(e *storage.Entry) bool { return true })
   if err != nil {
     glog.V(2).Infof("Error getting entries for peer %d: %v", p.id, err)
     return err
+  }
+
+  var lastIndex, lastTerm uint64
+  var sendEntries []storage.Entry
+
+  if next == 0 {
+    lastIndex = 0
+    lastTerm = 0
+    sendEntries = allEntries
+  } else {
+    lastIndex = allEntries[0].Index
+    lastTerm = allEntries[0].Term
+    sendEntries = allEntries[1:]
   }
 
   glog.V(2).Infof("Sending %d entries between %d and %d to %d",
-    len(entries), next, desired, p.id)
-
-  lastIndex := next - 1
-  lastEntry, err := p.r.stor.GetEntry(lastIndex)
-  if err != nil {
-    glog.V(2).Infof("Error getting entries for peer %d: %v", p.id, err)
-    return err
-  }
-  lastTerm := uint64(0)
-  if lastEntry != nil {
-    lastTerm = lastEntry.Term
-  }
+    len(sendEntries), next, desired, p.id)
 
   ar := &communication.AppendRequest{
     Term: p.r.GetCurrentTerm(),
@@ -182,7 +192,7 @@ func (p *raftPeer) sendUpdates(desired uint64, next uint64, rc chan rpcResponse)
     PrevLogIndex: lastIndex,
     PrevLogTerm: lastTerm,
     LeaderCommit: p.r.GetCommitIndex(),
-    Entries: entries,
+    Entries: sendEntries,
   }
 
   go func() {

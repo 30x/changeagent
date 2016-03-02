@@ -40,8 +40,9 @@ type Storage interface {
   AppendEntry(e *Entry) error
   // Get term and data for entry. Return term 0 if not found.
   GetEntry(index uint64) (*Entry, error)
-  // Get entries >= first and <= last
-  GetEntries(first uint64, last uint64) ([]Entry, error)
+  // Get entries >= since, with a maximum count of "uint".
+  // "filter" is a function that must return true for any valid entries.
+  GetEntries(since uint64, max uint, filter func(*Entry) bool) ([]Entry, error)
   // Return the highest index and term in the database
   GetLastIndex() (uint64, uint64, error)
   // Return index and term of everything from index to the end
@@ -53,7 +54,8 @@ type Storage interface {
   CreateTenantEntry(e *Entry) error
   GetTenantEntry(tenant *uuid.UUID, ix uint64) (*Entry, error)
   DeleteTenantEntry(tenant *uuid.UUID, ix uint64) error
-  GetTenantEntries(tenant *uuid.UUID, last uint64, max uint) ([]Entry, error)
+  // Get entries >= last, but only for the specified tenant
+  GetTenantEntries(tenant *uuid.UUID, last uint64, max uint, filter func(*Entry) bool) ([]Entry, error)
 
   // Create a tenant. Tenants must be created to match the "tenantName" field in indices
   // in order to support iteration over all the records for a tenant.

@@ -76,7 +76,8 @@ var _ = Describe("Changes API Test", func() {
 
   It("POST indexed record", func() {
     request :=
-      fmt.Sprintf("{\"collection\":\"%s\",\"key\":\"baz\",\"data\":{\"hello\":\"world!\",\"foo\":456}}", collection)
+      fmt.Sprintf("{\"tenant\":\"%s\",\"collection\":\"%s\",\"key\":\"baz\",\"data\":{\"hello\":\"world!\",\"foo\":456}}",
+        tenant, collection)
     resp := postChange(request)
 
     lastNewChange++
@@ -84,11 +85,14 @@ var _ = Describe("Changes API Test", func() {
     Expect(resp).Should(MatchJSON(expected))
 
     respExpected :=
-      fmt.Sprintf("[{\"_id\":%d,\"_ts\":[0-9]+,\"collection\":\"%s\",\"key\":\"baz\",\"data\":{\"hello\":\"world!\",\"foo\":456}}]",
-        lastNewChange, collection)
+      fmt.Sprintf("[{\"_id\":%d,\"_ts\":[0-9]+,\"tenant\":\"%s\",\"collection\":\"%s\",\"key\":\"baz\",\"data\":{\"hello\":\"world!\",\"foo\":456}}]",
+        lastNewChange, tenant, collection)
     peerChanges := getChanges(leaderIndex, lastNewChange - 1, 100, 0)
 
     Expect(peerChanges).Should(MatchRegexp(respExpected))
+
+    tenantChanges := getTenantChanges(leaderIndex, tenant, lastNewChange - 1, 100, 0)
+    Expect(tenantChanges).Should(MatchRegexp(respExpected))
   })
 
   It("POST indexed record 2", func() {
@@ -191,6 +195,41 @@ var _ = Describe("Changes API Test", func() {
 
     Expect(waitResult).Should(Equal(postResult.Id))
   })
+
+  It("Blocking retrieval after abnormal change", func() {
+    respBody := getChanges(leaderIndex, lastNewChange, 100, 0)
+    var results []JsonData
+    err := json.Unmarshal(respBody, &results)
+    Expect(err).Should(Succeed())
+    Expect(len(results)).Should(Equal(0))
+
+    ensureTenant("blockTest")
+
+    ch := make(chan uint64, 1)
+
+    go func() {
+      newResp := getChanges(leaderIndex, lastNewChange, 100, 5)
+      var newResults []JsonData
+      json.Unmarshal(newResp, &newResults)
+      if len(newResults) == 1 {
+        ch <- newResults[0].Id
+      } else {
+        ch <- 0
+      }
+    }()
+
+    request := "{\"hello\": \"world!\", \"foo\": 9999}"
+    time.Sleep(500 * time.Millisecond)
+    resp := postChange(request)
+
+    var postResult JsonData
+    err = json.Unmarshal([]byte(resp), &postResult)
+    Expect(err).Should(Succeed())
+
+    waitResult := <- ch
+
+    Expect(waitResult).Should(Equal(postResult.Id))
+  })
 })
 
 func postChanges(collection string, count int) []uint64 {
@@ -230,6 +269,21 @@ func postChange(request string) string {
 func getChanges(peerIndex int, since uint64, limit int, block int) []byte {
   url := fmt.Sprintf("%s/changes?since=%d&limit=%d&block=%d",
     getListenerURI(peerIndex), since, limit, block)
+  gr, err := http.Get(url)
+  Expect(err).Should(Succeed())
+  defer gr.Body.Close()
+  Expect(gr.StatusCode).Should(Equal(200))
+
+  respBody, err := ioutil.ReadAll(gr.Body)
+  Expect(err).Should(Succeed())
+  resp := string(respBody)
+  fmt.Fprintf(GinkgoWriter, "Got GET response %s\n", resp)
+  return respBody
+}
+
+func getTenantChanges(peerIndex int, tenant string, since uint64, limit int, block int) []byte {
+  url := fmt.Sprintf("%s/tenants/%s/changes?since=%d&limit=%d&block=%d",
+    getListenerURI(peerIndex), tenant, since, limit, block)
   gr, err := http.Get(url)
   Expect(err).Should(Succeed())
   defer gr.Body.Close()
