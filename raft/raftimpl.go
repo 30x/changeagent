@@ -91,7 +91,7 @@ func StartRaft(id uint64,
     proposals: make(chan proposalCommand, 1),
     latch: sync.Mutex{},
     followerOnly: false,
-    appliedTracker: CreateTracker(0),
+    appliedTracker: CreateTracker(),
     stateMachine: state,
   }
 
@@ -272,7 +272,17 @@ func (r *RaftImpl) GetLastApplied() uint64 {
 }
 
 func (r *RaftImpl) setLastApplied(t uint64) {
-  err := r.stateMachine.Commit(t)
+  entry, err := r.stor.GetEntry(t)
+  if err != nil {
+    glog.Errorf("Error reading entry from change %d for commit: %s", t, err)
+    return
+  }
+  if entry == nil {
+    glog.Errorf("Committed entry %d could not be read", t)
+    return
+  }
+
+  err = r.stateMachine.Commit(entry)
   if err != nil {
     glog.Errorf("Error committing change %d: %s", t, err)
     return
@@ -288,7 +298,11 @@ func (r *RaftImpl) setLastApplied(t uint64) {
   r.lastApplied = t
   r.latch.Unlock()
 
-  r.appliedTracker.Update(t)
+  r.appliedTracker.Update(nil, t)
+
+  if entry.Tenant != nil {
+    r.appliedTracker.Update(entry.Tenant, t)
+  }
 }
 
 func (r *RaftImpl) GetAppliedTracker() *ChangeTracker {

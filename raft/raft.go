@@ -1,5 +1,9 @@
 package raft
 
+import (
+  "revision.aeip.apigee.net/greg/changeagent/storage"
+)
+
 type StateMachine interface {
-  Commit(index uint64) error
+  Commit(entry *storage.Entry) error
 }

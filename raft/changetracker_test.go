@@ -1,183 +1,199 @@
 package raft
 
 import (
-  "testing"
   "time"
+  "github.com/satori/go.uuid"
+  . "github.com/onsi/ginkgo"
+  . "github.com/onsi/gomega"
+
 )
 
-func TestTrackerBehind(t *testing.T) {
-  tracker := CreateTracker(2)
-  behind := tracker.Wait(1)
-  if behind != 2 {
-    t.Fatal("expected 2")
-  }
-  tracker.Close()
-}
+var _ = Describe("Change tracker", func() {
+  var tracker *ChangeTracker
 
-func TestTrackerCaughtUp(t *testing.T) {
-  tracker := CreateTracker(2)
-  behind := tracker.Wait(2)
-  if behind != 2 {
-    t.Fatal("expected 2")
-  }
-  tracker.Close()
-}
+  BeforeEach(func() {
+    tracker = CreateTracker()
+    tracker.Update(nil, 2)
+  })
 
-func TestTrackerUpToDate(t *testing.T) {
-  tracker := CreateTracker(2)
-  doneChan := make(chan uint64, 1)
+  AfterEach(func() {
+    tracker.Close()
+  })
 
-  go func() {
-    new := tracker.Wait(3)
-    doneChan <- new
-  }()
+  It("Behind", func() {
+    behind := tracker.Wait(nil, 1)
+    Expect(behind).Should(BeEquivalentTo(2))
+  })
 
-  tracker.Update(3)
-  gotVal := <- doneChan
-  if gotVal != 3 {
-    t.Fatal("Expected routine not to finish until we got to 3")
-  }
-  tracker.Close()
-}
+  It("Caught up", func() {
+    behind := tracker.Wait(nil, 2)
+    Expect(behind).Should(BeEquivalentTo(2))
+  })
 
-func TestTrackerUpToDateWithTimeout(t *testing.T) {
-  tracker := CreateTracker(2)
-  doneChan := make(chan uint64, 1)
+  It("Up to date", func() {
+    doneChan := make(chan uint64, 1)
 
-  go func() {
-    new := tracker.TimedWait(3, 2 * time.Second)
-    doneChan <- new
-  }()
+    go func() {
+      new := tracker.Wait(nil, 3)
+      doneChan <- new
+    }()
 
-  tracker.Update(3)
-  gotVal := <- doneChan
-  if gotVal != 3 {
-    t.Fatal("Expected routine not to finish until we got to 3")
-  }
-  tracker.Close()
-}
+    tracker.Update(nil, 3)
+    gotVal := <-doneChan
+    Expect(gotVal).Should(BeEquivalentTo(3))
+  })
 
-func TestTrackerUpToDateTimeout(t *testing.T) {
-  tracker := CreateTracker(2)
-  doneChan := make(chan uint64, 1)
+  It("Up to date with timeout", func() {
+    doneChan := make(chan uint64, 1)
 
-  go func() {
-    new := tracker.TimedWait(3, 500 * time.Millisecond)
-    doneChan <- new
-  }()
+    go func() {
+      new := tracker.TimedWait(nil, 3, 2 * time.Second)
+      doneChan <- new
+    }()
 
-  time.Sleep(1 * time.Second)
-  tracker.Update(3)
-  gotVal := <- doneChan
-  if gotVal != 2 {
-    t.Fatal("Expected routine to time out and stay at 2")
-  }
-  tracker.Close()
-}
+    tracker.Update(nil, 3)
+    gotVal := <-doneChan
+    Expect(gotVal).Should(BeEquivalentTo(3))
+  })
 
-func TestTrackerUpdate(t *testing.T) {
-  tracker := CreateTracker(2)
-  doneChan := make(chan uint64, 1)
+  It("Up to date timeout", func() {
+    doneChan := make(chan uint64, 1)
 
-  go func() {
-    new := tracker.Wait(4)
-    doneChan <- new
-  }()
+    go func() {
+      new := tracker.TimedWait(nil, 3, 500 * time.Millisecond)
+      doneChan <- new
+    }()
 
-  time.Sleep(250 * time.Millisecond)
-  tracker.Update(3)
-  time.Sleep(250 * time.Millisecond)
-  tracker.Update(4)
-  gotVal := <- doneChan
-  if gotVal != 4 {
-    t.Fatal("Expected routine not to finish until we got to 3")
-  }
-  tracker.Close()
-}
+    time.Sleep(1 * time.Second)
+    tracker.Update(nil, 3)
+    gotVal := <-doneChan
+    Expect(gotVal).Should(BeEquivalentTo(2))
+  })
 
-func TestTrackerUpdateTwice(t *testing.T) {
-  tracker := CreateTracker(2)
-  doneChan := make(chan uint64, 1)
-  doneChan2 := make(chan uint64, 1)
+  It("Update", func() {
+    doneChan := make(chan uint64, 1)
 
-  go func() {
-    new := tracker.Wait(4)
-    doneChan <- new
-  }()
+    go func() {
+      new := tracker.Wait(nil, 4)
+      doneChan <- new
+    }()
 
-  go func() {
-    new2 := tracker.Wait(4)
-    doneChan2 <- new2
-  }()
+    time.Sleep(250 * time.Millisecond)
+    tracker.Update(nil, 3)
+    time.Sleep(250 * time.Millisecond)
+    tracker.Update(nil, 4)
+    gotVal := <-doneChan
+    Expect(gotVal).Should(BeEquivalentTo(4))
+  })
 
-  time.Sleep(250 * time.Millisecond)
-  tracker.Update(3)
-  time.Sleep(250 * time.Millisecond)
-  tracker.Update(4)
-  gotVal := <- doneChan
-  if gotVal != 4 {
-    t.Fatal("Expected routine not to finish until we got to 3")
-  }
-  gotVal = <- doneChan2
-  if gotVal != 4 {
-    t.Fatal("Expected second routine not to finish until we got to 3")
-  }
-  tracker.Close()
-}
+  It("Update twice", func() {
+    doneChan := make(chan uint64, 1)
+    doneChan2 := make(chan uint64, 1)
 
-func TestTrackerMultiUpdate(t *testing.T) {
-  tracker := CreateTracker(2)
-  prematureDoneChan := make(chan uint64, 1)
-  doneChan := make(chan uint64, 1)
+    go func() {
+      new := tracker.Wait(nil, 4)
+      doneChan <- new
+    }()
 
-  go func() {
-    oldNew := tracker.Wait(10)
-    prematureDoneChan <- oldNew
-  }()
+    go func() {
+      new2 := tracker.Wait(nil, 4)
+      doneChan2 <- new2
+    }()
 
-  go func() {
-    new := tracker.Wait(4)
-    doneChan <- new
-  }()
+    time.Sleep(250 * time.Millisecond)
+    tracker.Update(nil, 3)
+    time.Sleep(250 * time.Millisecond)
+    tracker.Update(nil, 4)
+    gotVal := <-doneChan
+    Expect(gotVal).Should(BeEquivalentTo(4))
+    gotVal = <-doneChan2
+    Expect(gotVal).Should(BeEquivalentTo(4))
+  })
 
-  time.Sleep(250 * time.Millisecond)
-  tracker.Update(3)
-  time.Sleep(250 * time.Millisecond)
-  tracker.Update(4)
+  It("Multi Update", func() {
+    prematureDoneChan := make(chan uint64, 1)
+    doneChan := make(chan uint64, 1)
 
-  select {
-  case gotVal := <- doneChan:
-    if gotVal != 4 {
-      t.Fatal("Expected routine not to finish until we got to 3")
+    go func() {
+      oldNew := tracker.Wait(nil, 10)
+      prematureDoneChan <- oldNew
+    }()
+
+    go func() {
+      new := tracker.Wait(nil, 4)
+      doneChan <- new
+    }()
+
+    time.Sleep(250 * time.Millisecond)
+    tracker.Update(nil, 3)
+    time.Sleep(250 * time.Millisecond)
+    tracker.Update(nil, 4)
+
+    // No loop -- we expect that the first case arrive before the second
+    select {
+    case gotVal := <-doneChan:
+      Expect(gotVal).Should(BeEquivalentTo(4))
+    case <-prematureDoneChan:
+      Expect(true).Should(BeFalse())
     }
-  case <- prematureDoneChan:
-    t.Fatal("Should not be done already with older waiter")
-  }
-  tracker.Close()
-}
+  })
 
+  It("Separate IDs", func() {
+    id1 := uuid.NewV4()
+    tracker.Update(&id1, 4)
+    done1 := make(chan uint64, 1)
 
-func TestTrackerClose(t *testing.T) {
-  tracker := CreateTracker(2)
+    id2 := uuid.NewV4()
+    tracker.Update(&id2, 40)
+    done2 := make(chan uint64, 2)
 
-  go func() {
-    new := tracker.Wait(3)
-    if new != 2 {
-      t.Fatal("Expected 2")
+    go func() {
+      v1 := tracker.Wait(&id1, 5)
+      done1 <- v1
+    }()
+
+    go func() {
+      v2 := tracker.Wait(&id2, 41)
+      done2 <- v2
+    }()
+
+    tracker.Update(&id1, 5)
+    tracker.Update(&id2, 41)
+
+    for i := 0; i < 2; i++ {
+      select {
+      case v1 := <-done1:
+        Expect(v1).Should(BeEquivalentTo(5))
+      case v2 := <-done2:
+        Expect(v2).Should(BeEquivalentTo(41))
+      }
     }
-  }()
+  })
+})
 
-  tracker.Close()
-}
+var _ = Describe("Change tracker 2", func() {
+  It("Close", func() {
+    tracker := CreateTracker()
+    tracker.Update(nil, 2)
+    done := make(chan uint64, 1)
 
-func TestTrackerNaming(t *testing.T) {
-  name1 := GetNamedTracker("test1")
-  name2 := GetNamedTracker("test2")
-  name1same := GetNamedTracker("test1")
-  if name1 != name1same {
-    t.Fatal("Should get the same tracker every time")
-  }
-  if name1 == name2 {
-    t.Fatal("Should have two different trackers")
-  }
-}
+    go func() {
+      new := tracker.Wait(nil, 3)
+      done <- new
+    }()
+
+    time.Sleep(250 * time.Millisecond)
+    tracker.Close()
+
+    val := <- done
+    Expect(val).Should(BeEquivalentTo(2))
+  })
+
+  It("Naming", func() {
+    name1 := GetNamedTracker("test1")
+    name2 := GetNamedTracker("test2")
+    name1same := GetNamedTracker("test1")
+    Expect(name1).Should(Equal(name1same))
+    Expect(name1).ShouldNot(Equal(name2))
+  })
+})

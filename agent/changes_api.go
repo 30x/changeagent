@@ -142,7 +142,7 @@ func (a *ChangeAgent) getChanges(id *uuid.UUID, resp http.ResponseWriter, req *h
   // TODO we need a tenant-specific tracker for this to work properly.
   if (len(entries) == 0) && (block > 0) {
     glog.V(2).Infof("Blocking for up to %d seconds since change %d", block, lastFullChange)
-    a.raft.GetAppliedTracker().TimedWait(lastFullChange + 1, block * time.Second)
+    a.raft.GetAppliedTracker().TimedWait(id, lastFullChange + 1, block * time.Second)
     entries, _, err = a.fetchEntries(id, lastFullChange, limit, resp)
     if err != nil { return }
   }

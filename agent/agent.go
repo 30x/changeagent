@@ -89,7 +89,7 @@ func (a *ChangeAgent) makeProposal(proposal *storage.Entry) (*storage.Entry, err
 
   // Wait for the new commit to be applied, or time out
   appliedIndex :=
-    a.raft.GetAppliedTracker().TimedWait(newIndex, time.Second * CommitTimeoutSeconds)
+    a.raft.GetAppliedTracker().TimedWait(nil, newIndex, time.Second * CommitTimeoutSeconds)
   glog.V(2).Infof("New index %d is now applied", appliedIndex)
   if appliedIndex >= newIndex {
     newEntry := storage.Entry{
@@ -101,18 +101,8 @@ func (a *ChangeAgent) makeProposal(proposal *storage.Entry) (*storage.Entry, err
   }
 }
 
-func (a *ChangeAgent) Commit(id uint64) error {
-  glog.V(2).Infof("Got a commit for entry %d", id)
-
-  entry, err := a.stor.GetEntry(id)
-  if err != nil {
-    glog.Errorf("Error reading a committed entry: %s", err)
-    return err
-  }
-  if entry == nil {
-    glog.Errorf("Committed entry %d could not be read", id)
-    return fmt.Errorf("Missing committed entry %d", id)
-  }
+func (a *ChangeAgent) Commit(entry *storage.Entry) error {
+  glog.V(2).Infof("Got a commit for entry %d", entry.Index)
 
   switch entry.Type {
   case NormalChange:

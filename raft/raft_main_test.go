@@ -127,6 +127,6 @@ func cleanRaft(raft *RaftImpl, l *net.TCPListener) {
 type dummyStateMachine struct {
 }
 
-func (d *dummyStateMachine) Commit(id uint64) error {
+func (d *dummyStateMachine) Commit(e *storage.Entry) error {
   return nil
 }

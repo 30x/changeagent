@@ -190,6 +190,7 @@ var _ = Describe("Changes API Test", func() {
     var postResult JsonData
     err = json.Unmarshal([]byte(resp), &postResult)
     Expect(err).Should(Succeed())
+    lastNewChange = postResult.Id
 
     waitResult := <- ch
 
@@ -225,6 +226,7 @@ var _ = Describe("Changes API Test", func() {
     var postResult JsonData
     err = json.Unmarshal([]byte(resp), &postResult)
     Expect(err).Should(Succeed())
+    lastNewChange = postResult.Id
 
     waitResult := <- ch
 
