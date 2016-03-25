@@ -102,9 +102,9 @@ func countRafts() (int, int) {
 
   for _, r := range(testAgents) {
     switch r.GetRaftState() {
-    case raft.StateFollower:
+    case raft.Follower:
       followers++
-    case raft.StateLeader:
+    case raft.Leader:
       leaders++
     }
   }
@@ -129,7 +129,7 @@ func waitForLeader() bool {
 func getLeaderIndex() {
   for i, r := range(testAgents) {
     switch r.GetRaftState() {
-    case raft.StateLeader:
+    case raft.Leader:
       leaderIndex = i
     }
   }

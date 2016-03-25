@@ -48,7 +48,7 @@ func TestStopFollower(t *testing.T) {
   It("Stop Leader", func() {
     var leaderIndex int
     for i, r := range (testRafts) {
-      if r.GetState() == StateLeader {
+      if r.GetState() == Leader {
         leaderIndex = i
       }
     }
@@ -75,7 +75,7 @@ func TestStopFollower(t *testing.T) {
   It("Stop Follower", func() {
     var followerIndex int
     for i, r := range (testRafts) {
-      if r.GetState() == StateFollower {
+      if r.GetState() == Follower {
         followerIndex = i
       }
     }
@@ -174,9 +174,9 @@ func countRafts() (int, int) {
 
   for _, r := range(testRafts) {
     switch r.GetState() {
-    case StateFollower:
+    case Follower:
       followers++
-    case StateLeader:
+    case Leader:
       leaders++
     }
   }
@@ -186,7 +186,7 @@ func countRafts() (int, int) {
 
 func getLeader() *RaftImpl {
   for _, r := range(testRafts) {
-    if r.GetState() == StateLeader {
+    if r.GetState() == Leader {
       return r
     }
   }

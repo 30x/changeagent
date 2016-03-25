@@ -71,7 +71,7 @@ func (a *ChangeAgent) Delete() {
   a.stor.Delete()
 }
 
-func (a *ChangeAgent) GetRaftState() int {
+func (a *ChangeAgent) GetRaftState() raft.RaftState {
   return a.raft.GetState()
 }
 

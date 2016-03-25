@@ -27,7 +27,7 @@ func (r *RaftImpl) handleFollowerVote(state *raftState, cmd voteCommand) bool {
   }
 
   // Important to double-check state at this point as well since channels are buffered
-  if r.GetState() != StateFollower {
+  if r.GetState() != Follower {
     resp.VoteGranted = false
     cmd.rc <- &resp
     return false

@@ -22,17 +22,36 @@ const (
   HeartbeatTimeout = 2 * time.Second
 )
 
+type RaftState int
+
 const (
-  StateFollower = iota
-  StateCandidate = iota
-  StateLeader = iota
-  StateStopping = iota
-  StateStopped = iota
+  Follower RaftState = iota
+  Candidate
+  Leader
+  Stopping
+  Stopped
 )
+
+func (r RaftState) String() string {
+  switch r {
+  case Follower:
+    return "Follower"
+  case Candidate:
+    return "Candidate"
+  case Leader:
+    return "Leader"
+  case Stopping:
+    return "Stopping"
+  case Stopped:
+    return "Stopped"
+  default:
+    return ""
+  }
+}
 
 type RaftImpl struct {
   id uint64
-  state int
+  state RaftState
   leaderId uint64
   comm communication.Communication
   disco discovery.Discovery
@@ -81,7 +100,7 @@ func StartRaft(id uint64,
                stor storage.Storage,
                state StateMachine) (*RaftImpl, error) {
   r := &RaftImpl{
-    state: StateFollower,
+    state: Follower,
     comm: comm,
     disco: disco,
     stor: stor,
@@ -126,7 +145,7 @@ func StartRaft(id uint64,
 
 func (r *RaftImpl) Close() {
   s := r.GetState()
-  if s != StateStopped && s != StateStopping {
+  if s != Stopped && s != Stopping {
     done := make(chan bool)
     r.stopChan <- done
     <- done
@@ -157,7 +176,7 @@ func (r *RaftImpl) cleanup() {
 }
 
 func (r *RaftImpl) RequestVote(req *communication.VoteRequest) (*communication.VoteResponse, error) {
-  if r.GetState() == StateStopping || r.GetState() == StateStopped {
+  if r.GetState() == Stopping || r.GetState() == Stopped {
     return nil, errors.New("Raft is stopped")
   }
 
@@ -173,7 +192,7 @@ func (r *RaftImpl) RequestVote(req *communication.VoteRequest) (*communication.V
 
 func (r *RaftImpl) Append(req *communication.AppendRequest) (*communication.AppendResponse, error) {
   glog.V(2).Infof("Node %d append request. State is %v", r.id, r.GetState())
-  if r.GetState() == StateStopping || r.GetState() == StateStopped {
+  if r.GetState() == Stopping || r.GetState() == Stopped {
     return nil, errors.New("Raft is stopped")
   }
 
@@ -189,7 +208,7 @@ func (r *RaftImpl) Append(req *communication.AppendRequest) (*communication.Appe
 }
 
 func (r *RaftImpl) Propose(e *storage.Entry) (uint64, error) {
-  if r.GetState() == StateStopping || r.GetState() == StateStopped {
+  if r.GetState() == Stopping || r.GetState() == Stopped {
     return 0, errors.New("Raft is stopped")
   }
 
@@ -210,13 +229,13 @@ func (r *RaftImpl) MyId() uint64 {
   return r.id
 }
 
-func (r *RaftImpl) GetState() int {
+func (r *RaftImpl) GetState() RaftState {
   r.latch.Lock()
   defer r.latch.Unlock()
   return r.state
 }
 
-func (r *RaftImpl) setState(newState int) {
+func (r *RaftImpl) setState(newState RaftState) {
   r.latch.Lock()
   defer r.latch.Unlock()
   glog.V(2).Infof("Node %d: setting state to %d", r.id, newState)

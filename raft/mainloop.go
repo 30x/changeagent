@@ -45,23 +45,23 @@ func (r *RaftImpl) mainLoop() {
   var stopDone chan bool
   for {
     switch r.GetState() {
-    case StateFollower:
+    case Follower:
       glog.Infof("Node %d entering follower mode", r.id)
       stopDone = r.followerLoop(false, state)
-    case StateCandidate:
+    case Candidate:
       glog.Infof("Node %d entering candidate mode", r.id)
       stopDone = r.followerLoop(true, state)
-    case StateLeader:
+    case Leader:
       glog.Infof("Node %d entering leader mode", r.id)
       stopDone = r.leaderLoop(state)
-    case StateStopping:
+    case Stopping:
       r.cleanup()
       if stopDone != nil {
         stopDone <- true
       }
       glog.V(2).Infof("Node %d stop is complete", r.id)
       return
-    case StateStopped:
+    case Stopped:
       return
     }
   }
@@ -84,7 +84,7 @@ func (r *RaftImpl) followerLoop(isCandidate bool, state *raftState) chan bool {
     case <- timeout.C:
       glog.V(2).Infof("Node %d: election timeout", r.id)
       if !r.followerOnly {
-        r.setState(StateCandidate)
+        r.setState(Candidate)
         r.setLeaderId(0)
         return nil
       }
@@ -104,7 +104,7 @@ func (r *RaftImpl) followerLoop(isCandidate bool, state *raftState) chan bool {
         r.setCurrentTerm(appendCmd.ar.Term)
         state.votedFor = 0
         r.writeLastVote(0)
-        r.setState(StateFollower)
+        r.setState(Follower)
         r.setLeaderId(appendCmd.ar.LeaderId)
       }
       r.handleAppend(state, appendCmd)
@@ -140,7 +140,7 @@ func (r *RaftImpl) followerLoop(isCandidate bool, state *raftState) chan bool {
         r.writeLastVote(0)
         glog.V(2).Infof("Node %d received the election result: %v", r.id, vr.result)
         if vr.result {
-          r.setState(StateLeader)
+          r.setState(Leader)
           r.setLeaderId(0)
           return nil
         }
@@ -154,7 +154,7 @@ func (r *RaftImpl) followerLoop(isCandidate bool, state *raftState) chan bool {
         change.Action, change.Node.Id)
 
     case stopDone := <- r.stopChan:
-      r.setState(StateStopping)
+      r.setState(Stopping)
       return stopDone
     }
   }
@@ -182,7 +182,7 @@ func (r *RaftImpl) leaderLoop(state *raftState) chan bool {
     glog.Infof("Error when initially trying to become leader: %s", err)
     state.votedFor = 0
     r.writeLastVote(0)
-    r.setState(StateFollower)
+    r.setState(Follower)
     stopPeers(state)
     return nil
   }
@@ -202,7 +202,7 @@ func (r *RaftImpl) leaderLoop(state *raftState) chan bool {
         r.setCurrentTerm(appendCmd.ar.Term)
         state.votedFor = 0
         r.writeLastVote(0)
-        r.setState(StateFollower)
+        r.setState(Follower)
         r.setLeaderId(appendCmd.ar.LeaderId)
         stopPeers(state)
         r.handleAppend(state, appendCmd)
@@ -235,7 +235,7 @@ func (r *RaftImpl) leaderLoop(state *raftState) chan bool {
       r.handleLeaderConfigChange(state, change)
 
     case stopDone := <- r.stopChan:
-      r.setState(StateStopping)
+      r.setState(Stopping)
       stopPeers(state)
       return stopDone
     }

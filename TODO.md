@@ -1,5 +1,15 @@
 # TODO
 
+## Bugs
+
+Tenants have different UUIDs across nodes.
+
+Election deadlock is possible, at least with two out of three nodes running.
+
+Very slow performance writing to the non-leader.
+
+Follower may not pick up new leader ID without prompting.
+
 ## High Priority
 
 Discovery.
