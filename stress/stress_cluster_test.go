@@ -15,7 +15,7 @@ import (
 const (
   BasePort = 13000
   DefaultWait = 30
-  BatchSize = 10
+  BatchSize = 100
 )
 
 type WriteResponse struct {
@@ -177,7 +177,7 @@ func sendBatch(writePort int, count int, anno string) (uint64, uint64) {
 }
 
 func fetchChanges(readPort int, since uint64) []uint64 {
-  uri := fmt.Sprintf("http://localhost:%d/changes?since=%d", readPort, since)
+  uri := fmt.Sprintf("http://localhost:%d/changes?since=%d&limit=%d", readPort, since, BatchSize + 10)
 
   resp, err := http.Get(uri)
   Expect(err).Should(Succeed())
