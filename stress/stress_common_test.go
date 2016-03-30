@@ -12,24 +12,39 @@ import (
   . "github.com/onsi/ginkgo"
 )
 
+const (
+  DebugNodes = false
+)
+
 type RaftState struct {
   State string `json:"state"`
   Leader uint64 `json:"leader"`
 }
 
 func launchAgent(id int, port int, dataDir string) (*os.Process, error) {
-  cmd := exec.Command(
+  cmd := exec.Command("../agent/agent")
+  args := []string{
     "../agent/agent",
     "-s", "./disco",
     "-id", strconv.Itoa(id),
     "-p", strconv.Itoa(port),
     "-d", dataDir,
-    "-logtostderr")
+    "-logtostderr",
+  }
+  if DebugNodes {
+    args = append(args, "-v")
+    args = append(args, "5")
+  }
+
+  cmd.Args = args
   cmd.Stdout = os.Stdout
   cmd.Stderr = os.Stderr
 
+  fmt.Fprintf(GinkgoWriter, "** Launching agent on port %d\n", port)
+
   err := cmd.Start()
   if err == nil {
+    fmt.Fprintf(GinkgoWriter, "** Agent running at pid %d\n", cmd.Process.Pid)
     testPids[cmd.Process.Pid] = *cmd.Process
     return cmd.Process, nil
   }
@@ -37,6 +52,7 @@ func launchAgent(id int, port int, dataDir string) (*os.Process, error) {
 }
 
 func killAgent(proc *os.Process) {
+  fmt.Fprintf(GinkgoWriter, "** Terminating agent pid %d\n", proc.Pid)
   delete(testPids, proc.Pid)
   proc.Kill()
   proc.Release()

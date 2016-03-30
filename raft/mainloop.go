@@ -99,12 +99,16 @@ func (r *RaftImpl) followerLoop(isCandidate bool, state *raftState) chan bool {
     case appendCmd := <- r.appendCommands:
       // 5.1: If RPC request or response contains term T > currentTerm:
       // set currentTerm = T, convert to follower
+      glog.V(2).Infof("Processing append command from leader %d", appendCmd.ar.LeaderId)
       if appendCmd.ar.Term > r.GetCurrentTerm() {
         glog.Infof("Append request from new leader at new term %d", appendCmd.ar.Term)
         r.setCurrentTerm(appendCmd.ar.Term)
         state.votedFor = 0
         r.writeLastVote(0)
         r.setState(Follower)
+        r.setLeaderId(appendCmd.ar.LeaderId)
+      } else if r.GetLeaderId() == 0 {
+        glog.Infof("Seeing new leader %d for the first time", appendCmd.ar.LeaderId)
         r.setLeaderId(appendCmd.ar.LeaderId)
       }
       r.handleAppend(state, appendCmd)

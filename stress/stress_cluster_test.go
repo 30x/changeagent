@@ -103,16 +103,36 @@ var _ = Describe("Cluster Test", func() {
     verifyBatch(newPorts[0], newPorts, "Partial Cluster 3, 1")
     verifyBatch(newPorts[1], newPorts, "Partial Cluster 3, 2")
 
-    server2, err = launchAgent(3, ports[2], path.Join(dataDir, "data3"))
+    server3, err = launchAgent(3, ports[2], path.Join(dataDir, "data3"))
     Expect(err).Should(Succeed())
     err = waitForLeader(ports, DefaultWait)
     Expect(err).Should(Succeed())
 
     verifyBatch(ports[0], ports, "Full Cluster 4, 1")
     verifyBatch(ports[1], ports, "Full Cluster 4, 2")
-    verifyBatch(ports[2], ports, "Full Cluster 5, 3")
+    verifyBatch(ports[2], ports, "Full Cluster 4, 3")
 
-    // Servers get killed by AfterEach function
+    // Now kill and restart everyone one last time
+
+    killAgent(server1)
+    killAgent(server2)
+    killAgent(server3)
+
+    time.Sleep(time.Second)
+
+    server1, err = launchAgent(1, ports[0], path.Join(dataDir, "data1"))
+    Expect(err).Should(Succeed())
+    server2, err = launchAgent(2, ports[1], path.Join(dataDir, "data2"))
+    Expect(err).Should(Succeed())
+    server3, err = launchAgent(3, ports[2], path.Join(dataDir, "data3"))
+    Expect(err).Should(Succeed())
+
+    err = waitForLeader(ports, DefaultWait)
+    Expect(err).Should(Succeed())
+
+    verifyBatch(ports[0], ports, "Full Cluster 5, 1")
+    verifyBatch(ports[1], ports, "Full Cluster 5, 2")
+    verifyBatch(ports[2], ports, "Full Cluster 5, 3")
   })
 })
 

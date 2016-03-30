@@ -11,8 +11,8 @@ import (
 )
 
 func (r *RaftImpl) handleAppend(state *raftState, cmd appendCommand) {
-  glog.V(2).Infof("Got append request for term %d. prevIndex = %d prevTerm = %d",
-    cmd.ar.Term, cmd.ar.PrevLogIndex, cmd.ar.PrevLogTerm)
+  glog.V(2).Infof("Got append request for term %d. prevIndex = %d prevTerm = %d leader = %d",
+    cmd.ar.Term, cmd.ar.PrevLogIndex, cmd.ar.PrevLogTerm, cmd.ar.LeaderId)
   currentTerm := r.GetCurrentTerm()
   commitIndex := r.GetCommitIndex()
 

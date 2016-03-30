@@ -14,7 +14,8 @@ test:
 	(cd discovery; go test)
 	(cd storage; go test)
 	(cd raft; go test)
-	(cd agent; go test)
+	(cd agent; go test; go build)
+	(cd stress; go test)
 
 clean:
 	(cd agent; go clean)

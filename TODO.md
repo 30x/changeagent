@@ -3,12 +3,15 @@
 ## Bugs
 
 Tenants have different UUIDs across nodes.
+  Happens all the time.
 
 Election deadlock is possible, at least with two out of three nodes running.
+  Only happened a few times.
 
 Very slow performance writing to the non-leader.
-
-Follower may not pick up new leader ID without prompting.
+  Looks like we don't send the new commit index to followers until we have done a heartbeat.
+  Perhaps we fix that with another RPC.
+  Perhaps we just have the waiting for the commit happen on the leader (simpler).
 
 ## High Priority
 
