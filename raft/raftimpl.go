@@ -278,10 +278,16 @@ func (r *RaftImpl) GetCommitIndex() uint64 {
   return r.commitIndex
 }
 
-func (r *RaftImpl) setCommitIndex(t uint64) {
+// Atomically update the commit index, and return whether it changed
+func (r *RaftImpl) setCommitIndex(t uint64) bool {
   r.latch.Lock()
   defer r.latch.Unlock()
+
+  if r.commitIndex == t {
+    return false
+  }
   r.commitIndex = t
+  return true
 }
 
 func (r *RaftImpl) GetLastApplied() uint64 {

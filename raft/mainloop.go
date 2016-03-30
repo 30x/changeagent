@@ -230,10 +230,16 @@ func (r *RaftImpl) leaderLoop(state *raftState) chan bool {
       prop.rc <- pr
 
     case peerMatch := <- state.peerMatchChanges:
+      // Got back a changed applied index from a peer. Decide if we have a commit and
+      // process it if we do.
       state.peerMatches[peerMatch.id] = peerMatch.newMatch
       newIndex := r.calculateCommitIndex(state)
-      r.setCommitIndex(newIndex)
-      r.applyCommittedEntries(newIndex)
+      if r.setCommitIndex(newIndex) {
+        r.applyCommittedEntries(newIndex)
+        for _, p := range(state.peers) {
+          p.poke()
+        }
+      }
 
     case change := <- r.configChanges:
       r.handleLeaderConfigChange(state, change)

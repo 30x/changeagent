@@ -24,6 +24,7 @@ type raftPeer struct {
   id uint64
   r *RaftImpl
   proposals chan uint64
+  pokes chan bool
   changeChan chan<- peerMatchResult
   stopChan chan bool
 }
@@ -33,6 +34,7 @@ func startPeer(id uint64, r *RaftImpl, changes chan<- peerMatchResult) *raftPeer
     id: id,
     r: r,
     proposals: make(chan uint64, 1000),
+    pokes: make(chan bool, 1),
     changeChan: changes,
     stopChan: make(chan bool, 1),
   }
@@ -46,6 +48,11 @@ func (p *raftPeer) stop() {
 
 func (p *raftPeer) propose(ix uint64) {
   p.proposals <- ix
+}
+
+// Wake up the loop and send another heartbeat with a new commit index
+func (p *raftPeer) poke() {
+  p.pokes <- true
 }
 
 func (p *raftPeer) peerLoop() {
@@ -82,19 +89,29 @@ func (p *raftPeer) peerLoop() {
 
     select {
     case <- hbTimeout.C:
+      // Heartbeat timer expired. Send a heartbeat so that a new leader is not elected.
+      // Also cancel the built-in failure delay.
       failureDelay = false
       if !rpcRunning && (nextIndex == desiredIndex) {
-        // Timeout is up. Send a heartbeat so that a new leader is not elected.
         p.sendHeartbeat(desiredIndex, responseChan)
         rpcRunning = true
       }
       hbTimeout.Reset(HeartbeatTimeout)
 
+    case <- p.pokes:
+      // The main loop asked us to send an early heartbeat because the commit index changed
+      if !rpcRunning && (nextIndex == desiredIndex) && !failureDelay {
+        p.sendHeartbeat(desiredIndex, responseChan)
+        rpcRunning = true
+        hbTimeout.Reset(HeartbeatTimeout)
+      }
+
     case newIndex := <- p.proposals:
-      // These are pushed to this routine from the main raft impl
+      // A new proposal was pushed to us from the main loop
       desiredIndex = newIndex
 
     case response := <- responseChan:
+      // We got back an RPC response
       rpcRunning = false
       if response.err == nil {
         nextIndex = p.handleRpcResult(response)
