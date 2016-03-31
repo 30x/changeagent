@@ -1,0 +1,11 @@
+package: revision.aeip.apigee.net/greg/changeagent
+import:
+- package: github.com/golang/glog
+- package: github.com/golang/protobuf
+  subpackages:
+  - /proto
+- package: github.com/gorilla/mux
+- package: github.com/samuel/go-zookeeper
+  subpackages:
+  - /zk
+- package: github.com/satori/go.uuid

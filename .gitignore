@@ -4,5 +4,6 @@ agent/agent
 loader/loader
 agent/Godeps/Readme
 agent/Godeps/_workspace
+vendor
 *.iml
 .idea/

@@ -21,8 +21,9 @@
 #
 # Now run:
 #
-# docker run -it -p 8080:8080 -v /home/docker/agent/etc:/etc/changeagent \
-#   /home/docker/agent/data1:/var/changeagent/data changeagent -id 1
+# docker run -it -p 8080:8080 \
+#   -v /home/docker/agent/etc:/etc/changeagent \
+#   -v /home/docker/agent/data1:/var/changeagent/data changeagent -id 1
 #
 # (Pass a different "-id" parameter for each different cluster node.)
 #
@@ -36,14 +37,15 @@
 # Each agent will store its database in /var/changeagent/data. Since data is important,
 # this should be a persistent volume.
 
-FROM  gbrail/go-rocksdb:4.2
+FROM  gbrail/go-rocksdb:4.2.1
 
 COPY . /go/src/revision.aeip.apigee.net/greg/changeagent
 
-WORKDIR /go/src/revision.aeip.apigee.net/greg/changeagent/agent
+WORKDIR /go/src/revision.aeip.apigee.net/greg/changeagent
 
-RUN godep restore \
- && godep go build -v \
+RUN \
+    glide install \
+ && (cd agent; go build) \
  && mkdir -p /var/changeagent/data \
  && mkdir -p /etc/changeagent
 
@@ -53,5 +55,5 @@ VOLUME /var/changeagent/data /etc/changeagent
 
 ENV LD_LIBRARY_PATH=/usr/local/lib
 
-ENTRYPOINT ["./agent", "-logtostderr", "-p", "8080", "-d", "/var/changeagent/data", "-s", "/etc/changeagent/disco"]
+ENTRYPOINT ["./agent/agent", "-logtostderr", "-p", "8080", "-d", "/var/changeagent/data", "-s", "/etc/changeagent/disco"]
 

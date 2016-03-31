@@ -4,4 +4,4 @@ changeagent needs to run except for itself:
 * go language support (so we can build during "docker build")
 * RocksDB 4.2, as a shared library for easy building
 * snappy, used by RocksDB
-* godep, for a consistent Go build.
+* glide, for a consistent go build.

@@ -7,6 +7,8 @@ Tenants have different UUIDs across nodes.
 
 Election deadlock is possible, at least with two out of three nodes running.
   Only happened a few times.
+  
+Insert performance is inconsistent. It seems like many inserts take as long as the HB interval.
 
 ## High Priority
 
