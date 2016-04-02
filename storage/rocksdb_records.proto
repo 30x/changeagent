@@ -10,3 +10,9 @@ message EntryPb {
   optional string key = 7;          // Key within the collection
   optional bytes data = 8;         // Actual user-defined data
 }
+
+message CollectionStartPb {
+  required bytes collectionId = 1;
+  required string collectionName = 2;
+  optional bytes tenantId = 3;
+}

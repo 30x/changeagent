@@ -74,10 +74,8 @@ type Storage interface {
   CreateCollection(tenantID uuid.UUID, collectionName string, collectionId uuid.UUID) error
   // Given the NAME of a collection and a tenant, return the unique ID of the collection
   GetCollectionByName(tenantID uuid.UUID, collectionName string) (uuid.UUID, error)
-  // Given a collection ID, return the tenant name
-  GetCollectionByID(collectionID uuid.UUID) (string, error)
-  // Given a collection ID, return the tenant ID
-  GetCollectionTenantByID(collectionID uuid.UUID) (uuid.UUID, error)
+  // Given a collection ID, return the collection name and the tenant ID
+  GetCollectionByID(collectionID uuid.UUID) (string, uuid.UUID, error)
   // Get all the IDs of the collections for a particular tenant.
   GetTenantCollections(tenantID uuid.UUID) ([]Collection, error)
 
@@ -117,7 +115,7 @@ func EncodeEntry(entry *Entry) ([]byte, error) {
   }
 
   var tenantID []byte
-  if uuid.Equal(entry.Tenant, uuid.Nil) {
+  if !uuid.Equal(entry.Tenant, uuid.Nil) {
     tenantID = entry.Tenant.Bytes()
   } else {
     tenantID = nil

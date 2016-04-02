@@ -14,8 +14,9 @@ import (
 /*
  * These records must be written so that we can iterate over the elements of a collection.
  */
-func (s *LevelDBStorage) writeCollectionDelimiters(id uuid.UUID, name string) error {
-  valBuf, valLen := stringToPtr(name)
+func (s *LevelDBStorage) writeCollectionDelimiters(id uuid.UUID, name string, tenantId uuid.UUID) error {
+  valBuf, valLen, err := collectionDelimiterToPtr(id, name, tenantId)
+  if err != nil { return err }
   defer freePtr(valBuf)
 
   startBuf, startLen, err := startIndexToPtr(id)
@@ -34,21 +35,22 @@ func (s *LevelDBStorage) writeCollectionDelimiters(id uuid.UUID, name string) er
 }
 
 /*
- * Return the name of a collection, or an empty string if it is not defined
+ * Return the name of a collection, or an empty string if it is not defined.
+ * Return the collection name, and the UUID of the tenant
  */
-func (s *LevelDBStorage) readCollectionStart(id uuid.UUID) (string, error) {
+func (s *LevelDBStorage) readCollectionStart(id uuid.UUID) (string, uuid.UUID, error) {
   startBuf, startLen, err := startIndexToPtr(id)
-  if err != nil { return "", err }
+  if err != nil { return "", uuid.Nil, err }
   defer freePtr(startBuf)
 
   ptr, len, err := s.readEntry(s.indices, startBuf, startLen)
-  if err != nil { return "", err }
-  if ptr == nil { return "", nil }
+  if err != nil { return "", uuid.Nil, err }
+  if ptr == nil { return "", uuid.Nil, err }
 
   defer freePtr(ptr)
-  ret, err := ptrToString(ptr, len)
-  if err != nil { return "", err }
-  return ret, nil
+  name, tenantId, err := ptrToCollectionDelimiter(ptr, len)
+  if err != nil { return "", uuid.Nil, err }
+  return name, tenantId, nil
 }
 
 /*

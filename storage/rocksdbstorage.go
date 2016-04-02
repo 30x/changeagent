@@ -3,7 +3,7 @@ package storage
 /*
 #include <stdlib.h>
 #include "rocksdb_native.h"
-#cgo CFLAGS: -g -O0 -I/usr/local/include
+#cgo CFLAGS: -g -O3 -I/usr/local/include
 #cgo LDFLAGS: -L/usr/local/lib -lrocksdb
 */
 import "C"
@@ -76,11 +76,11 @@ func CreateRocksDBStorage(baseFile string, cacheSize uint) (*LevelDBStorage, err
   }()
 
   // Lay down the records for a special collection that will hold names and IDs of each tenant
-  collName, err := stor.readCollectionStart(tenantsCollection)
+  collName, _, err := stor.readCollectionStart(tenantsCollection)
   if err != nil { return nil, err }
   if collName == "" {
     glog.V(2).Infof("Creating tenants collection %s", TenantsCollectionId)
-    err = stor.writeCollectionDelimiters(tenantsCollection, "_tenants")
+    err = stor.writeCollectionDelimiters(tenantsCollection, "_tenants", uuid.Nil)
     if err != nil { return nil, err }
   }
 
@@ -404,7 +404,7 @@ func (s *LevelDBStorage) DeleteEntries(first uint64) error {
 func (s *LevelDBStorage) CreateTenant(tenantName string, id uuid.UUID) error {
   // This record delimits the collection for when we are iterating on it
   // It also lets us read the name later given the ID
-  err := s.writeCollectionDelimiters(id, tenantName)
+  err := s.writeCollectionDelimiters(id, tenantName, uuid.Nil)
   if err != nil { return err }
 
   // Put an entry in the special tenants collection that contains the new tenant ID
@@ -430,7 +430,7 @@ func (s *LevelDBStorage) GetTenantByName(tenantName string) (uuid.UUID, error) {
 
 func (s *LevelDBStorage) GetTenantByID(tenantID uuid.UUID) (string, error) {
   // Read the special start of tenant record which happens to include the name
-  name, err := s.readCollectionStart(tenantID)
+  name, _, err := s.readCollectionStart(tenantID)
   if err != nil { return "", err }
   return name, nil
 }
@@ -466,7 +466,7 @@ func (s *LevelDBStorage) GetTenants() ([]Collection, error) {
 }
 
 func (s *LevelDBStorage) ensureTenant(tenantID uuid.UUID) error {
-  tenantName, err := s.readCollectionStart(tenantID)
+  tenantName, _, err := s.readCollectionStart(tenantID)
   if err != nil { return err }
   if tenantName == "" {
     return fmt.Errorf("Unknown tenant \"%s\"", tenantID)
@@ -480,7 +480,7 @@ func (s *LevelDBStorage) CreateCollection(tenantID uuid.UUID, collectionName str
 
   // This record delimits the collection for when we are iterating on it
   // It also lets us read the name later given the ID
-  err = s.writeCollectionDelimiters(id, collectionName)
+  err = s.writeCollectionDelimiters(id, collectionName, tenantID)
   if err != nil { return err }
 
   // Put an entry in the tenants' own collection that contains the new tenant ID
@@ -505,14 +505,11 @@ func (s *LevelDBStorage) GetCollectionByName(tenantID uuid.UUID, collectionName 
   return id, nil
 }
 
-func (s *LevelDBStorage) GetCollectionByID(collectionID uuid.UUID) (string, error) {
+func (s *LevelDBStorage) GetCollectionByID(collectionID uuid.UUID) (string, uuid.UUID, error) {
   // Read the special start of tenant record which happens to include the name
-  name, err := s.readCollectionStart(collectionID)
-  if err != nil { return "", err }
-  return name, nil
-}
-
-func (s *LevelDBStorage) GetCollectionTenantByID(collectionID uuid.UUID) (uuid.UUID, error) {
+  name, id, err := s.readCollectionStart(collectionID)
+  if err != nil { return "", uuid.Nil, err }
+  return name, id, nil
 }
 
 func (s *LevelDBStorage) GetTenantCollections(tenantID uuid.UUID) ([]Collection, error) {
@@ -549,7 +546,7 @@ func (s *LevelDBStorage) GetTenantCollections(tenantID uuid.UUID) ([]Collection,
 }
 
 func (s *LevelDBStorage) ensureCollection(collectionID uuid.UUID) error {
-  tenantName, err := s.readCollectionStart(collectionID)
+  tenantName, _, err := s.readCollectionStart(collectionID)
   if err != nil { return err }
   if tenantName == "" {
     return fmt.Errorf("Unknown collection \"%s\"", collectionID)

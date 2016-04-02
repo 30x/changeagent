@@ -14,6 +14,7 @@ import (
   "unsafe"
   "encoding/binary"
   "github.com/satori/go.uuid"
+  "github.com/golang/protobuf/proto"
 )
 
 /* These have to match constants in leveldb_native.h */
@@ -283,6 +284,43 @@ func indexRange(id uuid.UUID, isEnd bool) (unsafe.Pointer, C.size_t, error) {
 
   ptr, len := bytesToPtr(buf.Bytes())
   return ptr, len, nil
+}
+
+/*
+ * Given collection and optional tenant info, create a pointer.
+ */
+func collectionDelimiterToPtr(id uuid.UUID, name string, tenantId uuid.UUID) (unsafe.Pointer, C.size_t, error) {
+  collectionId := id.Bytes()
+  val := CollectionStartPb{
+    CollectionId: collectionId,
+    CollectionName: &name,
+  }
+  if !uuid.Equal(tenantId, uuid.Nil) {
+    tenantId := tenantId.Bytes()
+    val.TenantId = tenantId
+  }
+
+  bytes, err := proto.Marshal(&val)
+  if err != nil {
+    return nil, 0, err
+  }
+
+  ptr, len := bytesToPtr(bytes)
+  return ptr, len, nil
+}
+
+func ptrToCollectionDelimiter(ptr unsafe.Pointer, len C.size_t) (string, uuid.UUID, error) {
+  if len < 0 { return "", uuid.Nil, errors.New("Invalid entry: invalid") }
+  bytes := ptrToBytes(ptr, len)
+
+  var val CollectionStartPb
+  err := proto.Unmarshal(bytes, &val)
+  if err != nil {
+    return "", uuid.Nil, err
+  }
+
+  tenantId := uuid.FromBytesOrNil(val.TenantId)
+  return *val.CollectionName, tenantId, nil
 }
 
 func freeString(c *C.char) {

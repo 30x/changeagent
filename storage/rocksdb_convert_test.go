@@ -159,6 +159,14 @@ var _ = Describe("Conversion", func() {
     Expect(err).Should(Succeed())
     Expect(newId.Bytes()).Should(Equal(id.Bytes()))
   })
+
+  It("Collection Start", func() {
+    s := testCollectionStart("foo")
+    Expect(s).Should(BeTrue())
+
+    err := quick.Check(testCollectionStart, nil)
+    Expect(err).Should(Succeed())
+  })
 })
 
 func testIntKey(kt int, key uint64) bool {
@@ -200,10 +208,12 @@ func testStringValue(str string) bool {
 func testEntry(term uint64, ts int64, key string, data []byte) bool {
   tst := time.Unix(0, ts)
   coll := uuid.NewV4()
+  tenant := uuid.NewV4()
   e := &Entry{
     Term: term,
     Timestamp: tst,
     Collection: coll,
+    Tenant: tenant,
     Key: key,
     Data: data,
   }
@@ -214,7 +224,8 @@ func testEntry(term uint64, ts int64, key string, data []byte) bool {
   Expect(err).Should(Succeed())
   Expect(re.Term).Should(Equal(e.Term))
   Expect(re.Timestamp).Should(Equal(e.Timestamp))
-  Expect(re.Collection).Should(Equal(e.Collection))
+  Expect(uuid.Equal(re.Collection, e.Collection)).Should(BeTrue())
+  Expect(uuid.Equal(re.Tenant, e.Tenant)).Should(BeTrue())
   Expect(re.Key).Should(Equal(e.Key))
   Expect(re.Data).Should(Equal(re.Data))
   return true
@@ -356,6 +367,21 @@ func testTenantIndexCompare(ix1, ix2 uint64, sameId bool) bool {
   } else {
     Expect(cmp).Should(BeEquivalentTo(0))
   }
+  return true
+}
+
+func testCollectionStart(name string) bool {
+  collectionId := uuid.NewV4()
+  tenantId := uuid.NewV4()
+
+  ptr, len, err := collectionDelimiterToPtr(collectionId, name, tenantId)
+  Expect(err).Should(Succeed())
+  defer freePtr(ptr)
+
+  tenantName, newTenantId, err := ptrToCollectionDelimiter(ptr, len)
+  Expect(err).Should(Succeed())
+  Expect(tenantName).Should(Equal(name))
+  Expect(uuid.Equal(tenantId, newTenantId)).Should(BeTrue())
   return true
 }
 

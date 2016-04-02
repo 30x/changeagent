@@ -51,9 +51,10 @@ var _ = Describe("Index test", func() {
     Expect(err).Should(Succeed())
     Expect(idStr).Should(Equal(id))
 
-    name, err := indexTestDb.GetCollectionByID(id)
+    name, tenantId, err := indexTestDb.GetCollectionByID(id)
     Expect(err).Should(Succeed())
     Expect(name).Should(Equal("singleCollection"))
+    Expect(uuid.Equal(tenantId, tenant)).Should(BeTrue())
 
     ixes, err := indexTestDb.GetTenantCollections(tenant)
     Expect(err).Should(Succeed())

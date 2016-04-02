@@ -10,6 +10,7 @@ It is generated from these files:
 
 It has these top-level messages:
 	EntryPb
+	CollectionStartPb
 */
 package storage
 
@@ -90,6 +91,38 @@ func (m *EntryPb) GetKey() string {
 func (m *EntryPb) GetData() []byte {
 	if m != nil {
 		return m.Data
+	}
+	return nil
+}
+
+type CollectionStartPb struct {
+	CollectionId     []byte  `protobuf:"bytes,1,req,name=collectionId" json:"collectionId,omitempty"`
+	CollectionName   *string `protobuf:"bytes,2,req,name=collectionName" json:"collectionName,omitempty"`
+	TenantId         []byte  `protobuf:"bytes,3,opt,name=tenantId" json:"tenantId,omitempty"`
+	XXX_unrecognized []byte  `json:"-"`
+}
+
+func (m *CollectionStartPb) Reset()         { *m = CollectionStartPb{} }
+func (m *CollectionStartPb) String() string { return proto.CompactTextString(m) }
+func (*CollectionStartPb) ProtoMessage()    {}
+
+func (m *CollectionStartPb) GetCollectionId() []byte {
+	if m != nil {
+		return m.CollectionId
+	}
+	return nil
+}
+
+func (m *CollectionStartPb) GetCollectionName() string {
+	if m != nil && m.CollectionName != nil {
+		return *m.CollectionName
+	}
+	return ""
+}
+
+func (m *CollectionStartPb) GetTenantId() []byte {
+	if m != nil {
+		return m.TenantId
 	}
 	return nil
 }

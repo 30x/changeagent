@@ -147,8 +147,8 @@ func (a *ChangeAgent) handleChangeCommand(entry *storage.Entry) error {
     if cmd.GetName() == "" {
       return errors.New("Invalid command: tenant name is missing")
     }
-    glog.V(2).Infof("Creating tenant %s", cmd.GetName())
-    tenantID := uuid.NewV4()
+    tenantID := uuid.FromBytesOrNil(cmd.GetTenant())
+    glog.V(2).Infof("Creating tenant %s %s", cmd.GetName(), tenantID.String())
     err := a.stor.CreateTenant(cmd.GetName(), tenantID)
     if err == nil {
       return nil
@@ -162,11 +162,13 @@ func (a *ChangeAgent) handleChangeCommand(entry *storage.Entry) error {
     if cmd.GetName() == "" {
       return errors.New("Invalid command: collection name is missing")
     }
+    if cmd.GetCollection() == nil {
+      return errors.New("Invalid command: collection ID is missing")
+    }
 
-    tenantID, err := uuid.FromBytes(cmd.GetTenant())
-    if err != nil { return err }
+    tenantID := uuid.FromBytesOrNil(cmd.GetTenant())
+    collectionID := uuid.FromBytesOrNil(cmd.GetCollection())
     glog.V(2).Infof("Creating collection %s for tenant %s", cmd.GetName(), tenantID)
-    collectionID := uuid.NewV4()
     err = a.stor.CreateCollection(tenantID, cmd.GetName(), collectionID)
     if err == nil {
       return nil

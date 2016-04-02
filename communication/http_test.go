@@ -82,8 +82,8 @@ func TestRaftCalls(t *testing.T) {
     Index: 1,
     Term: 2,
     Timestamp: time.Now(),
-    Tenant: &tenant,
-    Collection: &collection,
+    Tenant: tenant,
+    Collection: collection,
     Key: "baz",
     Data: []byte("Hello!"),
   }
@@ -92,8 +92,8 @@ func TestRaftCalls(t *testing.T) {
     Index: 2,
     Term: 3,
     Timestamp: time.Now(),
-    Tenant: &tenant,
-    Collection: &collection,
+    Tenant: tenant,
+    Collection: collection,
     Key: "baz",
     Data: []byte("Goodbye!"),
   }
@@ -113,8 +113,8 @@ func TestRaftCalls(t *testing.T) {
     Timestamp: time.Now(),
     Index: 3,
     Term: 3,
-    Tenant: &tenant,
-    Collection: &collection,
+    Tenant: tenant,
+    Collection: collection,
     Key: "baz",
     Data: []byte("Hello, World!"),
   }
@@ -173,10 +173,10 @@ func (r *testRaft) Append(req *AppendRequest) (*AppendResponse, error) {
     if e.Timestamp != ee.Timestamp {
       r.t.Fatal("Timestamps do not match")
     }
-    if !uuid.Equal(*e.Tenant, *ee.Tenant) {
+    if !uuid.Equal(e.Tenant, ee.Tenant) {
       r.t.Fatal("Tenants do not match")
     }
-    if !uuid.Equal(*e.Collection, *ee.Collection) {
+    if !uuid.Equal(e.Collection, ee.Collection) {
       r.t.Fatal("Collections do not match")
     }
     if e.Key != ee.Key {
@@ -197,8 +197,8 @@ func (r *testRaft) Propose(e *storage.Entry) (uint64, error) {
   if ee.Index != e.Index { return 0, errors.New("Incorrect index") }
   if ee.Term != e.Term { return 0, errors.New("Incorrect term") }
   if ee.Timestamp != e.Timestamp { return 0, errors.New("Incorrect timestamp") }
-  if !uuid.Equal(*ee.Tenant, *e.Tenant) { return 0, errors.New("Incorrect tenant") }
-  if !uuid.Equal(*ee.Collection, *e.Collection) { return 0, errors.New("Incorrect collection") }
+  if !uuid.Equal(ee.Tenant, e.Tenant) { return 0, errors.New("Incorrect tenant") }
+  if !uuid.Equal(ee.Collection, e.Collection) { return 0, errors.New("Incorrect collection") }
   if ee.Key != e.Key { return 0, errors.New("Incorrect key") }
   if !bytes.Equal(ee.Data, e.Data) { return 0, errors.New("Incorrect data") }
 

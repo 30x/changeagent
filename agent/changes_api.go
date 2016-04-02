@@ -62,7 +62,19 @@ func (a *ChangeAgent) postChange(resp http.ResponseWriter, req *http.Request, te
     writeError(resp, http.StatusBadRequest, errors.New("Invalid JSON"))
     return
   }
-  proposal.Tenant = tenantID
+
+  // Fix up tenant and collection IDs
+  if !uuid.Equal(proposal.Collection, uuid.Nil) && uuid.Equal(proposal.Tenant, uuid.Nil) {
+    _, collectionTenant, err := a.stor.GetCollectionByID(proposal.Collection)
+    if err != nil {
+      writeError(resp, http.StatusInternalServerError, err)
+      return
+    }
+    proposal.Tenant = collectionTenant
+  }
+  if !uuid.Equal(tenantID, uuid.Nil) {
+    proposal.Tenant = tenantID
+  }
 
   newEntry, err := a.makeProposal(proposal)
   if err != nil {

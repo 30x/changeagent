@@ -4,4 +4,5 @@ message AgentCommand {
   required string command = 1;
   optional string name = 2;
   optional bytes tenant = 3;
+  optional bytes collection = 4;
 }

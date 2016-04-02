@@ -271,9 +271,10 @@ func verifyCollection(readPort int, collectionId string) {
 
   resp, err := http.Get(uri)
   Expect(err).Should(Succeed())
-  Expect(resp.StatusCode).Should(BeEquivalentTo(200))
   body, err := ioutil.ReadAll(resp.Body)
   Expect(err).Should(Succeed())
+  fmt.Fprintf(GinkgoWriter, "Collection entries: %s\n", string(body))
+  Expect(resp.StatusCode).Should(BeEquivalentTo(200))
 
   var entries []WriteResponse
   err = json.Unmarshal(body, &entries)

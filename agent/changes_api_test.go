@@ -61,6 +61,56 @@ var _ = Describe("Changes API Test", func() {
     Expect(change.Index).Should(Equal(lastNewChange))
   })
 
+  It("POST tenant record", func() {
+    request :=
+      fmt.Sprintf("{\"tenant\":\"%s\",\"data\":{\"hello\":\"world!\",\"foo\":999}}",
+        tenant)
+    resp := postChange(request)
+
+    lastNewChange++
+    expected := fmt.Sprintf("{\"_id\":%d}", lastNewChange)
+    Expect(resp).Should(MatchJSON(expected))
+
+    respExpected :=
+      fmt.Sprintf("[{\"_id\":%d,\"_ts\":[0-9]+,\"tenant\":\"%s\",\"data\":{\"hello\":\"world!\",\"foo\":999}}]",
+        lastNewChange, tenant)
+    peerChanges := getChanges(lastNewChange - 1, 100, 0)
+
+    Expect(peerChanges).Should(MatchRegexp(respExpected))
+
+    tenantChanges := getTenantChanges(tenant, lastNewChange - 1, 100, 0)
+    Expect(tenantChanges).Should(MatchRegexp(respExpected))
+  })
+
+  It("POST tenant record 2", func() {
+    request := "{\"data\":{\"hello\":\"world!\",\"foo\":998}}"
+
+    pr, err := http.Post(
+      fmt.Sprintf("%s/tenants/%s/changes", listenUri, tenant),
+      jsonContent, strings.NewReader(request))
+    Expect(err).Should(Succeed())
+    body, err := ioutil.ReadAll(pr.Body)
+    Expect(err).Should(Succeed())
+    fmt.Fprintf(GinkgoWriter, "Response: %s\n", string(body))
+    Expect(pr.StatusCode).Should(Equal(200))
+
+    resp := string(body)
+
+    lastNewChange++
+    expected := fmt.Sprintf("{\"_id\":%d}", lastNewChange)
+    Expect(resp).Should(MatchJSON(expected))
+
+    respExpected :=
+      fmt.Sprintf("[{\"_id\":%d,\"_ts\":[0-9]+,\"tenant\":\"%s\",\"data\":{\"hello\":\"world!\",\"foo\":998}}]",
+        lastNewChange, tenant)
+    peerChanges := getChanges(lastNewChange - 1, 100, 0)
+
+    Expect(peerChanges).Should(MatchRegexp(respExpected))
+
+    tenantChanges := getTenantChanges(tenant, lastNewChange - 1, 100, 0)
+    Expect(tenantChanges).Should(MatchRegexp(respExpected))
+  })
+
   It("POST indexed record", func() {
     request :=
       fmt.Sprintf("{\"tenant\":\"%s\",\"collection\":\"%s\",\"key\":\"baz\",\"data\":{\"hello\":\"world!\",\"foo\":456}}",
@@ -83,17 +133,38 @@ var _ = Describe("Changes API Test", func() {
   })
 
   It("POST indexed record 2", func() {
+    request :=
+      fmt.Sprintf("{\"collection\":\"%s\",\"key\":\"baz\",\"data\":{\"hello\":\"world!\",\"foo\":458}}",
+        collection)
+    resp := postChange(request)
+
+    lastNewChange++
+    expected := fmt.Sprintf("{\"_id\":%d}", lastNewChange)
+    Expect(resp).Should(MatchJSON(expected))
+
+    respExpected :=
+      fmt.Sprintf("[{\"_id\":%d,\"_ts\":[0-9]+,\"tenant\":\"%s\",\"collection\":\"%s\",\"key\":\"baz\",\"data\":{\"hello\":\"world!\",\"foo\":458}}]",
+        lastNewChange, tenant, collection)
+    peerChanges := getChanges(lastNewChange - 1, 100, 0)
+
+    Expect(peerChanges).Should(MatchRegexp(respExpected))
+
+    tenantChanges := getTenantChanges(tenant, lastNewChange - 1, 100, 0)
+    Expect(tenantChanges).Should(MatchRegexp(respExpected))
+  })
+
+  It("POST indexed record 3", func() {
     request := "{\"key\":\"fooey\",\"data\":{\"hello\":\"world!\",\"foo\":888}}"
 
     pr, err := http.Post(
       fmt.Sprintf("%s/collections/%s/keys", listenUri, collection),
       jsonContent, strings.NewReader(request))
     Expect(err).Should(Succeed())
-    Expect(pr.StatusCode).Should(Equal(200))
-
     body, err := ioutil.ReadAll(pr.Body)
     Expect(err).Should(Succeed())
     resp := string(body)
+    fmt.Fprintf(GinkgoWriter, "Response: %s\n", resp)
+    Expect(pr.StatusCode).Should(Equal(200))
 
     lastNewChange++
     expected := fmt.Sprintf("{\"_id\":%d}", lastNewChange)
@@ -116,9 +187,9 @@ var _ = Describe("Changes API Test", func() {
     changes := postChanges(collection, 2)
 
     templ :=
-      "[{\"_id\":%d,\"_ts\":[0-9]+,\"collection\":\"%s\",\"key\":\"baz\",\"data\":{\"hello\":\"world!\",\"count\":1}}," +
-      "{\"_id\":%d,\"_ts\":[0-9]+,\"collection\":\"%s\",\"key\":\"baz\",\"data\":{\"hello\":\"world!\",\"count\":2}}]"
-    respExpected := fmt.Sprintf(templ, lastNewChange - 1, collection, lastNewChange, collection)
+      "[{\"_id\":%d,\"_ts\":[0-9]+,\"tenant\":\"%s\",\"collection\":\"%s\",\"key\":\"baz\",\"data\":{\"hello\":\"world!\",\"count\":1}}," +
+      "{\"_id\":%d,\"_ts\":[0-9]+,\"tenant\":\"%s\",\"collection\":\"%s\",\"key\":\"baz\",\"data\":{\"hello\":\"world!\",\"count\":2}}]"
+    respExpected := fmt.Sprintf(templ, lastNewChange - 1, tenant, collection, lastNewChange, tenant, collection)
     peerChanges := getChanges(changes[0] - 1, 100, 0)
 
     Expect(peerChanges).Should(MatchRegexp(respExpected))

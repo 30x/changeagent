@@ -26,6 +26,7 @@ type AgentCommand struct {
 	Command          *string `protobuf:"bytes,1,req,name=command" json:"command,omitempty"`
 	Name             *string `protobuf:"bytes,2,opt,name=name" json:"name,omitempty"`
 	Tenant           []byte  `protobuf:"bytes,3,opt,name=tenant" json:"tenant,omitempty"`
+	Collection       []byte  `protobuf:"bytes,4,opt,name=collection" json:"collection,omitempty"`
 	XXX_unrecognized []byte  `json:"-"`
 }
 
@@ -50,6 +51,13 @@ func (m *AgentCommand) GetName() string {
 func (m *AgentCommand) GetTenant() []byte {
 	if m != nil {
 		return m.Tenant
+	}
+	return nil
+}
+
+func (m *AgentCommand) GetCollection() []byte {
+	if m != nil {
+		return m.Collection
 	}
 	return nil
 }
