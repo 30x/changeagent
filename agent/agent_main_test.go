@@ -6,12 +6,10 @@ import (
   "os"
   "net"
   "net/http"
-  "path"
   "strings"
   "testing"
   "time"
   "revision.aeip.apigee.net/greg/changeagent/discovery"
-  "revision.aeip.apigee.net/greg/changeagent/raft"
 
   . "github.com/onsi/ginkgo"
   . "github.com/onsi/gomega"
@@ -23,9 +21,10 @@ const (
   DebugMode = false
 )
 
-var testListener []*net.TCPListener
-var testAgents []*ChangeAgent
-var leaderIndex int
+var testListener *net.TCPListener
+var testAgent *ChangeAgent
+var listenAddr string
+var listenUri string
 
 func TestAgent(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -42,41 +41,23 @@ var _ = BeforeSuite(func() {
 
   // Create three TCP listeners -- we'll use them for a cluster
   anyPort := &net.TCPAddr{}
-  var addrs []string
-  for li := 0; li < 3; li++ {
-    listener, err := net.ListenTCP("tcp4", anyPort)
-    if err != nil { panic("Can't listen on a TCP port") }
-    _, port, err := net.SplitHostPort(listener.Addr().String())
-    if err != nil { panic("Invalid listen address") }
-    addrs = append(addrs, fmt.Sprintf("localhost:%s", port))
-    testListener = append(testListener, listener)
-  }
-  disco := discovery.CreateStaticDiscovery(addrs)
+  testListener, err := net.ListenTCP("tcp4", anyPort)
+  if err != nil { panic("Can't listen on a TCP port") }
+  _, port, err := net.SplitHostPort(testListener.Addr().String())
+  if err != nil { panic("Invalid listen address") }
+  listenAddr = fmt.Sprintf("localhost:%s", port)
+  disco := discovery.CreateStaticDiscovery([]string{listenAddr})
+  listenUri = fmt.Sprintf("http://localhost:%s", port)
+  fmt.Fprintf(GinkgoWriter, "Listening on port %s\n", port)
 
-  agent1, err := startAgent(1, disco, path.Join(DataDir, "test1"), testListener[0])
+  testAgent, err = startAgent(1, disco, DataDir, testListener)
   Expect(err).Should(Succeed())
-  testAgents = append(testAgents, agent1)
 
-  agent2, err := startAgent(2, disco, path.Join(DataDir, "test2"), testListener[1])
-  Expect(err).Should(Succeed())
-  testAgents = append(testAgents, agent2)
-
-  agent3, err := startAgent(3, disco, path.Join(DataDir, "test3"), testListener[2])
-  Expect(err).Should(Succeed())
-  testAgents = append(testAgents, agent3)
+  time.Sleep(time.Second)
 })
-
 
 var _ = AfterSuite(func() {
-  for i := range(testAgents) {
-    cleanAgent(testAgents[i], testListener[i])
-  }
-})
-
-var _ = Describe("Agent startup test", func() {
-  It("Leader is elected", func() {
-    Expect(waitForLeader()).Should(Equal(true))
-  })
+  cleanAgent(testAgent, testListener)
 })
 
 func startAgent(id uint64, disco discovery.Discovery, dir string, listener *net.TCPListener) (*ChangeAgent, error) {
@@ -84,7 +65,12 @@ func startAgent(id uint64, disco discovery.Discovery, dir string, listener *net.
 
   agent, err := StartChangeAgent(id, disco, dir, mux)
   if err != nil { return nil, err }
-  go http.Serve(listener, mux)
+  go func() {
+    err = http.Serve(listener, mux)
+    if err != nil {
+      panic(fmt.Sprintf("Error serving HTTP: %s", err))
+    }
+  }()
 
   return agent, nil
 }
@@ -97,72 +83,14 @@ func cleanAgent(agent *ChangeAgent, l *net.TCPListener) {
   l.Close()
 }
 
-func countRafts() (int, int) {
-  var followers, leaders int
-
-  for _, r := range(testAgents) {
-    switch r.GetRaftState() {
-    case raft.Follower:
-      followers++
-    case raft.Leader:
-      leaders++
-    }
-  }
-
-  return followers, leaders
-}
-
-func waitForLeader() bool {
-  for i := 0; i < 40; i++ {
-    _, leaders := countRafts()
-    if leaders == 0 {
-      time.Sleep(time.Second)
-    } else if leaders == 1 {
-      return true
-    } else {
-      panic("More than one leader elected!")
-    }
-  }
-  return false
-}
-
-func getLeaderIndex() {
-  for i, r := range(testAgents) {
-    switch r.GetRaftState() {
-    case raft.Leader:
-      leaderIndex = i
-    }
-  }
-}
-
-func getLeaderURI() string {
-  return getListenerURI(leaderIndex)
-}
-
-func getFollowerURIs() []string {
-  var uris []string
-  for i := range(testListener) {
-    if i != leaderIndex {
-      uris = append(uris, getListenerURI(i))
-    }
-  }
-  return uris
-}
-
-func getListenerURI(index int) string {
-  _, port, err := net.SplitHostPort(testListener[index].Addr().String())
-  if err != nil { panic("Error parsing leader port") }
-  return fmt.Sprintf("http://localhost:%s", port)
-}
-
 func ensureTenant(name string) string {
   fmt.Fprintf(GinkgoWriter, "Checking for tenant %s\n", name)
-  gr, err := http.Get(fmt.Sprintf("%s/tenants/%s", getLeaderURI(), name))
+  gr, err := http.Get(fmt.Sprintf("%s/tenants/%s", listenUri, name))
   Expect(err).Should(Succeed())
 
   if gr.StatusCode == 404 {
     // Need to make that tenant the first time
-    uri := getLeaderURI() + "/tenants"
+    uri := listenUri + "/tenants"
     request := fmt.Sprintf("name=%s", name)
 
     fmt.Fprintf(GinkgoWriter, "Creating tenant %s\n", name)
@@ -188,12 +116,12 @@ func ensureTenant(name string) string {
 
 func ensureCollection(tenant, name string) string {
   fmt.Fprintf(GinkgoWriter, "Checking for collection %s\n", name)
-  gr, err := http.Get(fmt.Sprintf("%s/tenants/%s/collections/%s", getLeaderURI(), tenant, name))
+  gr, err := http.Get(fmt.Sprintf("%s/tenants/%s/collections/%s", listenUri, tenant, name))
   Expect(err).Should(Succeed())
 
   if gr.StatusCode == 404 {
     // Need to make that tenant the first time
-    uri := fmt.Sprintf("%s/tenants/%s/collections", getLeaderURI(), tenant)
+    uri := fmt.Sprintf("%s/tenants/%s/collections", listenUri, tenant)
     request := fmt.Sprintf("name=%s", name)
 
     fmt.Fprintf(GinkgoWriter, "Creating collection %s for tenant %s\n", name, tenant)

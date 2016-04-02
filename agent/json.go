@@ -83,12 +83,12 @@ func unmarshalJson(in io.Reader) (*storage.Entry, error) {
   if fullData.Collection != "" {
     collectionID, err := uuid.FromString(fullData.Collection)
     if err != nil { return nil, err }
-    entry.Collection = &collectionID
+    entry.Collection = collectionID
   }
   if fullData.Tenant != "" {
     tenantID, err := uuid.FromString(fullData.Tenant)
     if err != nil { return nil, err }
-    entry.Tenant = &tenantID
+    entry.Tenant = tenantID
   }
 
   return &entry, nil
@@ -149,10 +149,10 @@ func convertData(entry *storage.Entry) *JsonData {
   if entry.Timestamp != defaultTime {
     ret.Timestamp = entry.Timestamp.UnixNano()
   }
-  if entry.Collection != nil {
+  if !uuid.Equal(entry.Collection, uuid.Nil) {
     ret.Collection = entry.Collection.String()
   }
-  if entry.Tenant != nil {
+  if !uuid.Equal(entry.Tenant, uuid.Nil) {
     ret.Tenant = entry.Tenant.String()
   }
 

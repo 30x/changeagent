@@ -15,15 +15,12 @@ var _ = Describe("Index API Test", func() {
   var collection string
 
   BeforeEach(func() {
-    waitForLeader()
-    getLeaderIndex()
-
     tenant = ensureTenant("testTenant")
     collection = ensureCollection(tenant, "testCollection")
   })
 
   It("Verify tenant", func() {
-    gr, err := http.Get(fmt.Sprintf("%s/tenants/%s", getLeaderURI(), tenant))
+    gr, err := http.Get(fmt.Sprintf("%s/tenants/%s", listenUri, tenant))
     Expect(err).Should(Succeed())
     Expect(gr.StatusCode).Should(Equal(200))
 
@@ -31,7 +28,7 @@ var _ = Describe("Index API Test", func() {
     Expect(tenantBody["_id"]).Should(Equal(tenant))
     Expect(tenantBody["name"]).Should(Equal("testTenant"))
 
-    gr, err = http.Get(fmt.Sprintf("%s/tenants/%s", getLeaderURI(), "testTenant"))
+    gr, err = http.Get(fmt.Sprintf("%s/tenants/%s", listenUri, "testTenant"))
     Expect(err).Should(Succeed())
     Expect(gr.StatusCode).Should(Equal(200))
 
@@ -41,7 +38,7 @@ var _ = Describe("Index API Test", func() {
   })
 
   It("Verify collection", func() {
-    gr, err := http.Get(fmt.Sprintf("%s/collections/%s", getLeaderURI(), collection))
+    gr, err := http.Get(fmt.Sprintf("%s/collections/%s", listenUri, collection))
     Expect(err).Should(Succeed())
     Expect(gr.StatusCode).Should(Equal(200))
 
@@ -49,7 +46,7 @@ var _ = Describe("Index API Test", func() {
     Expect(collBody["_id"]).Should(Equal(collection))
     Expect(collBody["name"]).Should(Equal("testCollection"))
 
-    gr, err = http.Get(fmt.Sprintf("%s/tenants/%s/collections/%s", getLeaderURI(), tenant, collection))
+    gr, err = http.Get(fmt.Sprintf("%s/tenants/%s/collections/%s", listenUri, tenant, collection))
     Expect(err).Should(Succeed())
     Expect(gr.StatusCode).Should(Equal(200))
 
@@ -57,7 +54,7 @@ var _ = Describe("Index API Test", func() {
     Expect(collBody["_id"]).Should(Equal(collection))
     Expect(collBody["name"]).Should(Equal("testCollection"))
 
-    gr, err = http.Get(fmt.Sprintf("%s/tenants/%s/collections/%s", getLeaderURI(), tenant, "testCollection"))
+    gr, err = http.Get(fmt.Sprintf("%s/tenants/%s/collections/%s", listenUri, tenant, "testCollection"))
     Expect(err).Should(Succeed())
     Expect(gr.StatusCode).Should(Equal(200))
 
@@ -67,7 +64,7 @@ var _ = Describe("Index API Test", func() {
   })
 
   It("Create tenant", func() {
-    uri := getLeaderURI() + "/tenants"
+    uri := listenUri + "/tenants"
     request := "name=foo"
 
     pr, err := http.Post(uri, FormContent, strings.NewReader(request))
@@ -97,7 +94,7 @@ var _ = Describe("Index API Test", func() {
   })
 
   It("Create collection", func() {
-    uri := fmt.Sprintf("%s/tenants/%s/collections", getLeaderURI(), tenant)
+    uri := fmt.Sprintf("%s/tenants/%s/collections", listenUri, tenant)
     request := "name=bar"
 
     pr, err := http.Post(uri, FormContent, strings.NewReader(request))

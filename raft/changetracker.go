@@ -17,7 +17,7 @@ import (
 
 type changeWaiter struct {
   change uint64
-  id *uuid.UUID
+  id uuid.UUID
   timeout time.Time
   fired bool
   waiter chan uint64
@@ -25,7 +25,7 @@ type changeWaiter struct {
 
 type changeUpdate struct {
   change uint64
-  id     *uuid.UUID
+  id     uuid.UUID
 }
 
 type changeHeap struct {
@@ -43,7 +43,6 @@ type ChangeTracker struct {
 var changeTrackers map[string]*ChangeTracker = make(map[string]*ChangeTracker)
 var trackerLock *sync.Mutex = new(sync.Mutex)
 var timeMax time.Time = time.Unix(1 << 40, 0)
-var zeroUuid = uuid.UUID{}
 
 func CreateTracker() *ChangeTracker {
   waiters := &changeHeap{}
@@ -83,7 +82,7 @@ func (t* ChangeTracker) Close() {
  * Indicate that the current sequence has changed. Wake up any waiting
  * waiters and tell them about it.
  */
-func (t *ChangeTracker) Update(id *uuid.UUID, change uint64) {
+func (t *ChangeTracker) Update(id uuid.UUID, change uint64) {
   u := changeUpdate{
     change: change,
     id: id,
@@ -95,7 +94,7 @@ func (t *ChangeTracker) Update(id *uuid.UUID, change uint64) {
  * Wait forever until the change tracker has reached a value at least as high as
  * "curChange." Return the current value when that happens.
  */
-func (t *ChangeTracker) Wait(id *uuid.UUID, curChange uint64) uint64 {
+func (t *ChangeTracker) Wait(id uuid.UUID, curChange uint64) uint64 {
   return t.doWait(id, curChange, timeMax)
 }
 
@@ -103,12 +102,12 @@ func (t *ChangeTracker) Wait(id *uuid.UUID, curChange uint64) uint64 {
  * Wait for a certain time, just like "wait". If the timeout expires then
  * we will return the current value.
  */
-func (t *ChangeTracker) TimedWait(id *uuid.UUID, curChange uint64, maxWait time.Duration) uint64 {
+func (t *ChangeTracker) TimedWait(id uuid.UUID, curChange uint64, maxWait time.Duration) uint64 {
   timeout := time.Now().Add(maxWait)
   return t.doWait(id, curChange, timeout)
 }
 
-func (t *ChangeTracker) doWait(id *uuid.UUID, curChange uint64, timeout time.Time) uint64 {
+func (t *ChangeTracker) doWait(id uuid.UUID, curChange uint64, timeout time.Time) uint64 {
   waitMe := make(chan uint64, 1)
   w := changeWaiter{
     change: curChange,
@@ -160,19 +159,18 @@ func (t *ChangeTracker) run() {
   // Close out all waiting waiters
   for i := 0; i < len(t.waiters.items); i++ {
     w := t.waiters.items[i]
-    c := t.lastChanges[*w.id]
+    c := t.lastChanges[w.id]
     w.waiter <- c
   }
 }
 
 func (t *ChangeTracker) handleUpdate(u changeUpdate) {
   // Need to cycle through all changes and only remove those that should be waiting
-  id := normalizeId(u.id)
-  t.lastChanges[id] = u.change
+  t.lastChanges[u.id] = u.change
   i := 0
   for i < len(t.waiters.items) {
     w := t.waiters.items[i]
-    if uuid.Equal(*w.id, id) && (u.change >= w.change) && !w.fired {
+    if uuid.Equal(w.id, u.id) && (u.change >= w.change) && !w.fired {
       // Removing screws up the heap, so just mark deleted here
       t.waiters.items[i].fired = true
       w.waiter <- u.change
@@ -183,10 +181,8 @@ func (t *ChangeTracker) handleUpdate(u changeUpdate) {
 }
 
 func (t *ChangeTracker) handleWaiter(w changeWaiter) {
-  id := normalizeId(w.id)
-  w.id = &id
-  if t.lastChanges[id] >= w.change {
-    w.waiter <- t.lastChanges[id]
+  if t.lastChanges[w.id] >= w.change {
+    w.waiter <- t.lastChanges[w.id]
   } else {
     heap.Push(t.waiters, w)
   }
@@ -198,19 +194,12 @@ func (t *ChangeTracker) handleTimeout(now time.Time) {
     if it == now || it.Before(now) {
       w := t.waiters.Pop().(changeWaiter)
       if !w.fired {
-        w.waiter <- t.lastChanges[*w.id]
+        w.waiter <- t.lastChanges[w.id]
       }
     } else {
       return
     }
   }
-}
-
-func normalizeId(id *uuid.UUID) uuid.UUID {
-  if id == nil {
-    return zeroUuid
-  }
-  return *id
 }
 
 // Implementation needed by the heap

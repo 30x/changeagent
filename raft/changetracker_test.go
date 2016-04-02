@@ -13,7 +13,7 @@ var _ = Describe("Change tracker", func() {
 
   BeforeEach(func() {
     tracker = CreateTracker()
-    tracker.Update(nil, 2)
+    tracker.Update(uuid.Nil, 2)
   })
 
   AfterEach(func() {
@@ -21,12 +21,12 @@ var _ = Describe("Change tracker", func() {
   })
 
   It("Behind", func() {
-    behind := tracker.Wait(nil, 1)
+    behind := tracker.Wait(uuid.Nil, 1)
     Expect(behind).Should(BeEquivalentTo(2))
   })
 
   It("Caught up", func() {
-    behind := tracker.Wait(nil, 2)
+    behind := tracker.Wait(uuid.Nil, 2)
     Expect(behind).Should(BeEquivalentTo(2))
   })
 
@@ -34,11 +34,11 @@ var _ = Describe("Change tracker", func() {
     doneChan := make(chan uint64, 1)
 
     go func() {
-      new := tracker.Wait(nil, 3)
+      new := tracker.Wait(uuid.Nil, 3)
       doneChan <- new
     }()
 
-    tracker.Update(nil, 3)
+    tracker.Update(uuid.Nil, 3)
     gotVal := <-doneChan
     Expect(gotVal).Should(BeEquivalentTo(3))
   })
@@ -47,11 +47,11 @@ var _ = Describe("Change tracker", func() {
     doneChan := make(chan uint64, 1)
 
     go func() {
-      new := tracker.TimedWait(nil, 3, 2 * time.Second)
+      new := tracker.TimedWait(uuid.Nil, 3, 2 * time.Second)
       doneChan <- new
     }()
 
-    tracker.Update(nil, 3)
+    tracker.Update(uuid.Nil, 3)
     gotVal := <-doneChan
     Expect(gotVal).Should(BeEquivalentTo(3))
   })
@@ -60,12 +60,12 @@ var _ = Describe("Change tracker", func() {
     doneChan := make(chan uint64, 1)
 
     go func() {
-      new := tracker.TimedWait(nil, 3, 500 * time.Millisecond)
+      new := tracker.TimedWait(uuid.Nil, 3, 500 * time.Millisecond)
       doneChan <- new
     }()
 
     time.Sleep(1 * time.Second)
-    tracker.Update(nil, 3)
+    tracker.Update(uuid.Nil, 3)
     gotVal := <-doneChan
     Expect(gotVal).Should(BeEquivalentTo(2))
   })
@@ -74,14 +74,14 @@ var _ = Describe("Change tracker", func() {
     doneChan := make(chan uint64, 1)
 
     go func() {
-      new := tracker.Wait(nil, 4)
+      new := tracker.Wait(uuid.Nil, 4)
       doneChan <- new
     }()
 
     time.Sleep(250 * time.Millisecond)
-    tracker.Update(nil, 3)
+    tracker.Update(uuid.Nil, 3)
     time.Sleep(250 * time.Millisecond)
-    tracker.Update(nil, 4)
+    tracker.Update(uuid.Nil, 4)
     gotVal := <-doneChan
     Expect(gotVal).Should(BeEquivalentTo(4))
   })
@@ -91,19 +91,19 @@ var _ = Describe("Change tracker", func() {
     doneChan2 := make(chan uint64, 1)
 
     go func() {
-      new := tracker.Wait(nil, 4)
+      new := tracker.Wait(uuid.Nil, 4)
       doneChan <- new
     }()
 
     go func() {
-      new2 := tracker.Wait(nil, 4)
+      new2 := tracker.Wait(uuid.Nil, 4)
       doneChan2 <- new2
     }()
 
     time.Sleep(250 * time.Millisecond)
-    tracker.Update(nil, 3)
+    tracker.Update(uuid.Nil, 3)
     time.Sleep(250 * time.Millisecond)
-    tracker.Update(nil, 4)
+    tracker.Update(uuid.Nil, 4)
     gotVal := <-doneChan
     Expect(gotVal).Should(BeEquivalentTo(4))
     gotVal = <-doneChan2
@@ -115,19 +115,19 @@ var _ = Describe("Change tracker", func() {
     doneChan := make(chan uint64, 1)
 
     go func() {
-      oldNew := tracker.Wait(nil, 10)
+      oldNew := tracker.Wait(uuid.Nil, 10)
       prematureDoneChan <- oldNew
     }()
 
     go func() {
-      new := tracker.Wait(nil, 4)
+      new := tracker.Wait(uuid.Nil, 4)
       doneChan <- new
     }()
 
     time.Sleep(250 * time.Millisecond)
-    tracker.Update(nil, 3)
+    tracker.Update(uuid.Nil, 3)
     time.Sleep(250 * time.Millisecond)
-    tracker.Update(nil, 4)
+    tracker.Update(uuid.Nil, 4)
 
     // No loop -- we expect that the first case arrive before the second
     select {
@@ -140,25 +140,25 @@ var _ = Describe("Change tracker", func() {
 
   It("Separate IDs", func() {
     id1 := uuid.NewV4()
-    tracker.Update(&id1, 4)
+    tracker.Update(id1, 4)
     done1 := make(chan uint64, 1)
 
     id2 := uuid.NewV4()
-    tracker.Update(&id2, 40)
+    tracker.Update(id2, 40)
     done2 := make(chan uint64, 2)
 
     go func() {
-      v1 := tracker.Wait(&id1, 5)
+      v1 := tracker.Wait(id1, 5)
       done1 <- v1
     }()
 
     go func() {
-      v2 := tracker.Wait(&id2, 41)
+      v2 := tracker.Wait(id2, 41)
       done2 <- v2
     }()
 
-    tracker.Update(&id1, 5)
-    tracker.Update(&id2, 41)
+    tracker.Update(id1, 5)
+    tracker.Update(id2, 41)
 
     for i := 0; i < 2; i++ {
       select {
@@ -174,11 +174,11 @@ var _ = Describe("Change tracker", func() {
 var _ = Describe("Change tracker 2", func() {
   It("Close", func() {
     tracker := CreateTracker()
-    tracker.Update(nil, 2)
+    tracker.Update(uuid.Nil, 2)
     done := make(chan uint64, 1)
 
     go func() {
-      new := tracker.Wait(nil, 3)
+      new := tracker.Wait(uuid.Nil, 3)
       done <- new
     }()
 

@@ -249,7 +249,7 @@ func (a *ChangeAgent) handleCreateCollection(resp http.ResponseWriter, req *http
     writeError(resp, http.StatusInternalServerError, err)
     return
   }
-  if id == nil {
+  if uuid.Equal(id, uuid.Nil) {
     writeError(resp, http.StatusInternalServerError, errors.New("Collection not created"))
     return
   }
@@ -390,7 +390,7 @@ func (a *ChangeAgent) handleCreateCollectionKey(resp http.ResponseWriter, req *h
     writeError(resp, http.StatusBadRequest, errors.New("Missing \"key\" parameter"))
     return
   }
-  if (proposal.Collection != nil) && !uuid.Equal(*proposal.Collection, *collectionID) {
+  if !uuid.Equal(proposal.Collection, collectionID) {
     writeError(resp, http.StatusBadRequest, errors.New("Invalid collection ID"))
     return
   }
@@ -443,36 +443,36 @@ func (a *ChangeAgent) handleGetCollectionKey(resp http.ResponseWriter, req *http
   resp.Write(body)
 }
 
-func (a *ChangeAgent) validateTenant(ten string) (*uuid.UUID, string, int, error) {
+func (a *ChangeAgent) validateTenant(ten string) (uuid.UUID, string, int, error) {
   if uuidRE.MatchString(ten) {
     // It's a tenant UUID
     tenantID, err := uuid.FromString(ten)
     if err != nil {
-      return nil, "", http.StatusBadRequest, err
+      return uuid.Nil, "", http.StatusBadRequest, err
     }
-    tenantName, err := a.stor.GetTenantByID(&tenantID)
+    tenantName, err := a.stor.GetTenantByID(tenantID)
     if err != nil {
-      return nil, "", http.StatusInternalServerError, err
+      return uuid.Nil, "", http.StatusInternalServerError, err
     }
     if tenantName == "" {
-      return nil, "", http.StatusNotFound, errors.New("Tenant not found")
+      return uuid.Nil, "", http.StatusNotFound, errors.New("Tenant not found")
     }
-    return &tenantID, tenantName, http.StatusOK, nil
+    return tenantID, tenantName, http.StatusOK, nil
 
   } else {
     // it's a tenant  name
     tenantID, err := a.stor.GetTenantByName(ten)
     if err != nil {
-      return nil, "", http.StatusInternalServerError, err
+      return uuid.Nil, "", http.StatusInternalServerError, err
     }
-    if tenantID == nil {
-      return nil, "", http.StatusNotFound, errors.New("Tenant not found")
+    if uuid.Equal(tenantID, uuid.Nil) {
+      return uuid.Nil, "", http.StatusNotFound, errors.New("Tenant not found")
     }
     return tenantID, ten, http.StatusOK, nil
   }
 }
 
-func (a *ChangeAgent) validateCollection(tenantID *uuid.UUID, coll string) (*uuid.UUID, string, int, error) {
+func (a *ChangeAgent) validateCollection(tenantID uuid.UUID, coll string) (uuid.UUID, string, int, error) {
   if uuidRE.MatchString(coll) {
     return a.validateCollectionID(coll)
 
@@ -480,28 +480,28 @@ func (a *ChangeAgent) validateCollection(tenantID *uuid.UUID, coll string) (*uui
     // it's a tenant  name
     collectionID, err := a.stor.GetCollectionByName(tenantID, coll)
     if err != nil {
-      return nil, "", http.StatusInternalServerError, err
+      return uuid.Nil, "", http.StatusInternalServerError, err
     }
-    if collectionID == nil {
-      return nil, "", http.StatusNotFound, errors.New("Tenant not found")
+    if uuid.Equal(collectionID, uuid.Nil) {
+      return uuid.Nil, "", http.StatusNotFound, errors.New("Tenant not found")
     }
     return collectionID, coll, http.StatusOK, nil
   }
 }
 
-func (a *ChangeAgent) validateCollectionID(coll string) (*uuid.UUID, string, int, error) {
+func (a *ChangeAgent) validateCollectionID(coll string) (uuid.UUID, string, int, error) {
   collectionID, err := uuid.FromString(coll)
   if err != nil {
-    return nil, "", http.StatusBadRequest, err
+    return uuid.Nil, "", http.StatusBadRequest, err
   }
-  collectionName, err := a.stor.GetCollectionByID(&collectionID)
+  collectionName, err := a.stor.GetCollectionByID(collectionID)
   if err != nil {
-    return nil, "", http.StatusInternalServerError, err
+    return uuid.Nil, "", http.StatusInternalServerError, err
   }
   if collectionName == "" {
-    return nil, "", http.StatusNotFound, errors.New("Collection not found")
+    return uuid.Nil, "", http.StatusNotFound, errors.New("Collection not found")
   }
-  return &collectionID, collectionName, http.StatusOK, nil
+  return collectionID, collectionName, http.StatusOK, nil
 }
 
 func linkURI(req *http.Request, relPath string) string {

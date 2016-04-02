@@ -2,7 +2,6 @@ package main
 
 import (
   "fmt"
-  "regexp"
   "strings"
   "time"
   "encoding/json"
@@ -24,9 +23,6 @@ var _ = Describe("Changes API Test", func() {
   var collection string
 
   BeforeEach(func() {
-    waitForLeader()
-    getLeaderIndex()
-
     tenant = ensureTenant("indexTest")
     collection = ensureCollection(tenant, "indexTestCollection")
   })
@@ -45,24 +41,15 @@ var _ = Describe("Changes API Test", func() {
     // Upon return, change should immediately be represented at the leader
     respExpected :=
       fmt.Sprintf("[{\"_id\":%d,\"_ts\":[0-9]+,\"data\":{\"hello\":\"world!\",\"foo\":123}}]", lastNewChange)
-    peerChanges := getChanges(leaderIndex, lastNewChange - 1, 100, 0)
+    peerChanges := getChanges(lastNewChange - 1, 100, 0)
     Expect(peerChanges).Should(MatchRegexp(respExpected))
 
-    // Check that the change was also replicated to all followers
-    fmt.Fprintf(GinkgoWriter, "Leader is peer %d\n", leaderIndex)
-    correctNodes := 0
-    for i, _ := range (testAgents) {
-      peerChanges := getChanges(i, lastNewChange - 1, 100, 10)
-      match, err := regexp.MatchString(respExpected, string(peerChanges))
-      fmt.Fprintf(GinkgoWriter, "Get changes peer %d: \"%s\"\n", i, peerChanges)
-      Expect(err).Should(Succeed())
-      if match {
-        correctNodes++
-      }
-    }
-    Expect(correctNodes).Should(Equal(len(testAgents)))
+    peerChanges = getChanges(lastNewChange - 1, 100, 10)
+    Expect(peerChanges).Should(MatchRegexp(respExpected))
+    fmt.Fprintf(GinkgoWriter, "Get changes peer \"%s\"\n", peerChanges)
+    Expect(err).Should(Succeed())
 
-    url := fmt.Sprintf("%s/changes/%d", getLeaderURI(), lastNewChange)
+    url := fmt.Sprintf("%s/changes/%d", listenUri, lastNewChange)
     gr, err := http.Get(url)
     Expect(err).Should(Succeed())
     defer gr.Body.Close()
@@ -87,11 +74,11 @@ var _ = Describe("Changes API Test", func() {
     respExpected :=
       fmt.Sprintf("[{\"_id\":%d,\"_ts\":[0-9]+,\"tenant\":\"%s\",\"collection\":\"%s\",\"key\":\"baz\",\"data\":{\"hello\":\"world!\",\"foo\":456}}]",
         lastNewChange, tenant, collection)
-    peerChanges := getChanges(leaderIndex, lastNewChange - 1, 100, 0)
+    peerChanges := getChanges(lastNewChange - 1, 100, 0)
 
     Expect(peerChanges).Should(MatchRegexp(respExpected))
 
-    tenantChanges := getTenantChanges(leaderIndex, tenant, lastNewChange - 1, 100, 0)
+    tenantChanges := getTenantChanges(tenant, lastNewChange - 1, 100, 0)
     Expect(tenantChanges).Should(MatchRegexp(respExpected))
   })
 
@@ -99,7 +86,7 @@ var _ = Describe("Changes API Test", func() {
     request := "{\"key\":\"fooey\",\"data\":{\"hello\":\"world!\",\"foo\":888}}"
 
     pr, err := http.Post(
-      fmt.Sprintf("%s/collections/%s/keys", getLeaderURI(), collection),
+      fmt.Sprintf("%s/collections/%s/keys", listenUri, collection),
       jsonContent, strings.NewReader(request))
     Expect(err).Should(Succeed())
     Expect(pr.StatusCode).Should(Equal(200))
@@ -115,16 +102,14 @@ var _ = Describe("Changes API Test", func() {
     respExpected :=
       fmt.Sprintf("[{\"_id\":%d,\"_ts\":[0-9]+,\"collection\":\"%s\",\"key\":\"fooey\",\"data\":{\"hello\":\"world!\",\"foo\":888}}]",
         lastNewChange, collection)
-    peerChanges := getChanges(leaderIndex, lastNewChange - 1, 100, 0)
+    peerChanges := getChanges(lastNewChange - 1, 100, 0)
 
     Expect(peerChanges).Should(MatchRegexp(respExpected))
   })
 
   It("POST empty change", func() {
-    for i := range (testAgents) {
-      peerChanges := getChanges(i, lastNewChange, 100, 0)
-      Expect(strings.TrimSpace(string(peerChanges))).Should(Equal("[]"))
-    }
+    peerChanges := getChanges(lastNewChange, 100, 0)
+    Expect(strings.TrimSpace(string(peerChanges))).Should(Equal("[]"))
   })
 
   It("Post and retrieve multiple", func() {
@@ -134,7 +119,7 @@ var _ = Describe("Changes API Test", func() {
       "[{\"_id\":%d,\"_ts\":[0-9]+,\"collection\":\"%s\",\"key\":\"baz\",\"data\":{\"hello\":\"world!\",\"count\":1}}," +
       "{\"_id\":%d,\"_ts\":[0-9]+,\"collection\":\"%s\",\"key\":\"baz\",\"data\":{\"hello\":\"world!\",\"count\":2}}]"
     respExpected := fmt.Sprintf(templ, lastNewChange - 1, collection, lastNewChange, collection)
-    peerChanges := getChanges(leaderIndex, changes[0] - 1, 100, 0)
+    peerChanges := getChanges(changes[0] - 1, 100, 0)
 
     Expect(peerChanges).Should(MatchRegexp(respExpected))
   })
@@ -142,20 +127,20 @@ var _ = Describe("Changes API Test", func() {
   It("Retrieve all", func() {
     changes := postChanges(collection, 3)
 
-    respBody := getChanges(leaderIndex, 0, 100, 0)
+    respBody := getChanges(0, 100, 0)
     var results []JsonData
     err := json.Unmarshal(respBody, &results)
     Expect(err).Should(Succeed())
     Expect(len(results)).Should(BeNumerically(">=", 3))
 
     // Test various permutations of offset and limit now.
-    respBody = getChanges(leaderIndex, changes[0] - 1, 1, 0)
+    respBody = getChanges(changes[0] - 1, 1, 0)
     err = json.Unmarshal(respBody, &results)
     Expect(err).Should(Succeed())
     Expect(len(results)).Should(Equal(1))
     Expect(results[0].Id).Should(Equal(changes[0]))
 
-    respBody = getChanges(leaderIndex, changes[0] - 1, 2, 0)
+    respBody = getChanges(changes[0] - 1, 2, 0)
     err = json.Unmarshal(respBody, &results)
     Expect(err).Should(Succeed())
     Expect(len(results)).Should(Equal(2))
@@ -164,7 +149,7 @@ var _ = Describe("Changes API Test", func() {
   })
 
   It("Blocking retrieval", func() {
-    respBody := getChanges(leaderIndex, lastNewChange, 100, 0)
+    respBody := getChanges(lastNewChange, 100, 0)
     var results []JsonData
     err := json.Unmarshal(respBody, &results)
     Expect(err).Should(Succeed())
@@ -173,7 +158,7 @@ var _ = Describe("Changes API Test", func() {
     ch := make(chan uint64, 1)
 
     go func() {
-      newResp := getChanges(leaderIndex, lastNewChange, 100, 5)
+      newResp := getChanges(lastNewChange, 100, 5)
       var newResults []JsonData
       json.Unmarshal(newResp, &newResults)
       if len(newResults) == 1 {
@@ -198,7 +183,7 @@ var _ = Describe("Changes API Test", func() {
   })
 
   It("Blocking retrieval after abnormal change", func() {
-    respBody := getChanges(leaderIndex, lastNewChange, 100, 0)
+    respBody := getChanges(lastNewChange, 100, 0)
     var results []JsonData
     err := json.Unmarshal(respBody, &results)
     Expect(err).Should(Succeed())
@@ -209,7 +194,7 @@ var _ = Describe("Changes API Test", func() {
     ch := make(chan uint64, 1)
 
     go func() {
-      newResp := getChanges(leaderIndex, lastNewChange, 100, 5)
+      newResp := getChanges(lastNewChange, 100, 5)
       var newResults []JsonData
       json.Unmarshal(newResp, &newResults)
       if len(newResults) == 1 {
@@ -251,16 +236,17 @@ func postChanges(collection string, count int) []uint64 {
 }
 
 func postChange(request string) string {
-  uri := getLeaderURI() + "/changes"
+  uri := listenUri + "/changes"
 
   fmt.Fprintf(GinkgoWriter, "POST change: %s\n", request)
   pr, err := http.Post(uri, jsonContent, strings.NewReader(request))
   Expect(err).Should(Succeed())
   defer pr.Body.Close()
+  body, err := ioutil.ReadAll(pr.Body)
+  fmt.Fprintf(GinkgoWriter, "Response: %s\n", string(body))
   Expect(pr.StatusCode).Should(Equal(200))
   numPosts++
 
-  body, err := ioutil.ReadAll(pr.Body)
   Expect(err).Should(Succeed())
   resp := string(body)
 
@@ -268,9 +254,9 @@ func postChange(request string) string {
   return resp
 }
 
-func getChanges(peerIndex int, since uint64, limit int, block int) []byte {
+func getChanges(since uint64, limit int, block int) []byte {
   url := fmt.Sprintf("%s/changes?since=%d&limit=%d&block=%d",
-    getListenerURI(peerIndex), since, limit, block)
+    listenUri, since, limit, block)
   gr, err := http.Get(url)
   Expect(err).Should(Succeed())
   defer gr.Body.Close()
@@ -283,9 +269,9 @@ func getChanges(peerIndex int, since uint64, limit int, block int) []byte {
   return respBody
 }
 
-func getTenantChanges(peerIndex int, tenant string, since uint64, limit int, block int) []byte {
+func getTenantChanges(tenant string, since uint64, limit int, block int) []byte {
   url := fmt.Sprintf("%s/tenants/%s/changes?since=%d&limit=%d&block=%d",
-    getListenerURI(peerIndex), tenant, since, limit, block)
+    listenUri, tenant, since, limit, block)
   gr, err := http.Get(url)
   Expect(err).Should(Succeed())
   defer gr.Body.Close()

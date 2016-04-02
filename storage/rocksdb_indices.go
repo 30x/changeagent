@@ -14,7 +14,7 @@ import (
 /*
  * These records must be written so that we can iterate over the elements of a collection.
  */
-func (s *LevelDBStorage) writeCollectionDelimiters(id *uuid.UUID, name string) error {
+func (s *LevelDBStorage) writeCollectionDelimiters(id uuid.UUID, name string) error {
   valBuf, valLen := stringToPtr(name)
   defer freePtr(valBuf)
 
@@ -36,7 +36,7 @@ func (s *LevelDBStorage) writeCollectionDelimiters(id *uuid.UUID, name string) e
 /*
  * Return the name of a collection, or an empty string if it is not defined
  */
-func (s *LevelDBStorage) readCollectionStart(id *uuid.UUID) (string, error) {
+func (s *LevelDBStorage) readCollectionStart(id uuid.UUID) (string, error) {
   startBuf, startLen, err := startIndexToPtr(id)
   if err != nil { return "", err }
   defer freePtr(startBuf)
@@ -54,7 +54,7 @@ func (s *LevelDBStorage) readCollectionStart(id *uuid.UUID) (string, error) {
 /*
  * Write arbitrary data to a collection index.
  */
-func (s *LevelDBStorage) writeCollectionEntry(id *uuid.UUID, key string, ptr unsafe.Pointer, len C.size_t) error {
+func (s *LevelDBStorage) writeCollectionEntry(id uuid.UUID, key string, ptr unsafe.Pointer, len C.size_t) error {
   ixPtr, ixLen, err := indexKeyToPtr(id, key)
   if err != nil { return err }
   defer freePtr(ixPtr)
@@ -65,7 +65,7 @@ func (s *LevelDBStorage) writeCollectionEntry(id *uuid.UUID, key string, ptr uns
 /*
  * Read arbitrary data from a collection index.
  */
-func (s *LevelDBStorage) readCollectionEntry(id *uuid.UUID, key string) (unsafe.Pointer, C.size_t, error) {
+func (s *LevelDBStorage) readCollectionEntry(id uuid.UUID, key string) (unsafe.Pointer, C.size_t, error) {
   ixPtr, ixLen, err := indexKeyToPtr(id, key)
   if err != nil { return nil, 0, err }
   defer freePtr(ixPtr)
@@ -77,7 +77,7 @@ func (s *LevelDBStorage) readCollectionEntry(id *uuid.UUID, key string) (unsafe.
 /*
  * Delete from an index.
  */
-func (s *LevelDBStorage) deleteCollectionEntry(id *uuid.UUID, key string) error {
+func (s *LevelDBStorage) deleteCollectionEntry(id uuid.UUID, key string) error {
   ixPtr, ixLen, err := indexKeyToPtr(id, key)
   if err != nil { return err }
   defer freePtr(ixPtr)

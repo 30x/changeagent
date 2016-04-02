@@ -7,6 +7,7 @@ import (
   "time"
   "math/rand"
   "github.com/golang/glog"
+  "github.com/satori/go.uuid"
   "revision.aeip.apigee.net/greg/changeagent/communication"
   "revision.aeip.apigee.net/greg/changeagent/discovery"
   "revision.aeip.apigee.net/greg/changeagent/storage"
@@ -135,6 +136,11 @@ func StartRaft(id uint64,
   r.currentTerm = r.readCurrentTerm()
   r.commitIndex = r.readLastCommit()
   r.lastApplied = r.readLastApplied()
+
+  if len(disco.GetNodes()) == 1 {
+    glog.Info("Only one node. Starting in leader mode.\n")
+    r.state = Leader
+  }
 
   r.configChanges = disco.Watch()
 
@@ -323,9 +329,9 @@ func (r *RaftImpl) setLastApplied(t uint64) {
   r.lastApplied = t
   r.latch.Unlock()
 
-  r.appliedTracker.Update(nil, t)
+  r.appliedTracker.Update(uuid.Nil, t)
 
-  if entry.Tenant != nil {
+  if !uuid.Equal(entry.Tenant, uuid.Nil) {
     r.appliedTracker.Update(entry.Tenant, t)
   }
 }

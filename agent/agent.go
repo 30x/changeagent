@@ -89,7 +89,7 @@ func (a *ChangeAgent) makeProposal(proposal *storage.Entry) (*storage.Entry, err
 
   // Wait for the new commit to be applied, or time out
   appliedIndex :=
-    a.raft.GetAppliedTracker().TimedWait(nil, newIndex, time.Second * CommitTimeoutSeconds)
+    a.raft.GetAppliedTracker().TimedWait(uuid.Nil, newIndex, time.Second * CommitTimeoutSeconds)
   glog.V(2).Infof("New index %d is now applied", appliedIndex)
   if appliedIndex >= newIndex {
     newEntry := storage.Entry{
@@ -116,7 +116,7 @@ func (a *ChangeAgent) Commit(entry *storage.Entry) error {
 
 func (a *ChangeAgent) handleNormalChange(entry *storage.Entry) error {
   glog.V(2).Info("Handling a normal change")
-  if entry.Key != "" || entry.Collection != nil {
+  if entry.Key != "" && !uuid.Equal(entry.Collection, uuid.Nil) {
     glog.V(2).Infof("Inserting change into collection %s", entry.Collection)
     err := a.stor.SetIndexEntry(entry.Collection, entry.Key, entry.Index)
     if err != nil {
@@ -124,7 +124,7 @@ func (a *ChangeAgent) handleNormalChange(entry *storage.Entry) error {
       return err
     }
   }
-  if entry.Tenant != nil {
+  if !uuid.Equal(entry.Tenant, uuid.Nil) {
     glog.V(2).Infof("Inserting change into tenant %s\n", entry.Tenant)
     err := a.stor.CreateTenantEntry(entry)
     if err != nil {
@@ -148,7 +148,8 @@ func (a *ChangeAgent) handleChangeCommand(entry *storage.Entry) error {
       return errors.New("Invalid command: tenant name is missing")
     }
     glog.V(2).Infof("Creating tenant %s", cmd.GetName())
-    _, err := a.stor.CreateTenant(cmd.GetName())
+    tenantID := uuid.NewV4()
+    err := a.stor.CreateTenant(cmd.GetName(), tenantID)
     if err == nil {
       return nil
     }
@@ -165,7 +166,8 @@ func (a *ChangeAgent) handleChangeCommand(entry *storage.Entry) error {
     tenantID, err := uuid.FromBytes(cmd.GetTenant())
     if err != nil { return err }
     glog.V(2).Infof("Creating collection %s for tenant %s", cmd.GetName(), tenantID)
-    _, err = a.stor.CreateCollection(&tenantID, cmd.GetName())
+    collectionID := uuid.NewV4()
+    err = a.stor.CreateCollection(tenantID, cmd.GetName(), collectionID)
     if err == nil {
       return nil
     }

@@ -57,7 +57,7 @@ var _ = Describe("Conversion", func() {
 
   It("Start index", func() {
     id := uuid.NewV4()
-    bb, len, err := startIndexToPtr(&id)
+    bb, len, err := startIndexToPtr(id)
     Expect(err).Should(Succeed())
     defer freePtr(bb)
     Expect(len).ShouldNot(BeZero())
@@ -68,7 +68,7 @@ var _ = Describe("Conversion", func() {
     Expect(newKey).Should(Equal(""))
     Expect(newId.Bytes()).Should(Equal(id.Bytes()))
 
-    keyBuf, keyLen, err := indexKeyToPtr(&id, "foo")
+    keyBuf, keyLen, err := indexKeyToPtr(id, "foo")
     Expect(err).Should(Succeed())
     defer freePtr(keyBuf)
     cmp := compareKeys(bb, len, keyBuf, keyLen)
@@ -81,7 +81,7 @@ var _ = Describe("Conversion", func() {
 
   It("End index", func() {
     id := uuid.NewV4()
-    bb, len, err := endIndexToPtr(&id)
+    bb, len, err := endIndexToPtr(id)
     Expect(err).Should(Succeed())
     defer freePtr(bb)
     Expect(len).ShouldNot(BeZero())
@@ -92,7 +92,7 @@ var _ = Describe("Conversion", func() {
     Expect(newKey).Should(Equal(""))
     Expect(newId.Bytes()).Should(Equal(id.Bytes()))
 
-    keyBuf, keyLen, err := indexKeyToPtr(&id, "foo")
+    keyBuf, keyLen, err := indexKeyToPtr(id, "foo")
     Expect(err).Should(Succeed())
     defer freePtr(keyBuf)
 
@@ -152,7 +152,7 @@ var _ = Describe("Conversion", func() {
 
   It("UUID Value", func() {
     id := uuid.NewV4()
-    bb, len := uuidToPtr(&id)
+    bb, len := uuidToPtr(id)
     defer freePtr(bb)
 
     newId, err := ptrToUuid(bb, len)
@@ -203,7 +203,7 @@ func testEntry(term uint64, ts int64, key string, data []byte) bool {
   e := &Entry{
     Term: term,
     Timestamp: tst,
-    Collection: &coll,
+    Collection: coll,
     Key: key,
     Data: data,
   }
@@ -222,7 +222,7 @@ func testEntry(term uint64, ts int64, key string, data []byte) bool {
 
 func testIndexEntry(key string) bool {
   id := uuid.NewV4()
-  bb, len, err := indexKeyToPtr(&id, key)
+  bb, len, err := indexKeyToPtr(id, key)
   Expect(err).Should(Succeed())
   defer freePtr(bb)
 
@@ -236,7 +236,7 @@ func testIndexEntry(key string) bool {
 
 func testTenantIndex(ix uint64) bool {
   id := uuid.NewV4()
-  bb, len := tenantIndexToPtr(&id, ix)
+  bb, len := tenantIndexToPtr(id, ix)
   defer freePtr(bb)
 
   newId, newIx, err := ptrToTenantIndex(bb, len)
@@ -287,10 +287,10 @@ func testIndexCompare(key1, key2 string) bool {
   id1 := uuid.NewV4()
   id2 := uuid.NewV4()
 
-  kb1, kl1, err := indexKeyToPtr(&id1, key1)
+  kb1, kl1, err := indexKeyToPtr(id1, key1)
   Expect(err).Should(Succeed())
   defer freePtr(kb1)
-  kb2, kl2, err := indexKeyToPtr(&id2, key2)
+  kb2, kl2, err := indexKeyToPtr(id2, key2)
   Expect(err).Should(Succeed())
   defer freePtr(kb2)
 
@@ -306,7 +306,7 @@ func testIndexCompare(key1, key2 string) bool {
     Expect(cmp).Should(BeNumerically(">", 0))
   }
 
-  kb1a, kl1a, err := indexKeyToPtr(&id1, key2)
+  kb1a, kl1a, err := indexKeyToPtr(id1, key2)
   Expect(err).Should(Succeed())
   defer freePtr(kb1a)
 
@@ -340,9 +340,9 @@ func testTenantIndexCompare(ix1, ix2 uint64, sameId bool) bool {
     id2 = uuid.NewV4()
   }
 
-  ptr1, len1 := tenantIndexToPtr(&id1, ix1)
+  ptr1, len1 := tenantIndexToPtr(id1, ix1)
   defer freePtr(ptr1)
-  ptr2, len2 := tenantIndexToPtr(&id2, ix2)
+  ptr2, len2 := tenantIndexToPtr(id2, ix2)
   defer freePtr(ptr2)
 
   cmp := compareKeys(ptr1, len1, ptr2, len2)

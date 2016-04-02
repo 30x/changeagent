@@ -12,7 +12,8 @@ import (
 
 var _ = Describe("Index test", func() {
   It("Tenant creation", func() {
-    id, err := indexTestDb.CreateTenant("singleTest")
+    id := uuid.NewV4()
+    err := indexTestDb.CreateTenant("singleTest", id)
     Expect(err).Should(Succeed())
     Expect(id).ShouldNot(BeNil())
 
@@ -36,11 +37,13 @@ var _ = Describe("Index test", func() {
   })
 
   It("Collection creation", func() {
-    tenant, err := indexTestDb.CreateTenant("collectionTest")
+    tenant := uuid.NewV4()
+    err := indexTestDb.CreateTenant("collectionTest", tenant)
     Expect(err).Should(Succeed())
     Expect(tenant).ShouldNot(BeNil())
 
-    id, err := indexTestDb.CreateCollection(tenant, "singleCollection")
+    id := uuid.NewV4()
+    err = indexTestDb.CreateCollection(tenant, "singleCollection", id)
     Expect(err).Should(Succeed())
     Expect(id).ShouldNot(BeNil())
 
@@ -64,11 +67,13 @@ var _ = Describe("Index test", func() {
   })
 
   It("Collection insert, delete, iterate", func() {
-    tenant, err := indexTestDb.CreateTenant("collectionInsert")
+    tenant := uuid.NewV4()
+    err := indexTestDb.CreateTenant("collectionInsert", tenant)
     Expect(err).Should(Succeed())
     Expect(tenant).ShouldNot(BeNil())
 
-    id, err := indexTestDb.CreateCollection(tenant, "insertCollection")
+    id := uuid.NewV4()
+    err = indexTestDb.CreateCollection(tenant, "insertCollection", id)
     Expect(err).Should(Succeed())
     Expect(id).ShouldNot(BeNil())
 
@@ -139,8 +144,9 @@ var _ = Describe("Index test", func() {
 
 func testOneTenant(stor Storage, tenantName string) bool {
   if tenantName == "" { return true }
+  tenantID := uuid.NewV4()
 
-  tenantID, err := stor.CreateTenant(tenantName)
+  err := stor.CreateTenant(tenantName, tenantID)
   Expect(err).Should(Succeed())
 
   var collections []string
@@ -167,10 +173,11 @@ func testOneTenant(stor Storage, tenantName string) bool {
   return true
 }
 
-func testOneCollection(stor Storage, tenantID *uuid.UUID, collectionName string) bool {
+func testOneCollection(stor Storage, tenantID uuid.UUID, collectionName string) bool {
   if collectionName == "" { return true }
+  collectionID := uuid.NewV4()
 
-  collectionID, err := stor.CreateCollection(tenantID, collectionName)
+  err := stor.CreateCollection(tenantID, collectionName, collectionID)
   Expect(err).Should(Succeed())
 
   expected := make(map[string]uint64)
@@ -203,7 +210,7 @@ func testOneCollection(stor Storage, tenantID *uuid.UUID, collectionName string)
   return true
 }
 
-func testOneKey(stor Storage, collectionID *uuid.UUID, key string, val uint64, shouldDelete bool) bool {
+func testOneKey(stor Storage, collectionID uuid.UUID, key string, val uint64, shouldDelete bool) bool {
   if key == "" || val == 0 { return true }
 
   index, err := stor.GetIndexEntry(collectionID, key)

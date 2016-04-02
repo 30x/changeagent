@@ -76,11 +76,11 @@ func CreateRocksDBStorage(baseFile string, cacheSize uint) (*LevelDBStorage, err
   }()
 
   // Lay down the records for a special collection that will hold names and IDs of each tenant
-  collName, err := stor.readCollectionStart(&tenantsCollection)
+  collName, err := stor.readCollectionStart(tenantsCollection)
   if err != nil { return nil, err }
   if collName == "" {
     glog.V(2).Infof("Creating tenants collection %s", TenantsCollectionId)
-    err = stor.writeCollectionDelimiters(&tenantsCollection, "_tenants")
+    err = stor.writeCollectionDelimiters(tenantsCollection, "_tenants")
     if err != nil { return nil, err }
   }
 
@@ -401,36 +401,34 @@ func (s *LevelDBStorage) DeleteEntries(first uint64) error {
 
 // Methods for secondary indices
 
-func (s *LevelDBStorage) CreateTenant(tenantName string) (*uuid.UUID, error) {
-  id := uuid.NewV4()
-
+func (s *LevelDBStorage) CreateTenant(tenantName string, id uuid.UUID) error {
   // This record delimits the collection for when we are iterating on it
   // It also lets us read the name later given the ID
-  err := s.writeCollectionDelimiters(&id, tenantName)
-  if err != nil { return nil, err }
+  err := s.writeCollectionDelimiters(id, tenantName)
+  if err != nil { return err }
 
   // Put an entry in the special tenants collection that contains the new tenant ID
-  valPtr, valLen := uuidToPtr(&id)
+  valPtr, valLen := uuidToPtr(id)
   defer freePtr(valPtr)
-  err = s.writeCollectionEntry(&tenantsCollection, tenantName, valPtr, valLen)
-  if err != nil { return nil, err }
+  err = s.writeCollectionEntry(tenantsCollection, tenantName, valPtr, valLen)
+  if err != nil { return err }
 
-  return &id, nil
+  return nil
 }
 
-func (s *LevelDBStorage) GetTenantByName(tenantName string) (*uuid.UUID, error) {
+func (s *LevelDBStorage) GetTenantByName(tenantName string) (uuid.UUID, error) {
   // Read the entry from the special "tenants" collection
-  ptr, len, err := s.readCollectionEntry(&tenantsCollection, tenantName)
-  if err != nil { return nil, err }
-  if ptr == nil { return nil, nil }
+  ptr, len, err := s.readCollectionEntry(tenantsCollection, tenantName)
+  if err != nil { return uuid.Nil, err }
+  if ptr == nil { return uuid.Nil, nil }
   defer freePtr(ptr)
   id, err := ptrToUuid(ptr, len)
-  if err != nil { return nil, err }
+  if err != nil { return uuid.Nil, err }
 
   return id, nil
 }
 
-func (s *LevelDBStorage) GetTenantByID(tenantID *uuid.UUID) (string, error) {
+func (s *LevelDBStorage) GetTenantByID(tenantID uuid.UUID) (string, error) {
   // Read the special start of tenant record which happens to include the name
   name, err := s.readCollectionStart(tenantID)
   if err != nil { return "", err }
@@ -439,10 +437,10 @@ func (s *LevelDBStorage) GetTenantByID(tenantID *uuid.UUID) (string, error) {
 
 func (s *LevelDBStorage) GetTenants() ([]Collection, error) {
   // Start from the start and read until the end!
-  startPtr, startLen, err := startIndexToPtr(&tenantsCollection)
+  startPtr, startLen, err := startIndexToPtr(tenantsCollection)
   if err != nil { return nil, err }
   defer freePtr(startPtr)
-  endPtr, endLen, err := endIndexToPtr(&tenantsCollection)
+  endPtr, endLen, err := endIndexToPtr(tenantsCollection)
   if err != nil { return nil, err }
   defer freePtr(endPtr)
 
@@ -467,7 +465,7 @@ func (s *LevelDBStorage) GetTenants() ([]Collection, error) {
   return ret, err
 }
 
-func (s *LevelDBStorage) ensureTenant(tenantID *uuid.UUID) error {
+func (s *LevelDBStorage) ensureTenant(tenantID uuid.UUID) error {
   tenantName, err := s.readCollectionStart(tenantID)
   if err != nil { return err }
   if tenantName == "" {
@@ -476,47 +474,48 @@ func (s *LevelDBStorage) ensureTenant(tenantID *uuid.UUID) error {
   return nil
 }
 
-func (s *LevelDBStorage) CreateCollection(tenantID *uuid.UUID, collectionName string) (*uuid.UUID, error) {
+func (s *LevelDBStorage) CreateCollection(tenantID uuid.UUID, collectionName string, id uuid.UUID) error {
   err := s.ensureTenant(tenantID)
-  if err != nil { return nil, err }
-
-  id := uuid.NewV4()
+  if err != nil { return err }
 
   // This record delimits the collection for when we are iterating on it
   // It also lets us read the name later given the ID
-  err = s.writeCollectionDelimiters(&id, collectionName)
-  if err != nil { return nil, err }
+  err = s.writeCollectionDelimiters(id, collectionName)
+  if err != nil { return err }
 
   // Put an entry in the tenants' own collection that contains the new tenant ID
-  valPtr, valLen := uuidToPtr(&id)
+  valPtr, valLen := uuidToPtr(id)
   defer freePtr(valPtr)
   err = s.writeCollectionEntry(tenantID, collectionName, valPtr, valLen)
-  if err != nil { return nil, err }
+  if err != nil { return err }
 
-  return &id, nil
+  return nil
 }
 
-func (s *LevelDBStorage) GetCollectionByName(tenantID *uuid.UUID, collectionName string) (*uuid.UUID, error) {
+func (s *LevelDBStorage) GetCollectionByName(tenantID uuid.UUID, collectionName string) (uuid.UUID, error) {
   // Read the entry from the tenants' collection
   ptr, len, err := s.readCollectionEntry(tenantID, collectionName)
-  if err != nil { return nil, err }
-  if ptr == nil { return nil, nil }
+  if err != nil { return uuid.Nil, err }
+  if ptr == nil { return uuid.Nil, nil }
   defer freePtr(ptr)
 
   id, err := ptrToUuid(ptr, len)
-  if err != nil { return nil, err }
+  if err != nil { return uuid.Nil, err }
 
   return id, nil
 }
 
-func (s *LevelDBStorage) GetCollectionByID(collectionID *uuid.UUID) (string, error) {
+func (s *LevelDBStorage) GetCollectionByID(collectionID uuid.UUID) (string, error) {
   // Read the special start of tenant record which happens to include the name
   name, err := s.readCollectionStart(collectionID)
   if err != nil { return "", err }
   return name, nil
 }
 
-func (s *LevelDBStorage) GetTenantCollections(tenantID *uuid.UUID) ([]Collection, error) {
+func (s *LevelDBStorage) GetCollectionTenantByID(collectionID uuid.UUID) (uuid.UUID, error) {
+}
+
+func (s *LevelDBStorage) GetTenantCollections(tenantID uuid.UUID) ([]Collection, error) {
   err := s.ensureTenant(tenantID)
   if err != nil { return nil, err }
 
@@ -549,7 +548,7 @@ func (s *LevelDBStorage) GetTenantCollections(tenantID *uuid.UUID) ([]Collection
   return ret, err
 }
 
-func (s *LevelDBStorage) ensureCollection(collectionID *uuid.UUID) error {
+func (s *LevelDBStorage) ensureCollection(collectionID uuid.UUID) error {
   tenantName, err := s.readCollectionStart(collectionID)
   if err != nil { return err }
   if tenantName == "" {
@@ -558,7 +557,7 @@ func (s *LevelDBStorage) ensureCollection(collectionID *uuid.UUID) error {
   return nil
 }
 
-func (s *LevelDBStorage) SetIndexEntry(collectionID *uuid.UUID, key string, index uint64) error {
+func (s *LevelDBStorage) SetIndexEntry(collectionID uuid.UUID, key string, index uint64) error {
   err := s.ensureCollection(collectionID)
   if err != nil { return err }
 
@@ -568,14 +567,14 @@ func (s *LevelDBStorage) SetIndexEntry(collectionID *uuid.UUID, key string, inde
   return s.writeCollectionEntry(collectionID, key, valPtr, valLen)
 }
 
-func (s *LevelDBStorage) DeleteIndexEntry(collectionID *uuid.UUID, key string) error {
+func (s *LevelDBStorage) DeleteIndexEntry(collectionID uuid.UUID, key string) error {
   err := s.ensureCollection(collectionID)
   if err != nil { return err }
 
   return s.deleteCollectionEntry(collectionID, key)
 }
 
-func (s *LevelDBStorage) GetIndexEntry(collectionID *uuid.UUID, key string) (uint64, error) {
+func (s *LevelDBStorage) GetIndexEntry(collectionID uuid.UUID, key string) (uint64, error) {
   err := s.ensureCollection(collectionID)
   if err != nil { return 0, err }
 
@@ -589,7 +588,7 @@ func (s *LevelDBStorage) GetIndexEntry(collectionID *uuid.UUID, key string) (uin
   return ix, nil
 }
 
-func (s *LevelDBStorage) GetCollectionIndices(collectionID *uuid.UUID, lastKey string, max uint) ([]uint64, error) {
+func (s *LevelDBStorage) GetCollectionIndices(collectionID uuid.UUID, lastKey string, max uint) ([]uint64, error) {
   err := s.ensureCollection(collectionID)
   if err != nil { return nil, err }
 
@@ -630,7 +629,7 @@ func (s *LevelDBStorage) CreateTenantEntry(entry *Entry) error {
   return s.putEntry(s.tenantIndices, keyPtr, keyLen, valPtr, valLen)
 }
 
-func (s *LevelDBStorage) GetTenantEntry(tenant *uuid.UUID, ix uint64) (*Entry, error) {
+func (s *LevelDBStorage) GetTenantEntry(tenant uuid.UUID, ix uint64) (*Entry, error) {
   keyPtr, keyLen := tenantIndexToPtr(tenant, ix)
   defer freePtr(keyPtr)
 
@@ -642,7 +641,7 @@ func (s *LevelDBStorage) GetTenantEntry(tenant *uuid.UUID, ix uint64) (*Entry, e
   return ptrToEntry(valPtr, valLen)
 }
 
-func (s *LevelDBStorage) DeleteTenantEntry(tenant *uuid.UUID, ix uint64) error {
+func (s *LevelDBStorage) DeleteTenantEntry(tenant uuid.UUID, ix uint64) error {
   ixPtr, ixLen := tenantIndexToPtr(tenant, ix)
   defer freePtr(ixPtr)
 
@@ -659,7 +658,7 @@ func (s *LevelDBStorage) DeleteTenantEntry(tenant *uuid.UUID, ix uint64) error {
 }
 
 func (s *LevelDBStorage) GetTenantEntries(
-    tenant *uuid.UUID, last uint64,
+    tenant uuid.UUID, last uint64,
     max uint, filter func(*Entry) bool) ([]Entry, error) {
   it := C.rocksdb_create_iterator_cf(s.db, defaultReadOptions, s.tenantIndices)
   defer C.rocksdb_iter_destroy(it)
@@ -679,7 +678,7 @@ func (s *LevelDBStorage) GetTenantEntries(
     ixId, _, err := ptrToTenantIndex(keyPtr, keyLen)
     if err != nil { return nil, err }
 
-    if !uuid.Equal(*tenant, *ixId) {
+    if !uuid.Equal(tenant, ixId) {
       break
     }
 

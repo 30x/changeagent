@@ -35,7 +35,7 @@ func (a *ChangeAgent) initChangesAPI() {
  * of the change.
  */
 func (a *ChangeAgent) handlePostChanges(resp http.ResponseWriter, req *http.Request) {
-  a.postChange(resp, req, nil)
+  a.postChange(resp, req, uuid.Nil)
 }
 
 func (a *ChangeAgent) handlePostTenantChanges(resp http.ResponseWriter, req *http.Request) {
@@ -49,7 +49,7 @@ func (a *ChangeAgent) handlePostTenantChanges(resp http.ResponseWriter, req *htt
   a.postChange(resp, req, tenantID)
 }
 
-func (a *ChangeAgent) postChange(resp http.ResponseWriter, req *http.Request, tenantID *uuid.UUID) {
+func (a *ChangeAgent) postChange(resp http.ResponseWriter, req *http.Request, tenantID uuid.UUID) {
   if req.Header.Get("Content-Type")!= JSONContent {
     // TODO regexp?
     writeError(resp, http.StatusUnsupportedMediaType, errors.New("Unsupported content type"))
@@ -62,10 +62,7 @@ func (a *ChangeAgent) postChange(resp http.ResponseWriter, req *http.Request, te
     writeError(resp, http.StatusBadRequest, errors.New("Invalid JSON"))
     return
   }
-
-  if tenantID != nil {
-    proposal.Tenant = tenantID
-  }
+  proposal.Tenant = tenantID
 
   newEntry, err := a.makeProposal(proposal)
   if err != nil {
@@ -93,7 +90,7 @@ func (a *ChangeAgent) postChange(resp http.ResponseWriter, req *http.Request, te
  * Result will be an array of objects, with metadata plus original JSON data.
  */
 func (a *ChangeAgent) handleGetChanges(resp http.ResponseWriter, req *http.Request) {
-  a.getChanges(nil, resp, req)
+  a.getChanges(uuid.Nil, resp, req)
 }
 
 func (a *ChangeAgent) handleGetTenantChanges(resp http.ResponseWriter, req *http.Request) {
@@ -107,7 +104,7 @@ func (a *ChangeAgent) handleGetTenantChanges(resp http.ResponseWriter, req *http
   a.getChanges(tenantID, resp, req)
 }
 
-func (a *ChangeAgent) getChanges(id *uuid.UUID, resp http.ResponseWriter, req *http.Request) {
+func (a *ChangeAgent) getChanges(id uuid.UUID, resp http.ResponseWriter, req *http.Request) {
   qps := req.URL.Query()
 
   limitStr := qps.Get("limit")
@@ -158,7 +155,7 @@ func (a *ChangeAgent) getChanges(id *uuid.UUID, resp http.ResponseWriter, req *h
 }
 
 func (a *ChangeAgent) fetchEntries(
-    id *uuid.UUID,
+    id uuid.UUID,
     since uint64,
     limit uint,
     resp http.ResponseWriter) ([]storage.Entry, uint64, error) {
@@ -169,7 +166,7 @@ func (a *ChangeAgent) fetchEntries(
 
   glog.V(2).Infof("Fetching up to %d changes since %d", limit, since)
 
-  if id == nil {
+  if uuid.Equal(id, uuid.Nil) {
     entries, err = a.stor.GetEntries(since, limit,
       func(e *storage.Entry) bool {
         if e.Index > since {

@@ -116,7 +116,7 @@ func keyToUint(ptr unsafe.Pointer, len C.size_t) (int, uint64, error) {
 /*
  * Given a tenant, collection, and key, turn them into a composite key.
  */
-func indexKeyToPtr(id *uuid.UUID, key string) (unsafe.Pointer, C.size_t, error) {
+func indexKeyToPtr(id uuid.UUID, key string) (unsafe.Pointer, C.size_t, error) {
   keyBytes := []byte(key)
   keyLen := uint16(len(keyBytes))
   if keyLen > maxKeyLen {
@@ -143,58 +143,58 @@ func indexKeyToPtr(id *uuid.UUID, key string) (unsafe.Pointer, C.size_t, error) 
  * Returns: collection ID, key type, and key (or "")
  * keyType is [startRange | endRange | 0]
  */
-func ptrToIndexKey(ptr unsafe.Pointer, len C.size_t) (*uuid.UUID, uint16, string, error) {
+func ptrToIndexKey(ptr unsafe.Pointer, len C.size_t) (uuid.UUID, uint16, string, error) {
   if len < 19 {
-    return nil, 0, "", errors.New("Invalid entry")
+    return uuid.Nil, 0, "", errors.New("Invalid entry")
   }
 
   buf := bytes.NewBuffer(ptrToBytes(ptr, len))
   pb, _ := buf.ReadByte()
   vers, kt := parseKeyPrefix(pb)
   if vers != KeyVersion {
-    return nil, 0, "", fmt.Errorf("Invalid index key version %d", vers)
+    return uuid.Nil, 0, "", fmt.Errorf("Invalid index key version %d", vers)
   }
   if kt != IndexKey {
-    return nil, 0, "", fmt.Errorf("Invalid key type %d", kt)
+    return uuid.Nil, 0, "", fmt.Errorf("Invalid key type %d", kt)
   }
 
   ub := make([]byte, 16)
   _, err := buf.Read(ub)
-  if err != nil { return nil, 0, "", fmt.Errorf("Error reading: %s", err) }
+  if err != nil { return uuid.Nil, 0, "", fmt.Errorf("Error reading: %s", err) }
   id, err := uuid.FromBytes(ub)
-  if err != nil { return nil, 0, "", fmt.Errorf("Invalid UUID: %s", err) }
+  if err != nil { return uuid.Nil, 0, "", fmt.Errorf("Invalid UUID: %s", err) }
 
   var keyLen uint16
   binary.Read(buf, byteOrder, &keyLen)
 
   if keyLen < 0 || keyLen > math.MaxUint16 {
-    return nil, 0, "", errors.New("Invalid key length")
+    return uuid.Nil, 0, "", errors.New("Invalid key length")
   }
   if keyLen == startRange {
-    return &id, startRange, "", nil
+    return id, startRange, "", nil
   }
   if keyLen == endRange {
-    return &id, endRange, "", nil
+    return id, endRange, "", nil
   }
 
   var key string
   if keyLen > 0 {
     tb := make([]byte, keyLen)
     _, err = buf.Read(tb)
-    if err != nil { return nil, 0, "", fmt.Errorf("Error reading: %s", err) }
+    if err != nil { return uuid.Nil, 0, "", fmt.Errorf("Error reading: %s", err) }
     key = string(tb)
   } else {
     key = ""
   }
   buf.ReadByte()
 
-  return &id, 0, key, nil
+  return id, 0, key, nil
 }
 
 /*
  * Tenant ID and index key, used for the tenant-specific change table.
  */
-func tenantIndexToPtr(id *uuid.UUID, ix uint64) (unsafe.Pointer, C.size_t) {
+func tenantIndexToPtr(id uuid.UUID, ix uint64) (unsafe.Pointer, C.size_t) {
   buf := &bytes.Buffer{}
   buf.Write(keyPrefix(TenantIndexKey))
   buf.Write(id.Bytes())
@@ -203,31 +203,31 @@ func tenantIndexToPtr(id *uuid.UUID, ix uint64) (unsafe.Pointer, C.size_t) {
   return bytesToPtr(buf.Bytes())
 }
 
-func ptrToTenantIndex(ptr unsafe.Pointer, len C.size_t) (*uuid.UUID, uint64, error) {
+func ptrToTenantIndex(ptr unsafe.Pointer, len C.size_t) (uuid.UUID, uint64, error) {
   if len < 25 {
-    return nil, 0, errors.New("Invalid index entry")
+    return uuid.Nil, 0, errors.New("Invalid index entry")
   }
 
   buf := bytes.NewBuffer(ptrToBytes(ptr, len))
   pb, _ := buf.ReadByte()
   vers, kt := parseKeyPrefix(pb)
   if vers != KeyVersion {
-    return nil, 0, fmt.Errorf("Invalid index key version %d", vers)
+    return uuid.Nil, 0, fmt.Errorf("Invalid index key version %d", vers)
   }
   if kt != TenantIndexKey {
-    return nil, 0, fmt.Errorf("Invalid key type %d", kt)
+    return uuid.Nil, 0, fmt.Errorf("Invalid key type %d", kt)
   }
 
   ub := make([]byte, 16)
   _, err := buf.Read(ub)
-  if err != nil { return nil, 0, fmt.Errorf("Error reading: %s", err) }
+  if err != nil { return uuid.Nil, 0, fmt.Errorf("Error reading: %s", err) }
   id, err := uuid.FromBytes(ub)
-  if err != nil { return nil, 0, fmt.Errorf("Invalid UUID: %s", err) }
+  if err != nil { return uuid.Nil, 0, fmt.Errorf("Invalid UUID: %s", err) }
 
   var ix uint64
   binary.Read(buf, byteOrder, &ix)
 
-  return &id, ix, nil
+  return id, ix, nil
 }
 
 /*
@@ -263,15 +263,15 @@ func ptrToEntry(ptr unsafe.Pointer, len C.size_t) (*Entry, error) {
 /*
  * Create a special index key for the start of a collection's index records.
  */
-func startIndexToPtr(id *uuid.UUID) (unsafe.Pointer, C.size_t, error) {
+func startIndexToPtr(id uuid.UUID) (unsafe.Pointer, C.size_t, error) {
   return indexRange(id, false)
 }
 
-func endIndexToPtr(id *uuid.UUID) (unsafe.Pointer, C.size_t, error) {
+func endIndexToPtr(id uuid.UUID) (unsafe.Pointer, C.size_t, error) {
   return indexRange(id, true)
 }
 
-func indexRange(id *uuid.UUID, isEnd bool) (unsafe.Pointer, C.size_t, error) {
+func indexRange(id uuid.UUID, isEnd bool) (unsafe.Pointer, C.size_t, error) {
   buf := &bytes.Buffer{}
   buf.Write(keyPrefix(IndexKey))
   buf.Write(id.Bytes())
@@ -298,7 +298,7 @@ func stringToError(c *C.char) error {
   return errors.New(es)
 }
 
-func uuidToPtr(id *uuid.UUID) (unsafe.Pointer, C.size_t) {
+func uuidToPtr(id uuid.UUID) (unsafe.Pointer, C.size_t) {
   buf := &bytes.Buffer{}
   buf.Write(keyPrefix(UuidValue))
   buf.Write(id.Bytes())
@@ -307,28 +307,28 @@ func uuidToPtr(id *uuid.UUID) (unsafe.Pointer, C.size_t) {
   return ptr, len
 }
 
-func ptrToUuid(ptr unsafe.Pointer, len C.size_t) (*uuid.UUID, error) {
+func ptrToUuid(ptr unsafe.Pointer, len C.size_t) (uuid.UUID, error) {
   if len < 17 {
-    return nil, errors.New("Invalid entry")
+    return uuid.Nil, errors.New("Invalid entry")
   }
 
   buf := bytes.NewBuffer(ptrToBytes(ptr, len))
   pb, _ := buf.ReadByte()
   vers, kt := parseKeyPrefix(pb)
   if vers != KeyVersion {
-    return nil, fmt.Errorf("Invalid index key version %d", vers)
+    return uuid.Nil, fmt.Errorf("Invalid index key version %d", vers)
   }
   if kt != UuidValue {
-    return nil, fmt.Errorf("Invalid key type %d", kt)
+    return uuid.Nil, fmt.Errorf("Invalid key type %d", kt)
   }
 
   ub := make([]byte, 16)
   _, err := buf.Read(ub)
-  if err != nil { return nil, fmt.Errorf("Error reading: %s", err) }
+  if err != nil { return uuid.Nil, fmt.Errorf("Error reading: %s", err) }
   id, err := uuid.FromBytes(ub)
-  if err != nil { return nil, fmt.Errorf("Invalid UUID: %s", err) }
+  if err != nil { return uuid.Nil, fmt.Errorf("Invalid UUID: %s", err) }
 
-  return &id, nil
+  return id, nil
 }
 
 func stringToPtr(s string) (unsafe.Pointer, C.size_t) {
