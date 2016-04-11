@@ -1,5 +1,5 @@
 hash: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
-updated: 2016-03-30T17:13:59.027642494-07:00
+updated: 2016-04-11T13:41:19.155709907-07:00
 imports:
 - name: github.com/golang/glog
   version: 23def4e6c14b4da8ac2ed8007337bc5eb5007998
@@ -11,10 +11,6 @@ imports:
   version: 1ea25387ff6f684839d82767c1733ff4d4d15d0a
 - name: github.com/gorilla/mux
   version: 0eeaf8392f5b04950925b8a69fe70f110fa7cbfc
-- name: github.com/samuel/go-zookeeper
-  version: 218e9c81c0dd8b3b18172b2bbfad92cc7d6db55f
-  subpackages:
-  - /zk
 - name: github.com/satori/go.uuid
   version: f9ab0dce87d815821e221626b772e3475a0d2749
 devImports: []

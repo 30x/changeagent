@@ -5,7 +5,4 @@ import:
   subpackages:
   - /proto
 - package: github.com/gorilla/mux
-- package: github.com/samuel/go-zookeeper
-  subpackages:
-  - /zk
 - package: github.com/satori/go.uuid
