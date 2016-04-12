@@ -1,0 +1,17 @@
+package discovery;
+
+message NodePb {
+  required uint64 id = 1;
+  required string address = 2;
+  required int32 state = 3;
+}
+
+message NodeListPb {
+  repeated NodePb new = 1;
+  repeated NodePb old = 2;
+}
+
+message NodeConfigPb {
+  required NodeListPb current = 1;
+  optional NodeListPb previous = 2;
+}

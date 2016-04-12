@@ -86,13 +86,13 @@ func (r *RaftImpl) sendVotes(state *raftState, index uint64, rc chan<- voteResul
   var responses []chan *communication.VoteResponse
 
   for _, node := range(nodes) {
-    if node.Id == r.id {
+    if node.ID == r.id {
       votes++
       continue
     }
     rc := make(chan *communication.VoteResponse)
     responses = append(responses, rc)
-    r.comm.RequestVote(node.Id, &vr, rc)
+    r.comm.RequestVote(node.ID, &vr, rc)
   }
 
   for _, respChan := range(responses) {

@@ -11,15 +11,15 @@ import (
   "time"
 )
 
-var fileLine *regexp.Regexp = regexp.MustCompile("^([0-9]+)\\s(.+)")
+var fileLine = regexp.MustCompile("^([0-9]+)\\s(.+)")
 
-func CreateStaticDiscovery(addrs []string) *DiscoveryService {
+func CreateStaticDiscovery(addrs []string) *Service {
   var id uint64 = 1
   var nodes []Node
 
   for _, na := range(addrs) {
     nn := Node{
-      Id: id,
+      ID: id,
       Address: na,
       State: StateMember,
     }
@@ -32,7 +32,7 @@ func CreateStaticDiscovery(addrs []string) *DiscoveryService {
   return ret
 }
 
-func ReadDiscoveryFile(fileName string, updateInterval time.Duration) (*DiscoveryService, error) {
+func ReadDiscoveryFile(fileName string, updateInterval time.Duration) (*Service, error) {
   nodes, err := readFile(fileName)
   if err != nil { return nil, err }
   ret := createImpl(nodes, nil)
@@ -76,7 +76,7 @@ func readFile(fileName string) ([]Node, error) {
     }
 
     nn := Node{
-      Id: id,
+      ID: id,
       Address: matches[2],
     }
     nodes = append(nodes, nn)
@@ -84,7 +84,7 @@ func readFile(fileName string) ([]Node, error) {
   return nodes, nil
 }
 
-func (d *DiscoveryService) fileReadLoop(fileName string, interval time.Duration) {
+func (d *Service) fileReadLoop(fileName string, interval time.Duration) {
   for {
     time.Sleep(interval)
     newNodes, err := readFile(fileName)

@@ -6,26 +6,26 @@ func compareChanges(oldNodes []Node, newNodes []Node) []Change {
   // Know what IDs are in the old list
   existing := make(map[uint64]*Node)
   for i := range(oldNodes) {
-    existing[oldNodes[i].Id] = &(oldNodes[i])
+    existing[oldNodes[i].ID] = &(oldNodes[i])
   }
 
   // Iterate through the new list for added and updated nodes
   for i := range(newNodes) {
     nn := &(newNodes[i])
-    if existing[nn.Id] == nil {
+    if existing[nn.ID] == nil {
       e := Change{
         Action: NewNode,
         Node: nn,
       }
       changes = append(changes, e)
-    } else if existing[nn.Id].Address != nn.Address {
+    } else if existing[nn.ID].Address != nn.Address {
       e := Change{
         Action: UpdatedNode,
         Node: nn,
       }
       changes = append(changes, e)
     }
-    delete(existing, nn.Id)
+    delete(existing, nn.ID)
   }
 
   // Anything left is left over and must be deleted

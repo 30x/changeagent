@@ -155,7 +155,7 @@ func (r *RaftImpl) followerLoop(isCandidate bool, state *raftState) chan bool {
     case change := <- r.configChanges:
       // Discovery service now up to date, so not much to do
       glog.Infof("Received configuration change type %d for node %d",
-        change.Action, change.Node.Id)
+        change.Action, change.Node.ID)
 
     case stopDone := <- r.stopChan:
       r.setState(Stopping)
@@ -170,11 +170,11 @@ func (r *RaftImpl) leaderLoop(state *raftState) chan bool {
   // election timeouts (§5.2)
   //   We will do this inside the "peers" module
   for _, n := range(r.disco.GetNodes()) {
-    if n.Id == r.id {
+    if n.ID == r.id {
       continue
     }
-    state.peers[n.Id] = startPeer(n.Id, r, state.peerMatchChanges)
-    state.peerMatches[n.Id] = 0
+    state.peers[n.ID] = startPeer(n.ID, r, state.peerMatchChanges)
+    state.peerMatches[n.ID] = 0
   }
 
   // Upon election: send initial empty AppendEntries RPCs (heartbeat) to
@@ -259,7 +259,7 @@ func stopPeers(state *raftState) {
 }
 
 func (r *RaftImpl) handleLeaderConfigChange(state *raftState, change discovery.Change) {
-  id := change.Node.Id
+  id := change.Node.ID
   switch change.Action {
   case discovery.NewNode:
     glog.Infof("Adding new node %d", id)

@@ -9,7 +9,7 @@ type updateCmd struct {
   newNodes []Node
 }
 
-type DiscoveryService struct {
+type Service struct {
   latch *sync.Mutex
   nodes []Node
   spi discoverySpi
@@ -29,8 +29,8 @@ type discoverySpi interface {
 /*
  * SPIs must call this to create the thing that they return from their "create" methods.
  */
-func createImpl(nodes []Node, spi discoverySpi) *DiscoveryService {
-  disco := &DiscoveryService{
+func createImpl(nodes []Node, spi discoverySpi) *Service {
+  disco := &Service{
     latch: &sync.Mutex{},
     nodes: nodes,
     spi: spi,
@@ -41,31 +41,37 @@ func createImpl(nodes []Node, spi discoverySpi) *DiscoveryService {
   return disco
 }
 
-func (d *DiscoveryService) GetNodes() []Node {
+func (d *Service) GetCurrentConfig() *NodeConfig {
+  nodes := d.GetNodes()
+  cur := NodeList{New: nodes}
+  return &NodeConfig{Current: &cur}
+}
+
+func (d *Service) GetNodes() []Node {
   d.latch.Lock()
   defer d.latch.Unlock()
   return d.nodes
 }
 
-func (d *DiscoveryService) setNodes(newNodes []Node) {
+func (d *Service) setNodes(newNodes []Node) {
   d.latch.Lock()
   d.nodes = newNodes
   d.latch.Unlock()
 }
 
-func (d *DiscoveryService) GetAddress(id uint64) string {
+func (d *Service) GetAddress(id uint64) string {
   d.latch.Lock()
   defer d.latch.Unlock()
 
   for _, n := range(d.nodes) {
-    if n.Id == id {
+    if n.ID == id {
       return n.Address
     }
   }
   return ""
 }
 
-func (d *DiscoveryService) Watch() <-chan Change {
+func (d *Service) Watch() <-chan Change {
   watchChan := make(chan Change, 1)
   cmd := updateCmd{
     newWatcher: &watchChan,
@@ -74,14 +80,14 @@ func (d *DiscoveryService) Watch() <-chan Change {
   return watchChan
 }
 
-func (d *DiscoveryService) updateNodes(newNodes []Node) {
+func (d *Service) updateNodes(newNodes []Node) {
   cmd := updateCmd{
     newNodes: newNodes,
   }
   d.updateChan <- cmd
 }
 
-func (d *DiscoveryService) Close() {
+func (d *Service) Close() {
   if d.spi != nil {
     d.spi.stop()
   }
@@ -91,7 +97,7 @@ func (d *DiscoveryService) Close() {
   <- stopped
 }
 
-func (d *DiscoveryService) discoveryLoop() {
+func (d *Service) discoveryLoop() {
   running := true
   var watchers [](chan Change)
 

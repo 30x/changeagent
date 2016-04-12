@@ -1,3 +1,3 @@
-protoc --go_out=. zoo.proto
+protoc --go_out=. discovery.proto
 
 

@@ -4,38 +4,32 @@ import (
   "testing"
   "time"
   "os"
+  . "github.com/onsi/ginkgo"
+  . "github.com/onsi/gomega"
 )
 
-func TestDiscoveryFile(t *testing.T) {
-  d, err := ReadDiscoveryFile("./testfiles/testdisco", 0)
-  if err != nil { t.Fatalf("Error reading file: %v", err) }
+var _ = Describe("Static Discovery", func() {
+  It("Discovery File", func() {
+    d, err := ReadDiscoveryFile("./testfiles/testdisco", 0)
+    Expect(err).Should(Succeed())
 
-  if len(d.GetNodes()) != 2 {
-    t.Fatal("Expected only two nodes to be discovered")
-  }
-  if d.GetNodes()[0].Id != 1 {
-    t.Fatalf("Expected node Id 1 instead of %d", d.GetNodes()[0].Id)
-  }
-  if d.GetNodes()[0].Address != "localhost:1234" {
-    t.Fatal("Invalid address for first node")
-  }
-  if d.GetNodes()[1].Id != 2 {
-    t.Fatalf("Expected node Id 2 instead of %d", d.GetNodes()[1].Id)
-  }
-  if d.GetNodes()[1].Address != "localhost:2345" {
-    t.Fatal("Invalid address for second node")
-  }
-}
+    Expect(len(d.GetNodes())).Should(Equal(2))
+    Expect(d.GetNodes()[0].ID).Should(BeEquivalentTo(1))
+    Expect(d.GetNodes()[0].Address).Should(Equal("localhost:1234"))
+    Expect(d.GetNodes()[1].ID).Should(BeEquivalentTo(2))
+    Expect(d.GetNodes()[1].Address).Should(Equal("localhost:2345"))
+  })
+})
 
 func TestFixedDiscovery(t *testing.T) {
   d := CreateStaticDiscovery([]string{"one", "two", "three"})
 
   if len(d.GetNodes()) != 3 { t.Fatal("Expected three entries") }
-  if d.GetNodes()[0].Id != 1 { t.Fatal("invalid node ID") }
+  if d.GetNodes()[0].ID != 1 { t.Fatal("invalid node ID") }
   if d.GetNodes()[0].Address != "one" { t.Fatal("invalid address") }
-  if d.GetNodes()[1].Id != 2 { t.Fatal("invalid node ID") }
+  if d.GetNodes()[1].ID != 2 { t.Fatal("invalid node ID") }
   if d.GetNodes()[1].Address != "two" { t.Fatal("invalid address") }
-  if d.GetNodes()[2].Id != 3 { t.Fatal("invalid node ID") }
+  if d.GetNodes()[2].ID != 3 { t.Fatal("invalid node ID") }
   if d.GetNodes()[2].Address != "three" { t.Fatal("invalid address") }
 }
 
@@ -119,14 +113,14 @@ func TestDiscoveryFileUpdate(t *testing.T) {
   if len(d.GetNodes()) != 2 {
     t.Fatal("Expected only two nodes to be discovered")
   }
-  if d.GetNodes()[0].Id != 1 {
-    t.Fatalf("Expected node Id 1 instead of %d", d.GetNodes()[0].Id)
+  if d.GetNodes()[0].ID != 1 {
+    t.Fatalf("Expected node ID 1 instead of %d", d.GetNodes()[0].ID)
   }
   if d.GetNodes()[0].Address != "localhost:1234" {
     t.Fatal("Invalid address for first node")
   }
-  if d.GetNodes()[1].Id != 2 {
-    t.Fatalf("Expected node Id 2 instead of %d", d.GetNodes()[1].Id)
+  if d.GetNodes()[1].ID != 2 {
+    t.Fatalf("Expected node ID 2 instead of %d", d.GetNodes()[1].ID)
   }
   if d.GetNodes()[1].Address != "localhost:2345" {
     t.Fatal("Invalid address for second node")
@@ -139,7 +133,7 @@ func TestDiscoveryFileUpdate(t *testing.T) {
     change := <- changeWatcher
     if change.Action != UpdatedNode { t.Fatal("Got wrong action on add node") }
     if change.Node.Address != "localhost:9999" { t.Fatal("Got wrong address on node") }
-    if change.Node.Id != 2 { t.Fatal("Got wrong ID on node") }
+    if change.Node.ID != 2 { t.Fatal("Got wrong ID on node") }
     syncChanges <- true
   }()
 
