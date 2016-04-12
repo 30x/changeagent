@@ -19,7 +19,7 @@ const (
   DataDir = "./rafttestdata"
   PreserveDatabases = false
   DumpDatabases = false
-  DebugMode = true
+  DebugMode = false
 )
 
 var testRafts []*Service

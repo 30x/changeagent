@@ -378,6 +378,9 @@ var _ = Describe("Raft Unit Tests", func() {
    * Voting. Handle both joint and regular consensus.
    */
 
+  nodeSelf := discovery.Node{
+    ID: 1,
+  }
   node1 := discovery.Node{
     ID: 10,
   }
@@ -390,19 +393,22 @@ var _ = Describe("Raft Unit Tests", func() {
   node4 := discovery.Node{
     ID: 40,
   }
+  node5 := discovery.Node{
+    ID: 50,
+  }
 
   It("Vote several nodes", func() {
     cur := discovery.NodeList{
-      New: []discovery.Node{node1, node2, node3},
+      New: []discovery.Node{nodeSelf, node1, node2},
     }
     cfg := &discovery.NodeConfig{
       Current: &cur,
     }
 
+    // Majority of nodes, plus ourselves, voted yes.
     responses := []communication.VoteResponse{
       {NodeID: 10, VoteGranted: true},
       {NodeID: 20, VoteGranted: true},
-      {NodeID: 30, VoteGranted: true},
     }
     granted := unitTestRaft.countVotes(responses, cfg)
     Expect(granted).Should(BeTrue())
@@ -410,31 +416,20 @@ var _ = Describe("Raft Unit Tests", func() {
     responses = []communication.VoteResponse{
       {NodeID: 10, VoteGranted: true},
       {NodeID: 20, VoteGranted: true},
-      {NodeID: 30, VoteGranted: false},
     }
     granted = unitTestRaft.countVotes(responses, cfg)
     Expect(granted).Should(BeTrue())
 
     responses = []communication.VoteResponse{
-      {NodeID: 10, VoteGranted: true},
-      {NodeID: 20, VoteGranted: false},
-      {NodeID: 30, VoteGranted: false},
-    }
-    granted = unitTestRaft.countVotes(responses, cfg)
-    Expect(granted).Should(BeFalse())
-
-    responses = []communication.VoteResponse{
       {NodeID: 10, VoteGranted: false},
       {NodeID: 20, VoteGranted: false},
-      {NodeID: 30, VoteGranted: false},
     }
     granted = unitTestRaft.countVotes(responses, cfg)
     Expect(granted).Should(BeFalse())
 
     responses = []communication.VoteResponse{
       {NodeID: 10, Error: errors.New("Pow")},
-      {NodeID: 20, VoteGranted: true},
-      {NodeID: 30,Error: errors.New("Pow")},
+      {NodeID: 20, VoteGranted: false},
     }
     granted = unitTestRaft.countVotes(responses, cfg)
     Expect(granted).Should(BeFalse())
@@ -442,28 +437,20 @@ var _ = Describe("Raft Unit Tests", func() {
 
   It("Vote one node", func() {
     cur := discovery.NodeList{
-      New: []discovery.Node{node1},
+      New: []discovery.Node{nodeSelf},
     }
     cfg := &discovery.NodeConfig{
       Current: &cur,
     }
 
-    responses := []communication.VoteResponse{{NodeID: 10, VoteGranted: true}}
+    responses := []communication.VoteResponse{}
     granted := unitTestRaft.countVotes(responses, cfg)
     Expect(granted).Should(BeTrue())
-
-    responses = []communication.VoteResponse{{NodeID: 10, VoteGranted: false}}
-    granted = unitTestRaft.countVotes(responses, cfg)
-    Expect(granted).Should(BeFalse())
-
-    responses = []communication.VoteResponse{{NodeID: 10, Error: errors.New("Pow")}}
-    granted = unitTestRaft.countVotes(responses, cfg)
-    Expect(granted).Should(BeFalse())
   })
 
   It("Vote even nodes", func() {
     cur := discovery.NodeList{
-      New: []discovery.Node{node1, node2, node3, node4},
+      New: []discovery.Node{nodeSelf, node1, node2, node3},
     }
     cfg := &discovery.NodeConfig{
       Current: &cur,
@@ -473,7 +460,6 @@ var _ = Describe("Raft Unit Tests", func() {
       {NodeID: 10, VoteGranted: true},
       {NodeID: 20, VoteGranted: true},
       {NodeID: 30, VoteGranted: true},
-      {NodeID: 40, VoteGranted: true},
     }
     granted := unitTestRaft.countVotes(responses, cfg)
     Expect(granted).Should(BeTrue())
@@ -482,7 +468,6 @@ var _ = Describe("Raft Unit Tests", func() {
       {NodeID: 10, VoteGranted: true},
       {NodeID: 20, VoteGranted: false},
       {NodeID: 30, VoteGranted: true},
-      {NodeID: 40, VoteGranted: true},
     }
     granted = unitTestRaft.countVotes(responses, cfg)
     Expect(granted).Should(BeTrue())
@@ -491,7 +476,6 @@ var _ = Describe("Raft Unit Tests", func() {
       {NodeID: 10, VoteGranted: true},
       {NodeID: 20, VoteGranted: false},
       {NodeID: 30, VoteGranted: false},
-      {NodeID: 40, VoteGranted: true},
     }
     granted = unitTestRaft.countVotes(responses, cfg)
     Expect(granted).Should(BeFalse())
@@ -499,8 +483,41 @@ var _ = Describe("Raft Unit Tests", func() {
 
   It("Vote joint consensus", func() {
     cur := discovery.NodeList{
-      New: []discovery.Node{node1, node2, node3, node4},
-      Old: []discovery.Node{node1, node2, node3},
+      New: []discovery.Node{nodeSelf, node1, node2, node3, node4, node5},
+      Old: []discovery.Node{nodeSelf, node1, node2},
+    }
+    cfg := &discovery.NodeConfig{
+      Current: &cur,
+    }
+
+    // Consensus from both clusters
+    responses := []communication.VoteResponse{
+      {NodeID: 10, VoteGranted: true},
+      {NodeID: 20, VoteGranted: true},
+      {NodeID: 30, VoteGranted: true},
+      {NodeID: 40, VoteGranted: true},
+      {NodeID: 50, VoteGranted: true},
+    }
+    granted := unitTestRaft.countVotes(responses, cfg)
+    Expect(granted).Should(BeTrue())
+
+    // Consensus from old but not new
+    responses = []communication.VoteResponse{
+      {NodeID: 10, VoteGranted: true},
+      {NodeID: 20, VoteGranted: true},
+      {NodeID: 30, VoteGranted: false},
+      {NodeID: 40, VoteGranted: false},
+      {NodeID: 50, VoteGranted: false},
+    }
+    granted = unitTestRaft.countVotes(responses, cfg)
+    Expect(granted).Should(BeFalse())
+  })
+
+  It("Vote joint consensus no leader", func() {
+    // Simulate a situation where we're the leader and we're leaving
+    cur := discovery.NodeList{
+      Old: []discovery.Node{nodeSelf, node1, node2, node3, node4},
+      New: []discovery.Node{node1, node2, node3},
     }
     cfg := &discovery.NodeConfig{
       Current: &cur,
@@ -516,12 +533,12 @@ var _ = Describe("Raft Unit Tests", func() {
     granted := unitTestRaft.countVotes(responses, cfg)
     Expect(granted).Should(BeTrue())
 
-    // Consensus from old but not new
+    // Old config had consensus but not new config
     responses = []communication.VoteResponse{
-      {NodeID: 10, VoteGranted: true},
-      {NodeID: 20, VoteGranted: true},
-      {NodeID: 30, VoteGranted: false},
-      {NodeID: 40, VoteGranted: false},
+      {NodeID: 10, VoteGranted: false},
+      {NodeID: 20, VoteGranted: false},
+      {NodeID: 30, VoteGranted: true},
+      {NodeID: 40, VoteGranted: true},
     }
     granted = unitTestRaft.countVotes(responses, cfg)
     Expect(granted).Should(BeFalse())
