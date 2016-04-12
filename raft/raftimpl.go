@@ -4,6 +4,7 @@ import (
   "errors"
   "fmt"
   "sync"
+  "sync/atomic"
   "time"
   "math/rand"
   "github.com/golang/glog"
@@ -19,6 +20,7 @@ const (
   VotedForKey = 2
   LocalIDKey = 3
   LastAppliedKey = 4
+  NodeConfig = 5
 )
 
 const (
@@ -26,7 +28,7 @@ const (
   HeartbeatTimeout = 2 * time.Second
 )
 
-type State int
+type State int32
 
 const (
   Follower State = iota
@@ -55,10 +57,10 @@ func (r State) String() string {
 
 type Service struct {
   id uint64
-  state State
+  state int32
   leaderID uint64
   comm communication.Communication
-  disco discovery.Discovery
+  nodeConfig atomic.Value
   configChanges <-chan discovery.Change
   stor storage.Storage
   stopChan chan chan bool
@@ -104,9 +106,9 @@ func StartRaft(id uint64,
                stor storage.Storage,
                state StateMachine) (*Service, error) {
   r := &Service{
-    state: Follower,
+    state: int32(Follower),
     comm: comm,
-    disco: disco,
+    nodeConfig: atomic.Value{},
     stor: stor,
     stopChan: make(chan chan bool, 1),
     voteCommands: make(chan voteCommand, 1),
@@ -129,6 +131,9 @@ func StartRaft(id uint64,
   }
   r.id = id
 
+  err = r.loadCurrentConfig(disco, stor)
+  if err != nil { return nil, err }
+
   if disco.GetAddress(r.id) == "" {
     return nil, fmt.Errorf("Id %d cannot be found in discovery data", r.id)
   }
@@ -142,7 +147,7 @@ func StartRaft(id uint64,
 
   if len(disco.GetNodes()) == 1 {
     glog.Info("Only one node. Starting in leader mode.\n")
-    r.state = Leader
+    r.state = int32(Leader)
   }
 
   r.configChanges = disco.Watch()
@@ -150,6 +155,27 @@ func StartRaft(id uint64,
   go r.mainLoop()
 
   return r, nil
+}
+
+func (r *Service) loadCurrentConfig(disco discovery.Discovery, stor storage.Storage) error {
+  buf, err := stor.GetRawMetadata(NodeConfig)
+  if err != nil { return err }
+
+  if buf == nil {
+    glog.Info("Loading configuration from the discovery file for the first time")
+    cfg := disco.GetCurrentConfig()
+    storBuf, err := discovery.EncodeConfig(cfg)
+    if err != nil { return err }
+    err = stor.SetRawMetadata(NodeConfig, storBuf)
+    if err != nil { return err }
+    r.nodeConfig.Store(cfg)
+    return nil
+  }
+
+  cfg, err := discovery.DecodeConfig(buf)
+  if err != nil { return err }
+  r.nodeConfig.Store(cfg)
+  return nil
 }
 
 func (r *Service) Close() {
@@ -239,33 +265,27 @@ func (r *Service) MyID() uint64 {
 }
 
 func (r *Service) GetState() State {
-  r.latch.Lock()
-  defer r.latch.Unlock()
-  return r.state
+  s := atomic.LoadInt32(&r.state)
+  return State(s)
 }
 
 func (r *Service) setState(newState State) {
-  r.latch.Lock()
-  defer r.latch.Unlock()
   glog.V(2).Infof("Node %d: setting state to %d", r.id, newState)
-  r.state = newState
+  ns := int32(newState)
+  atomic.StoreInt32(&r.state, ns)
 }
 
 func (r *Service) GetLeaderID() uint64 {
-  r.latch.Lock()
-  defer r.latch.Unlock()
-  return r.leaderID
+  return atomic.LoadUint64(&r.leaderID)
 }
 
 func (r *Service) setLeaderID(newID uint64) {
-  r.latch.Lock()
-  defer r.latch.Unlock()
   if newID == 0 {
-    glog.V(2).Infof("Node %d: No leader present")
+    glog.V(2).Infof("Node %d: No leader present", r.id)
   } else {
     glog.V(2).Infof("Node %d: Node %d is now the leader", r.id, newID)
   }
-  r.leaderID = newID
+  atomic.StoreUint64(&r.leaderID, newID)
 }
 
 func (r *Service) GetCurrentTerm() uint64 {
@@ -275,6 +295,7 @@ func (r *Service) GetCurrentTerm() uint64 {
 }
 
 func (r *Service) setCurrentTerm(t uint64) {
+  // Use a mutex for this because we write it to DB and want that to be synchronized
   r.latch.Lock()
   defer r.latch.Unlock()
   r.currentTerm = t
@@ -282,27 +303,17 @@ func (r *Service) setCurrentTerm(t uint64) {
 }
 
 func (r *Service) GetCommitIndex() uint64 {
-  r.latch.Lock()
-  defer r.latch.Unlock()
-  return r.commitIndex
+  return atomic.LoadUint64(&r.commitIndex)
 }
 
 // Atomically update the commit index, and return whether it changed
 func (r *Service) setCommitIndex(t uint64) bool {
-  r.latch.Lock()
-  defer r.latch.Unlock()
-
-  if r.commitIndex == t {
-    return false
-  }
-  r.commitIndex = t
-  return true
+  oldIndex := atomic.SwapUint64(&r.commitIndex, t)
+  return oldIndex != t
 }
 
 func (r *Service) GetLastApplied() uint64 {
-  r.latch.Lock()
-  defer r.latch.Unlock()
-  return r.lastApplied
+  return atomic.LoadUint64(&r.lastApplied)
 }
 
 func (r *Service) setLastApplied(t uint64) {
@@ -328,9 +339,7 @@ func (r *Service) setLastApplied(t uint64) {
     return
   }
 
-  r.latch.Lock()
-  r.lastApplied = t
-  r.latch.Unlock()
+  atomic.StoreUint64(&r.lastApplied, t)
 
   r.appliedTracker.Update(uuid.Nil, t)
 
@@ -344,6 +353,7 @@ func (r *Service) GetAppliedTracker() *ChangeTracker {
 }
 
 func (r *Service) GetLastIndex() (uint64, uint64) {
+  // Use a mutex here so that both values are consistent
   r.latch.Lock()
   defer r.latch.Unlock()
   return r.lastIndex, r.lastTerm
@@ -354,6 +364,10 @@ func (r *Service) setLastIndex(ix uint64, term uint64) {
   defer r.latch.Unlock()
   r.lastIndex = ix
   r.lastTerm = term
+}
+
+func (r *Service) getNodeConfig() *discovery.NodeConfig {
+  return r.nodeConfig.Load().(*discovery.NodeConfig)
 }
 
 // Used only in unit testing. Forces us to never become a leader.

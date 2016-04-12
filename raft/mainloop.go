@@ -169,7 +169,9 @@ func (r *Service) leaderLoop(state *raftState) chan bool {
   // each server; repeat during idle periods to prevent
   // election timeouts (§5.2)
   //   We will do this inside the "peers" module
-  for _, n := range(r.disco.GetNodes()) {
+  // Get the list of nodes here from the current discovery service.
+  nodes := r.getNodeConfig().GetUniqueNodes()
+  for _, n := range(nodes) {
     if n.ID == r.id {
       continue
     }

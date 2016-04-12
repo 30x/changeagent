@@ -52,6 +52,8 @@ type AppendResponse struct {
   Error error
 }
 
+var DefaultAppendResponse = AppendResponse{}
+
 func (a *AppendResponse) String() string {
   s := fmt.Sprintf("AppendResponse{ Term: %d Success: %v CommitIndex: %d ",
     a.Term, a.Success, a.CommitIndex)
@@ -67,6 +69,8 @@ type ProposalResponse struct {
   Error error
 }
 
+var DefaultProposalResponse = ProposalResponse{}
+
 func (a *ProposalResponse) String() string {
   s := fmt.Sprintf("ProposalResponse{ NewIndex: %d ", a.NewIndex)
   if a.Error != nil {
@@ -78,7 +82,7 @@ func (a *ProposalResponse) String() string {
 
 type Communication interface {
   SetRaft(raft Raft)
-  RequestVote(id uint64, req *VoteRequest, ch chan *VoteResponse)
-  Append(id uint64, req *AppendRequest) (*AppendResponse, error)
-  Propose(id uint64, e *storage.Entry) (*ProposalResponse, error)
+  RequestVote(id uint64, req VoteRequest, ch chan<- VoteResponse)
+  Append(id uint64, req *AppendRequest) (AppendResponse, error)
+  Propose(id uint64, e *storage.Entry) (ProposalResponse, error)
 }

@@ -7,6 +7,7 @@ package raft
 import (
   "github.com/golang/glog"
   "revision.aeip.apigee.net/greg/changeagent/communication"
+  "revision.aeip.apigee.net/greg/changeagent/discovery"
 )
 
 func (r *Service) handleFollowerVote(state *raftState, cmd voteCommand) bool {
@@ -78,44 +79,83 @@ func (r *Service) sendVotes(state *raftState, index uint64, rc chan<- voteResult
     LastLogTerm: lastTerm,
   }
 
-  nodes := r.disco.GetNodes()
+  // Get the current node list from the current config, and request votes.
+  cfg := r.getNodeConfig()
+  allNodes := cfg.GetUniqueNodes()
   votes := 0
   glog.V(2).Infof("Node %d sending vote request to %d nodes for term %d",
-    r.id, len(nodes), currentTerm)
+    r.id, len(allNodes), currentTerm)
 
-  var responses []chan *communication.VoteResponse
+  var responseChannels []chan communication.VoteResponse
+  var responses []communication.VoteResponse
 
-  for _, node := range(nodes) {
+  // Send off all the votes. Each will run in a goroutine and send us the result in a channel
+  for _, node := range(allNodes) {
     if node.ID == r.id {
       votes++
       continue
     }
-    rc := make(chan *communication.VoteResponse)
-    responses = append(responses, rc)
-    r.comm.RequestVote(node.ID, &vr, rc)
+    rc := make(chan communication.VoteResponse)
+    responseChannels = append(responseChannels, rc)
+    r.comm.RequestVote(node.ID, vr, rc)
   }
 
-  for _, respChan := range(responses) {
-    vresp := <- respChan
-    if vresp.Error != nil {
-      glog.V(2).Infof("Error receiving vote: from %d", vresp.NodeID, vresp.Error)
-    } else if vresp.VoteGranted {
-      glog.V(2).Infof("Node %d received a yes vote from %d",
-        r.id, vresp.NodeID)
-      votes++
-    } else {
-      glog.V(2).Infof("Node %d received a no vote from %d",
-        r.id, vresp.NodeID)
-    }
+  // Pick up all the response channels. This will block until we get all responses.
+  for _, respChan := range(responseChannels) {
+    vresp := <-respChan
+    responses = append(responses, vresp)
   }
 
-  granted := votes >= ((len(nodes) / 2) + 1)
-  glog.Infof("Node %d: election request complete for term %d: %d votes for %d notes. Granted = %v",
-    r.id, vr.Term, votes, len(nodes), granted)
+  // Calculate whether we have enough votes. Take leader changes (joint consensus) into account.
+  granted := r.countVotes(responses, cfg)
+  glog.Infof("Node %d: election request complete for term %d: Granted = %v", r.id, currentTerm, granted)
 
   finalResponse := voteResult{
     index: index,
     result: granted,
   }
   rc <- finalResponse
+}
+
+func (r *Service) countVotes(responses []communication.VoteResponse, cfg *discovery.NodeConfig) bool {
+  // Sort votes into a map so that we can process the rest.
+  voteMap := make(map[uint64]bool)
+
+  // Map votes from peers
+  for _, resp := range(responses) {
+    if resp.Error != nil {
+      glog.V(2).Infof("Node %d: Error: %s", resp.NodeID, resp.Error)
+      voteMap[resp.NodeID] = false
+    } else if resp.VoteGranted {
+      glog.V(2).Infof("Node %d: Voted yes", resp.NodeID)
+      voteMap[resp.NodeID] = true
+    } else {
+      glog.V(2).Infof("Node %d: Voted no", resp.NodeID)
+      voteMap[resp.NodeID] = false
+    }
+  }
+
+  // Don't forget to vote for ourself!
+  voteMap[r.id] = true
+
+  if len(cfg.Current.Old) > 0 {
+    // Joint consensus mode. Need both sets of nodes to vote yes.
+    if !countNodeListVotes(voteMap, cfg.Current.Old) {
+      return false
+    }
+  }
+
+  return countNodeListVotes(voteMap, cfg.Current.New)
+}
+
+func countNodeListVotes(voteMap map[uint64]bool, nodes []discovery.Node) bool {
+  votes := 0
+
+  for _, node := range(nodes) {
+    if voteMap[node.ID] {
+      votes++
+    }
+  }
+
+  return votes >= ((len(nodes) / 2) + 1)
 }

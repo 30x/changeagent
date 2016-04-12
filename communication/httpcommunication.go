@@ -45,20 +45,20 @@ func (h *HTTPCommunication) SetRaft(raft Raft) {
   h.raft = raft
 }
 
-func (h *HTTPCommunication) RequestVote(id uint64, req *VoteRequest, ch chan *VoteResponse) {
+func (h *HTTPCommunication) RequestVote(id uint64, req VoteRequest, ch chan<- VoteResponse) {
   addr := h.discovery.GetAddress(id)
   if addr == "" {
     vr := VoteResponse{
       Error: fmt.Errorf("Invalid peer ID %d", id),
     }
-    ch <- &vr
+    ch <- vr
     return
   }
 
   go h.sendVoteRequest(addr, req, ch)
 }
 
-func (h *HTTPCommunication) sendVoteRequest(addr string, req *VoteRequest, ch chan *VoteResponse) {
+func (h *HTTPCommunication) sendVoteRequest(addr string, req VoteRequest, ch chan<- VoteResponse) {
   uri := fmt.Sprintf("http://%s%s", addr, RequestVoteURI)
 
   reqPb := VoteRequestPb{
@@ -70,14 +70,14 @@ func (h *HTTPCommunication) sendVoteRequest(addr string, req *VoteRequest, ch ch
   reqBody, err := proto.Marshal(&reqPb)
   if err != nil {
     vr := VoteResponse{Error: err}
-    ch <- &vr
+    ch <- vr
     return
   }
 
   resp, err := httpClient.Post(uri, ContentType, bytes.NewReader(reqBody))
   if err != nil {
     vr := VoteResponse{Error: err}
-    ch <- &vr
+    ch <- vr
     return
   }
   defer resp.Body.Close()
@@ -87,14 +87,14 @@ func (h *HTTPCommunication) sendVoteRequest(addr string, req *VoteRequest, ch ch
     vr := VoteResponse{
       Error: fmt.Errorf("HTTP status %d %s", resp.StatusCode, resp.Status),
     }
-    ch <- &vr
+    ch <- vr
     return
   }
 
   respBody, err := ioutil.ReadAll(resp.Body)
   if err != nil {
     vr := VoteResponse{Error: err}
-    ch <- &vr
+    ch <- vr
     return
   }
 
@@ -102,7 +102,7 @@ func (h *HTTPCommunication) sendVoteRequest(addr string, req *VoteRequest, ch ch
   err = proto.Unmarshal(respBody, &respPb)
   if err != nil {
     vr := VoteResponse{Error: err}
-    ch <- &vr
+    ch <- vr
     return
   }
 
@@ -111,13 +111,13 @@ func (h *HTTPCommunication) sendVoteRequest(addr string, req *VoteRequest, ch ch
     Term: respPb.GetTerm(),
     VoteGranted: respPb.GetVoteGranted(),
   }
-  ch <- &voteResp
+  ch <- voteResp
 }
 
-func (h *HTTPCommunication) Append(id uint64, req *AppendRequest) (*AppendResponse, error) {
+func (h *HTTPCommunication) Append(id uint64, req *AppendRequest) (AppendResponse, error) {
   addr := h.discovery.GetAddress(id)
   if addr == "" {
-    return nil, fmt.Errorf("Invalid peer ID %d", id)
+    return DefaultAppendResponse, fmt.Errorf("Invalid peer ID %d", id)
   }
 
   uri := fmt.Sprintf("http://%s%s", addr, AppendURI)
@@ -131,7 +131,7 @@ func (h *HTTPCommunication) Append(id uint64, req *AppendRequest) (*AppendRespon
   }
   for _, e := range req.Entries {
     ebytes, err := storage.EncodeEntry(&e)
-    if err != nil { return nil, err }
+    if err != nil { return DefaultAppendResponse, err }
     reqPb.Entries = append(reqPb.Entries, ebytes)
   }
 
@@ -139,32 +139,32 @@ func (h *HTTPCommunication) Append(id uint64, req *AppendRequest) (*AppendRespon
 
   reqBody, err := proto.Marshal(&reqPb)
   if err != nil {
-    return nil, err
+    return DefaultAppendResponse, err
   }
 
   resp, err := httpClient.Post(uri, ContentType, bytes.NewReader(reqBody))
   if err != nil {
-    return nil, err
+    return DefaultAppendResponse, err
   }
   defer resp.Body.Close()
 
   glog.V(2).Infof("Got back %d", resp.StatusCode)
   if resp.StatusCode != 200 {
-    return nil, fmt.Errorf("HTTP status %d %s", resp.StatusCode, resp.Status)
+    return DefaultAppendResponse, fmt.Errorf("HTTP status %d %s", resp.StatusCode, resp.Status)
   }
 
   respBody, err := ioutil.ReadAll(resp.Body)
   if err != nil {
-    return nil, err
+    return DefaultAppendResponse, err
   }
 
   var respPb AppendResponsePb
   err = proto.Unmarshal(respBody, &respPb)
   if err != nil {
-    return nil, err
+    return DefaultAppendResponse, err
   }
 
-  appResp := &AppendResponse{
+  appResp := AppendResponse{
     Term: respPb.GetTerm(),
     Success: respPb.GetSuccess(),
   }
@@ -174,44 +174,44 @@ func (h *HTTPCommunication) Append(id uint64, req *AppendRequest) (*AppendRespon
   return appResp, nil
 }
 
-func (h *HTTPCommunication) Propose(id uint64, e *storage.Entry) (*ProposalResponse, error) {
+func (h *HTTPCommunication) Propose(id uint64, e *storage.Entry) (ProposalResponse, error) {
   addr := h.discovery.GetAddress(id)
   if addr == "" {
-    return nil, fmt.Errorf("Invalid peer ID %d", id)
+    return DefaultProposalResponse, fmt.Errorf("Invalid peer ID %d", id)
   }
 
   uri := fmt.Sprintf("http://%s%s", addr, ProposeURI)
 
   reqBody, err := storage.EncodeEntry(e)
   if err != nil {
-    return nil, err
+    return DefaultProposalResponse, err
   }
 
   glog.V(3).Infof("Proposal Request (%d): %v", e)
 
   resp, err := httpClient.Post(uri, ContentType, bytes.NewReader(reqBody))
   if err != nil {
-    return nil, err
+    return DefaultProposalResponse, err
   }
   defer resp.Body.Close()
 
   glog.V(2).Infof("Got back %d", resp.StatusCode)
   if resp.StatusCode != 200 {
-    return nil, fmt.Errorf("HTTP status %d %s", resp.StatusCode, resp.Status)
+    return DefaultProposalResponse, fmt.Errorf("HTTP status %d %s", resp.StatusCode, resp.Status)
   }
 
   respBody, err := ioutil.ReadAll(resp.Body)
   if err != nil {
-    return nil, err
+    return DefaultProposalResponse, err
   }
 
   var respPb ProposalResponsePb
   err = proto.Unmarshal(respBody, &respPb)
   if err != nil {
-    return nil, err
+    return DefaultProposalResponse, err
   }
 
-  appResp := &ProposalResponse{
+  appResp := ProposalResponse{
     NewIndex: respPb.GetNewIndex(),
   }
   if respPb.GetError() != "" {

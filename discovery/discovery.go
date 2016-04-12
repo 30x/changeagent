@@ -107,6 +107,9 @@ func EncodeConfig(config *NodeConfig) ([]byte, error) {
   return proto.Marshal(&cfgPb)
 }
 
+/*
+ * Do the opposite of EncodeConfig.
+ */
 func DecodeConfig(msg []byte) (*NodeConfig, error) {
   var cfg NodeConfigPb
   err := proto.Unmarshal(msg, &cfg)
@@ -120,6 +123,28 @@ func DecodeConfig(msg []byte) (*NodeConfig, error) {
     nc.Current = unmarshalNodeList(cfg.Current)
   }
   return &nc, nil
+}
+
+/*
+ * Return a deduped list of all the nodes in the current config.
+ * This will return the latest node list if we are in joint consensus mode.
+ */
+func (c *NodeConfig) GetUniqueNodes() []Node {
+  nl := make(map[uint64]Node)
+  if c.Current != nil {
+    for _, n := range(c.Current.Old) {
+      nl[n.ID] = n
+    }
+    for _, n := range(c.Current.New) {
+      nl[n.ID] = n
+    }
+  }
+
+  var ret []Node
+  for _, n := range(nl) {
+    ret = append(ret, n)
+  }
+  return ret
 }
 
 func marshalNodeList(nl *NodeList) *NodeListPb {

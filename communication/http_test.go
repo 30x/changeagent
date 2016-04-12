@@ -53,9 +53,9 @@ func TestRaftCalls(t *testing.T) {
     Term: 1,
     CandidateID: 1,
   }
-  ch := make(chan *VoteResponse, 1)
+  ch := make(chan VoteResponse, 1)
 
-  comm.RequestVote(1, &req, ch)
+  comm.RequestVote(1, req, ch)
   resp := <- ch
   if resp.Error != nil { t.Fatalf("Error from voteResponse: %v", resp.Error) }
   if resp.Term != 1 { t.Fatalf("Expected term 1, got %d", resp.Term) }

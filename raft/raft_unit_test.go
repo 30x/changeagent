@@ -1,7 +1,9 @@
 package raft
 
 import (
+  "errors"
   "revision.aeip.apigee.net/greg/changeagent/communication"
+  "revision.aeip.apigee.net/greg/changeagent/discovery"
   "revision.aeip.apigee.net/greg/changeagent/storage"
   . "github.com/onsi/ginkgo"
   . "github.com/onsi/gomega"
@@ -370,5 +372,158 @@ var _ = Describe("Raft Unit Tests", func() {
     }
     newIndex := unitTestRaft.calculateCommitIndex(state)
     Expect(newIndex).Should(BeEquivalentTo(lastIndex - 1))
+  })
+
+  /*
+   * Voting. Handle both joint and regular consensus.
+   */
+
+  node1 := discovery.Node{
+    ID: 10,
+  }
+  node2 := discovery.Node{
+    ID: 20,
+  }
+  node3 := discovery.Node{
+    ID: 30,
+  }
+  node4 := discovery.Node{
+    ID: 40,
+  }
+
+  It("Vote several nodes", func() {
+    cur := discovery.NodeList{
+      New: []discovery.Node{node1, node2, node3},
+    }
+    cfg := &discovery.NodeConfig{
+      Current: &cur,
+    }
+
+    responses := []communication.VoteResponse{
+      {NodeID: 10, VoteGranted: true},
+      {NodeID: 20, VoteGranted: true},
+      {NodeID: 30, VoteGranted: true},
+    }
+    granted := unitTestRaft.countVotes(responses, cfg)
+    Expect(granted).Should(BeTrue())
+
+    responses = []communication.VoteResponse{
+      {NodeID: 10, VoteGranted: true},
+      {NodeID: 20, VoteGranted: true},
+      {NodeID: 30, VoteGranted: false},
+    }
+    granted = unitTestRaft.countVotes(responses, cfg)
+    Expect(granted).Should(BeTrue())
+
+    responses = []communication.VoteResponse{
+      {NodeID: 10, VoteGranted: true},
+      {NodeID: 20, VoteGranted: false},
+      {NodeID: 30, VoteGranted: false},
+    }
+    granted = unitTestRaft.countVotes(responses, cfg)
+    Expect(granted).Should(BeFalse())
+
+    responses = []communication.VoteResponse{
+      {NodeID: 10, VoteGranted: false},
+      {NodeID: 20, VoteGranted: false},
+      {NodeID: 30, VoteGranted: false},
+    }
+    granted = unitTestRaft.countVotes(responses, cfg)
+    Expect(granted).Should(BeFalse())
+
+    responses = []communication.VoteResponse{
+      {NodeID: 10, Error: errors.New("Pow")},
+      {NodeID: 20, VoteGranted: true},
+      {NodeID: 30,Error: errors.New("Pow")},
+    }
+    granted = unitTestRaft.countVotes(responses, cfg)
+    Expect(granted).Should(BeFalse())
+  })
+
+  It("Vote one node", func() {
+    cur := discovery.NodeList{
+      New: []discovery.Node{node1},
+    }
+    cfg := &discovery.NodeConfig{
+      Current: &cur,
+    }
+
+    responses := []communication.VoteResponse{{NodeID: 10, VoteGranted: true}}
+    granted := unitTestRaft.countVotes(responses, cfg)
+    Expect(granted).Should(BeTrue())
+
+    responses = []communication.VoteResponse{{NodeID: 10, VoteGranted: false}}
+    granted = unitTestRaft.countVotes(responses, cfg)
+    Expect(granted).Should(BeFalse())
+
+    responses = []communication.VoteResponse{{NodeID: 10, Error: errors.New("Pow")}}
+    granted = unitTestRaft.countVotes(responses, cfg)
+    Expect(granted).Should(BeFalse())
+  })
+
+  It("Vote even nodes", func() {
+    cur := discovery.NodeList{
+      New: []discovery.Node{node1, node2, node3, node4},
+    }
+    cfg := &discovery.NodeConfig{
+      Current: &cur,
+    }
+
+    responses := []communication.VoteResponse{
+      {NodeID: 10, VoteGranted: true},
+      {NodeID: 20, VoteGranted: true},
+      {NodeID: 30, VoteGranted: true},
+      {NodeID: 40, VoteGranted: true},
+    }
+    granted := unitTestRaft.countVotes(responses, cfg)
+    Expect(granted).Should(BeTrue())
+
+    responses = []communication.VoteResponse{
+      {NodeID: 10, VoteGranted: true},
+      {NodeID: 20, VoteGranted: false},
+      {NodeID: 30, VoteGranted: true},
+      {NodeID: 40, VoteGranted: true},
+    }
+    granted = unitTestRaft.countVotes(responses, cfg)
+    Expect(granted).Should(BeTrue())
+
+    responses = []communication.VoteResponse{
+      {NodeID: 10, VoteGranted: true},
+      {NodeID: 20, VoteGranted: false},
+      {NodeID: 30, VoteGranted: false},
+      {NodeID: 40, VoteGranted: true},
+    }
+    granted = unitTestRaft.countVotes(responses, cfg)
+    Expect(granted).Should(BeFalse())
+  })
+
+  It("Vote joint consensus", func() {
+    cur := discovery.NodeList{
+      New: []discovery.Node{node1, node2, node3, node4},
+      Old: []discovery.Node{node1, node2, node3},
+    }
+    cfg := &discovery.NodeConfig{
+      Current: &cur,
+    }
+
+    // Consensus from both clusters
+    responses := []communication.VoteResponse{
+      {NodeID: 10, VoteGranted: true},
+      {NodeID: 20, VoteGranted: true},
+      {NodeID: 30, VoteGranted: true},
+      {NodeID: 40, VoteGranted: true},
+    }
+    granted := unitTestRaft.countVotes(responses, cfg)
+    Expect(granted).Should(BeTrue())
+
+    // Consensus from old but not new
+    responses = []communication.VoteResponse{
+      {NodeID: 10, VoteGranted: true},
+      {NodeID: 20, VoteGranted: true},
+      {NodeID: 30, VoteGranted: false},
+      {NodeID: 40, VoteGranted: false},
+    }
+    granted = unitTestRaft.countVotes(responses, cfg)
+    Expect(granted).Should(BeFalse())
   })
 })
