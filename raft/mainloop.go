@@ -32,7 +32,7 @@ type raftState struct {
   peerMatchChanges chan peerMatchResult
 }
 
-func (r *RaftImpl) mainLoop() {
+func (r *Service) mainLoop() {
   state := &raftState{
     voteIndex: 0,
     voteResults: make(chan voteResult, 1),
@@ -67,7 +67,7 @@ func (r *RaftImpl) mainLoop() {
   }
 }
 
-func (r *RaftImpl) followerLoop(isCandidate bool, state *raftState) chan bool {
+func (r *Service) followerLoop(isCandidate bool, state *raftState) chan bool {
   if isCandidate {
     glog.V(2).Infof("Node %d starting an election", r.id)
     state.voteIndex++
@@ -85,7 +85,7 @@ func (r *RaftImpl) followerLoop(isCandidate bool, state *raftState) chan bool {
       glog.V(2).Infof("Node %d: election timeout", r.id)
       if !r.followerOnly {
         r.setState(Candidate)
-        r.setLeaderId(0)
+        r.setLeaderID(0)
         return nil
       }
 
@@ -99,32 +99,32 @@ func (r *RaftImpl) followerLoop(isCandidate bool, state *raftState) chan bool {
     case appendCmd := <- r.appendCommands:
       // 5.1: If RPC request or response contains term T > currentTerm:
       // set currentTerm = T, convert to follower
-      glog.V(2).Infof("Processing append command from leader %d", appendCmd.ar.LeaderId)
+      glog.V(2).Infof("Processing append command from leader %d", appendCmd.ar.LeaderID)
       if appendCmd.ar.Term > r.GetCurrentTerm() {
         glog.Infof("Append request from new leader at new term %d", appendCmd.ar.Term)
         r.setCurrentTerm(appendCmd.ar.Term)
         state.votedFor = 0
         r.writeLastVote(0)
         r.setState(Follower)
-        r.setLeaderId(appendCmd.ar.LeaderId)
-      } else if r.GetLeaderId() == 0 {
-        glog.Infof("Seeing new leader %d for the first time", appendCmd.ar.LeaderId)
-        r.setLeaderId(appendCmd.ar.LeaderId)
+        r.setLeaderID(appendCmd.ar.LeaderID)
+      } else if r.GetLeaderID() == 0 {
+        glog.Infof("Seeing new leader %d for the first time", appendCmd.ar.LeaderID)
+        r.setLeaderID(appendCmd.ar.LeaderID)
       }
       r.handleAppend(state, appendCmd)
       timeout.Reset(r.randomElectionTimeout())
 
     case prop := <- r.proposals:
-      leaderId := r.GetLeaderId()
-      if leaderId == 0 {
+      leaderID := r.GetLeaderID()
+      if leaderID == 0 {
         pr := proposalResult{
           err: errors.New("Cannot accept proposal because there is no leader"),
         }
         prop.rc <- pr
       } else {
         go func() {
-          glog.V(2).Infof("Forwarding proposal to leader node %d", leaderId)
-          fr, err := r.comm.Propose(leaderId, &prop.entry)
+          glog.V(2).Infof("Forwarding proposal to leader node %d", leaderID)
+          fr, err := r.comm.Propose(leaderID, &prop.entry)
           pr := proposalResult{
             index: fr.NewIndex,
           }
@@ -145,7 +145,7 @@ func (r *RaftImpl) followerLoop(isCandidate bool, state *raftState) chan bool {
         glog.V(2).Infof("Node %d received the election result: %v", r.id, vr.result)
         if vr.result {
           r.setState(Leader)
-          r.setLeaderId(0)
+          r.setLeaderID(0)
           return nil
         }
         // Voting failed. Try again after timeout.
@@ -164,7 +164,7 @@ func (r *RaftImpl) followerLoop(isCandidate bool, state *raftState) chan bool {
   }
 }
 
-func (r *RaftImpl) leaderLoop(state *raftState) chan bool {
+func (r *Service) leaderLoop(state *raftState) chan bool {
   // Upon election: send initial empty AppendEntries RPCs (heartbeat) to
   // each server; repeat during idle periods to prevent
   // election timeouts (§5.2)
@@ -207,7 +207,7 @@ func (r *RaftImpl) leaderLoop(state *raftState) chan bool {
         state.votedFor = 0
         r.writeLastVote(0)
         r.setState(Follower)
-        r.setLeaderId(appendCmd.ar.LeaderId)
+        r.setLeaderID(appendCmd.ar.LeaderID)
         stopPeers(state)
         r.handleAppend(state, appendCmd)
         return nil
@@ -258,7 +258,7 @@ func stopPeers(state *raftState) {
   }
 }
 
-func (r *RaftImpl) handleLeaderConfigChange(state *raftState, change discovery.Change) {
+func (r *Service) handleLeaderConfigChange(state *raftState, change discovery.Change) {
   id := change.Node.ID
   switch change.Action {
   case discovery.NewNode:
@@ -279,9 +279,9 @@ func (r *RaftImpl) handleLeaderConfigChange(state *raftState, change discovery.C
 
 // If there exists an N such that N > commitIndex, a majority
 // of matchIndex[i] ≥ N, and log[N].term == currentTerm: set commitIndex = N (§5.3, §5.4).
-func (r *RaftImpl) calculateCommitIndex(state *raftState) uint64 {
+func (r *Service) calculateCommitIndex(state *raftState) uint64 {
   // Start with the max possible index and work our way down to the min
-  var max uint64 = 0
+  var max uint64
   for _, mi := range(state.peerMatches) {
     if mi > max {
       max = mi
@@ -301,7 +301,7 @@ func (r *RaftImpl) calculateCommitIndex(state *raftState) uint64 {
 
 // If there exists an N such that N > commitIndex, a majority
 // of matchIndex[i] ≥ N, and log[N].term == currentTerm:
-func (r *RaftImpl) canCommit(ix uint64, state *raftState) bool {
+func (r *Service) canCommit(ix uint64, state *raftState) bool {
   votes := 0
   for _, m := range(state.peerMatches) {
     if m >= ix {

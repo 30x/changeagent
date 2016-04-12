@@ -6,7 +6,7 @@ import (
 )
 
 type Raft interface {
-  MyId() uint64
+  MyID() uint64
   RequestVote(req *VoteRequest) (*VoteResponse, error)
   Append(req *AppendRequest) (*AppendResponse, error)
   Propose(e *storage.Entry) (uint64, error)
@@ -14,13 +14,13 @@ type Raft interface {
 
 type VoteRequest struct {
   Term uint64
-  CandidateId uint64
+  CandidateID uint64
   LastLogIndex uint64
   LastLogTerm uint64
 }
 
 type VoteResponse struct {
-  NodeId uint64
+  NodeID uint64
   Term uint64
   VoteGranted bool
   Error error
@@ -28,7 +28,7 @@ type VoteResponse struct {
 
 type AppendRequest struct {
   Term uint64
-  LeaderId uint64
+  LeaderID uint64
   PrevLogIndex uint64
   PrevLogTerm uint64
   LeaderCommit uint64
@@ -37,7 +37,7 @@ type AppendRequest struct {
 
 func (a *AppendRequest) String() string {
   s := fmt.Sprintf("AppendRequest{ Term: %d Leader: %d PrevIx: %d PrevTerm: %d LeaderCommit: %d [",
-    a.Term, a.LeaderId, a.PrevLogIndex, a.PrevLogTerm, a.LeaderCommit)
+    a.Term, a.LeaderID, a.PrevLogIndex, a.PrevLogTerm, a.LeaderCommit)
   for _, e := range(a.Entries) {
     s += e.String()
   }

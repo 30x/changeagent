@@ -10,9 +10,9 @@ import (
   "revision.aeip.apigee.net/greg/changeagent/storage"
 )
 
-func (r *RaftImpl) handleAppend(state *raftState, cmd appendCommand) {
+func (r *Service) handleAppend(state *raftState, cmd appendCommand) {
   glog.V(2).Infof("Got append request for term %d. prevIndex = %d prevTerm = %d leader = %d",
-    cmd.ar.Term, cmd.ar.PrevLogIndex, cmd.ar.PrevLogTerm, cmd.ar.LeaderId)
+    cmd.ar.Term, cmd.ar.PrevLogIndex, cmd.ar.PrevLogTerm, cmd.ar.LeaderID)
   currentTerm := r.GetCurrentTerm()
   commitIndex := r.GetCommitIndex()
 
@@ -96,7 +96,7 @@ func (r *RaftImpl) handleAppend(state *raftState, cmd appendCommand) {
   cmd.rc <- &resp
 }
 
-func (r *RaftImpl) applyCommittedEntries(commitIndex uint64) error {
+func (r *Service) applyCommittedEntries(commitIndex uint64) error {
   // 5.3: If commitIndex > lastApplied: increment lastApplied,
   // apply log[lastApplied] to state machine.
   // In our implementation, we just move a pointer.
@@ -105,7 +105,7 @@ func (r *RaftImpl) applyCommittedEntries(commitIndex uint64) error {
   return nil
 }
 
-func (r *RaftImpl) sendAppend(id uint64, ar *communication.AppendRequest) (bool, error) {
+func (r *Service) sendAppend(id uint64, ar *communication.AppendRequest) (bool, error) {
   glog.V(2).Infof("Sending append request to node %d for term %d", id, ar.Term)
 
   resp, err := r.comm.Append(id, ar)
@@ -115,7 +115,7 @@ func (r *RaftImpl) sendAppend(id uint64, ar *communication.AppendRequest) (bool,
   return false, err
 }
 
-func (r *RaftImpl) appendEntries(entries []storage.Entry) error {
+func (r *Service) appendEntries(entries []storage.Entry) error {
   // 5.3: If an existing entry conflicts with a new one (same index
   // but different terms), delete the existing entry and all that
   // follow it
@@ -151,7 +151,7 @@ func (r *RaftImpl) appendEntries(entries []storage.Entry) error {
   return nil
 }
 
-func (r *RaftImpl) makeProposal(newEntry *storage.Entry, state *raftState) (uint64, error) {
+func (r *Service) makeProposal(newEntry *storage.Entry, state *raftState) (uint64, error) {
     // If command received from client: append entry to local log,
     // respond after entry applied to state machine (§5.3)
     newIndex, _ := r.GetLastIndex()

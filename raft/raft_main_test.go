@@ -22,9 +22,9 @@ const (
   DebugMode = false
 )
 
-var testRafts []*RaftImpl
+var testRafts []*Service
 var testListener []*net.TCPListener
-var unitTestRaft *RaftImpl
+var unitTestRaft *Service
 var unitTestListener *net.TCPListener
 var testDiscovery discovery.Discovery
 
@@ -83,9 +83,9 @@ var _ = AfterSuite(func() {
   cleanRafts()
 })
 
-func startRaft(id uint64, disco discovery.Discovery, listener *net.TCPListener, dir string) (*RaftImpl, error) {
+func startRaft(id uint64, disco discovery.Discovery, listener *net.TCPListener, dir string) (*Service, error) {
   mux := http.NewServeMux()
-  comm, err := communication.StartHttpCommunication(mux, disco)
+  comm, err := communication.StartHTTPCommunication(mux, disco)
   if err != nil { return nil, err }
   stor, err := storage.CreateRocksDBStorage(dir, 1000)
   if err != nil { return nil, err }
@@ -112,7 +112,7 @@ func cleanRafts() {
   cleanRaft(unitTestRaft, unitTestListener)
 }
 
-func cleanRaft(raft *RaftImpl, l *net.TCPListener) {
+func cleanRaft(raft *Service, l *net.TCPListener) {
   raft.Close()
   if DumpDatabases {
     raft.stor.Dump(os.Stdout, 1000)

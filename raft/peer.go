@@ -22,14 +22,14 @@ type rpcResponse struct {
 
 type raftPeer struct {
   id uint64
-  r *RaftImpl
+  r *Service
   proposals chan uint64
   pokes chan bool
   changeChan chan<- peerMatchResult
   stopChan chan bool
 }
 
-func startPeer(id uint64, r *RaftImpl, changes chan<- peerMatchResult) *raftPeer {
+func startPeer(id uint64, r *Service, changes chan<- peerMatchResult) *raftPeer {
   p := &raftPeer{
     id: id,
     r: r,
@@ -114,7 +114,7 @@ func (p *raftPeer) peerLoop() {
       // We got back an RPC response
       rpcRunning = false
       if response.err == nil {
-        nextIndex = p.handleRpcResult(response)
+        nextIndex = p.handleRPCResult(response)
       } else {
         glog.V(2).Infof("Error from peer: %s", response.err)
         failureDelay = true
@@ -127,7 +127,7 @@ func (p *raftPeer) peerLoop() {
   }
 }
 
-func (p *raftPeer) handleRpcResult(resp rpcResponse) uint64 {
+func (p *raftPeer) handleRPCResult(resp rpcResponse) uint64 {
   glog.V(2).Infof("Got RPC result. Success = %v index = %d", resp.success, resp.newIndex)
   if resp.success && !resp.heartbeat {
     // If successful: update nextIndex and matchIndex for
@@ -165,7 +165,7 @@ func (p *raftPeer) sendHeartbeat(index uint64, rc chan rpcResponse) {
   lastIndex, lastTerm := p.r.GetLastIndex()
   ar := &communication.AppendRequest{
     Term: p.r.GetCurrentTerm(),
-    LeaderId: p.r.id,
+    LeaderID: p.r.id,
     PrevLogIndex: lastIndex,
     PrevLogTerm: lastTerm,
     LeaderCommit: p.r.GetCommitIndex(),
@@ -231,7 +231,7 @@ func (p *raftPeer) sendUpdates(desired uint64, next uint64, rc chan rpcResponse)
 
   ar := &communication.AppendRequest{
     Term: p.r.GetCurrentTerm(),
-    LeaderId: p.r.id,
+    LeaderID: p.r.id,
     PrevLogIndex: lastIndex,
     PrevLogTerm: lastTerm,
     LeaderCommit: p.r.GetCommitIndex(),

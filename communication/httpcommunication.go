@@ -15,37 +15,37 @@ import (
 
 const (
   ContentType = "application/changeagent+protobuf"
-  RequestVoteUri = "/raft/requestvote"
-  AppendUri = "/raft/append"
-  ProposeUri = "/raft/propose"
+  RequestVoteURI = "/raft/requestvote"
+  AppendURI = "/raft/append"
+  ProposeURI = "/raft/propose"
   RequestTimeout = 10 * time.Second
 )
 
-var httpClient *http.Client = &http.Client{
+var httpClient = &http.Client{
   Timeout: RequestTimeout,
 }
 
-type HttpCommunication struct {
+type HTTPCommunication struct {
   raft Raft
   discovery discovery.Discovery
 }
 
-func StartHttpCommunication(mux *http.ServeMux,
-                            discovery discovery.Discovery) (*HttpCommunication, error) {
-  comm := HttpCommunication{
+func StartHTTPCommunication(mux *http.ServeMux,
+                            discovery discovery.Discovery) (*HTTPCommunication, error) {
+  comm := HTTPCommunication{
     discovery: discovery,
   }
-  mux.HandleFunc(RequestVoteUri, comm.handleRequestVote)
-  mux.HandleFunc(AppendUri, comm.handleAppend)
-  mux.HandleFunc(ProposeUri, comm.handlePropose)
+  mux.HandleFunc(RequestVoteURI, comm.handleRequestVote)
+  mux.HandleFunc(AppendURI, comm.handleAppend)
+  mux.HandleFunc(ProposeURI, comm.handlePropose)
   return &comm, nil
 }
 
-func (h *HttpCommunication) SetRaft(raft Raft) {
+func (h *HTTPCommunication) SetRaft(raft Raft) {
   h.raft = raft
 }
 
-func (h *HttpCommunication) RequestVote(id uint64, req *VoteRequest, ch chan *VoteResponse) {
+func (h *HTTPCommunication) RequestVote(id uint64, req *VoteRequest, ch chan *VoteResponse) {
   addr := h.discovery.GetAddress(id)
   if addr == "" {
     vr := VoteResponse{
@@ -58,12 +58,12 @@ func (h *HttpCommunication) RequestVote(id uint64, req *VoteRequest, ch chan *Vo
   go h.sendVoteRequest(addr, req, ch)
 }
 
-func (h *HttpCommunication) sendVoteRequest(addr string, req *VoteRequest, ch chan *VoteResponse) {
-  uri := fmt.Sprintf("http://%s%s", addr, RequestVoteUri)
+func (h *HTTPCommunication) sendVoteRequest(addr string, req *VoteRequest, ch chan *VoteResponse) {
+  uri := fmt.Sprintf("http://%s%s", addr, RequestVoteURI)
 
   reqPb := VoteRequestPb{
     Term: &req.Term,
-    CandidateId: &req.CandidateId,
+    CandidateId: &req.CandidateID,
     LastLogIndex: &req.LastLogIndex,
     LastLogTerm: &req.LastLogTerm,
   }
@@ -107,24 +107,24 @@ func (h *HttpCommunication) sendVoteRequest(addr string, req *VoteRequest, ch ch
   }
 
   voteResp := VoteResponse{
-    NodeId: respPb.GetNodeId(),
+    NodeID: respPb.GetNodeId(),
     Term: respPb.GetTerm(),
     VoteGranted: respPb.GetVoteGranted(),
   }
   ch <- &voteResp
 }
 
-func (h *HttpCommunication) Append(id uint64, req *AppendRequest) (*AppendResponse, error) {
+func (h *HTTPCommunication) Append(id uint64, req *AppendRequest) (*AppendResponse, error) {
   addr := h.discovery.GetAddress(id)
   if addr == "" {
     return nil, fmt.Errorf("Invalid peer ID %d", id)
   }
 
-  uri := fmt.Sprintf("http://%s%s", addr, AppendUri)
+  uri := fmt.Sprintf("http://%s%s", addr, AppendURI)
 
   reqPb := AppendRequestPb{
     Term: &req.Term,
-    LeaderId: &req.LeaderId,
+    LeaderId: &req.LeaderID,
     PrevLogIndex: &req.PrevLogIndex,
     PrevLogTerm: &req.PrevLogTerm,
     LeaderCommit: &req.LeaderCommit,
@@ -174,13 +174,13 @@ func (h *HttpCommunication) Append(id uint64, req *AppendRequest) (*AppendRespon
   return appResp, nil
 }
 
-func (h *HttpCommunication) Propose(id uint64, e *storage.Entry) (*ProposalResponse, error) {
+func (h *HTTPCommunication) Propose(id uint64, e *storage.Entry) (*ProposalResponse, error) {
   addr := h.discovery.GetAddress(id)
   if addr == "" {
     return nil, fmt.Errorf("Invalid peer ID %d", id)
   }
 
-  uri := fmt.Sprintf("http://%s%s", addr, ProposeUri)
+  uri := fmt.Sprintf("http://%s%s", addr, ProposeURI)
 
   reqBody, err := storage.EncodeEntry(e)
   if err != nil {
@@ -222,7 +222,7 @@ func (h *HttpCommunication) Propose(id uint64, e *storage.Entry) (*ProposalRespo
   return appResp, nil
 }
 
-func (h *HttpCommunication) handleRequestVote(resp http.ResponseWriter, req *http.Request) {
+func (h *HTTPCommunication) handleRequestVote(resp http.ResponseWriter, req *http.Request) {
   defer req.Body.Close()
 
   if req.Method != "POST" {
@@ -249,7 +249,7 @@ func (h *HttpCommunication) handleRequestVote(resp http.ResponseWriter, req *htt
 
   voteReq := VoteRequest{
     Term: reqpb.GetTerm(),
-    CandidateId: reqpb.GetCandidateId(),
+    CandidateID: reqpb.GetCandidateId(),
     LastLogIndex: reqpb.GetLastLogIndex(),
     LastLogTerm: reqpb.GetLastLogTerm(),
   }
@@ -260,9 +260,9 @@ func (h *HttpCommunication) handleRequestVote(resp http.ResponseWriter, req *htt
     return
   }
 
-  nodeId := h.raft.MyId()
+  nodeID := h.raft.MyID()
   respPb := VoteResponsePb{
-    NodeId: &nodeId,
+    NodeId: &nodeID,
     Term: &voteResp.Term,
     VoteGranted: &voteResp.VoteGranted,
   }
@@ -277,7 +277,7 @@ func (h *HttpCommunication) handleRequestVote(resp http.ResponseWriter, req *htt
   resp.Write(respBody)
 }
 
-func (h *HttpCommunication) handleAppend(resp http.ResponseWriter, req *http.Request) {
+func (h *HTTPCommunication) handleAppend(resp http.ResponseWriter, req *http.Request) {
   defer req.Body.Close()
 
   if req.Method != "POST" {
@@ -304,7 +304,7 @@ func (h *HttpCommunication) handleAppend(resp http.ResponseWriter, req *http.Req
 
   apReq := AppendRequest{
     Term: reqpb.GetTerm(),
-    LeaderId: reqpb.GetLeaderId(),
+    LeaderID: reqpb.GetLeaderId(),
     PrevLogIndex: reqpb.GetPrevLogIndex(),
     PrevLogTerm: reqpb.GetPrevLogTerm(),
     LeaderCommit: reqpb.GetLeaderCommit(),
@@ -342,7 +342,7 @@ func (h *HttpCommunication) handleAppend(resp http.ResponseWriter, req *http.Req
   resp.Write(respBody)
 }
 
-func (h *HttpCommunication) handlePropose(resp http.ResponseWriter, req *http.Request) {
+func (h *HTTPCommunication) handlePropose(resp http.ResponseWriter, req *http.Request) {
   defer req.Body.Close()
 
   if req.Method != "POST" {

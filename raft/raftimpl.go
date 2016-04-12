@@ -17,23 +17,26 @@ const (
   // Make these hard-coded rather than "iota" because they go in a database!
   CurrentTermKey = 1
   VotedForKey = 2
-  LocalIdKey = 3
+  LocalIDKey = 3
   LastAppliedKey = 4
+)
+
+const (
   ElectionTimeout = 10 * time.Second
   HeartbeatTimeout = 2 * time.Second
 )
 
-type RaftState int
+type State int
 
 const (
-  Follower RaftState = iota
+  Follower State = iota
   Candidate
   Leader
   Stopping
   Stopped
 )
 
-func (r RaftState) String() string {
+func (r State) String() string {
   switch r {
   case Follower:
     return "Follower"
@@ -50,10 +53,10 @@ func (r RaftState) String() string {
   }
 }
 
-type RaftImpl struct {
+type Service struct {
   id uint64
-  state RaftState
-  leaderId uint64
+  state State
+  leaderID uint64
   comm communication.Communication
   disco discovery.Discovery
   configChanges <-chan discovery.Change
@@ -93,14 +96,14 @@ type proposalCommand struct {
   rc chan proposalResult
 }
 
-var raftRand *rand.Rand = makeRand()
+var raftRand = makeRand()
 
 func StartRaft(id uint64,
                comm communication.Communication,
                disco discovery.Discovery,
                stor storage.Storage,
-               state StateMachine) (*RaftImpl, error) {
-  r := &RaftImpl{
+               state StateMachine) (*Service, error) {
+  r := &Service{
     state: Follower,
     comm: comm,
     disco: disco,
@@ -115,14 +118,14 @@ func StartRaft(id uint64,
     stateMachine: state,
   }
 
-  storedId, err := stor.GetMetadata(LocalIdKey)
+  storedID, err := stor.GetMetadata(LocalIDKey)
   if err != nil { return nil, err }
-  if storedId == 0 {
-    err = stor.SetMetadata(LocalIdKey, id)
+  if storedID == 0 {
+    err = stor.SetMetadata(LocalIDKey, id)
     if err != nil { return nil, err }
-  } else if id != storedId {
+  } else if id != storedID {
     return nil, fmt.Errorf("ID in data store %d does not match requested value %d",
-      storedId, id)
+      storedID, id)
   }
   r.id = id
 
@@ -149,7 +152,7 @@ func StartRaft(id uint64,
   return r, nil
 }
 
-func (r *RaftImpl) Close() {
+func (r *Service) Close() {
   s := r.GetState()
   if s != Stopped && s != Stopping {
     done := make(chan bool)
@@ -159,7 +162,7 @@ func (r *RaftImpl) Close() {
   r.appliedTracker.Close()
 }
 
-func (r *RaftImpl) cleanup() {
+func (r *Service) cleanup() {
   for len(r.voteCommands) > 0 {
     glog.V(2).Info("Sending cleanup command for vote request")
     vc := <- r.voteCommands
@@ -181,7 +184,7 @@ func (r *RaftImpl) cleanup() {
   //close(r.receivedAppendChan)
 }
 
-func (r *RaftImpl) RequestVote(req *communication.VoteRequest) (*communication.VoteResponse, error) {
+func (r *Service) RequestVote(req *communication.VoteRequest) (*communication.VoteResponse, error) {
   if r.GetState() == Stopping || r.GetState() == Stopped {
     return nil, errors.New("Raft is stopped")
   }
@@ -196,7 +199,7 @@ func (r *RaftImpl) RequestVote(req *communication.VoteRequest) (*communication.V
   return vr, vr.Error
 }
 
-func (r *RaftImpl) Append(req *communication.AppendRequest) (*communication.AppendResponse, error) {
+func (r *Service) Append(req *communication.AppendRequest) (*communication.AppendResponse, error) {
   glog.V(2).Infof("Node %d append request. State is %v", r.id, r.GetState())
   if r.GetState() == Stopping || r.GetState() == Stopped {
     return nil, errors.New("Raft is stopped")
@@ -213,7 +216,7 @@ func (r *RaftImpl) Append(req *communication.AppendRequest) (*communication.Appe
   return resp, resp.Error
 }
 
-func (r *RaftImpl) Propose(e *storage.Entry) (uint64, error) {
+func (r *Service) Propose(e *storage.Entry) (uint64, error) {
   if r.GetState() == Stopping || r.GetState() == Stopped {
     return 0, errors.New("Raft is stopped")
   }
@@ -231,61 +234,61 @@ func (r *RaftImpl) Propose(e *storage.Entry) (uint64, error) {
   return result.index, result.err
 }
 
-func (r *RaftImpl) MyId() uint64 {
+func (r *Service) MyID() uint64 {
   return r.id
 }
 
-func (r *RaftImpl) GetState() RaftState {
+func (r *Service) GetState() State {
   r.latch.Lock()
   defer r.latch.Unlock()
   return r.state
 }
 
-func (r *RaftImpl) setState(newState RaftState) {
+func (r *Service) setState(newState State) {
   r.latch.Lock()
   defer r.latch.Unlock()
   glog.V(2).Infof("Node %d: setting state to %d", r.id, newState)
   r.state = newState
 }
 
-func (r *RaftImpl) GetLeaderId() uint64 {
+func (r *Service) GetLeaderID() uint64 {
   r.latch.Lock()
   defer r.latch.Unlock()
-  return r.leaderId
+  return r.leaderID
 }
 
-func (r *RaftImpl) setLeaderId(newId uint64) {
+func (r *Service) setLeaderID(newID uint64) {
   r.latch.Lock()
   defer r.latch.Unlock()
-  if newId == 0 {
+  if newID == 0 {
     glog.V(2).Infof("Node %d: No leader present")
   } else {
-    glog.V(2).Infof("Node %d: Node %d is now the leader", r.id, newId)
+    glog.V(2).Infof("Node %d: Node %d is now the leader", r.id, newID)
   }
-  r.leaderId = newId
+  r.leaderID = newID
 }
 
-func (r *RaftImpl) GetCurrentTerm() uint64 {
+func (r *Service) GetCurrentTerm() uint64 {
   r.latch.Lock()
   defer r.latch.Unlock()
   return r.currentTerm
 }
 
-func (r *RaftImpl) setCurrentTerm(t uint64) {
+func (r *Service) setCurrentTerm(t uint64) {
   r.latch.Lock()
   defer r.latch.Unlock()
   r.currentTerm = t
   r.writeCurrentTerm(t)
 }
 
-func (r *RaftImpl) GetCommitIndex() uint64 {
+func (r *Service) GetCommitIndex() uint64 {
   r.latch.Lock()
   defer r.latch.Unlock()
   return r.commitIndex
 }
 
 // Atomically update the commit index, and return whether it changed
-func (r *RaftImpl) setCommitIndex(t uint64) bool {
+func (r *Service) setCommitIndex(t uint64) bool {
   r.latch.Lock()
   defer r.latch.Unlock()
 
@@ -296,13 +299,13 @@ func (r *RaftImpl) setCommitIndex(t uint64) bool {
   return true
 }
 
-func (r *RaftImpl) GetLastApplied() uint64 {
+func (r *Service) GetLastApplied() uint64 {
   r.latch.Lock()
   defer r.latch.Unlock()
   return r.lastApplied
 }
 
-func (r *RaftImpl) setLastApplied(t uint64) {
+func (r *Service) setLastApplied(t uint64) {
   entry, err := r.stor.GetEntry(t)
   if err != nil {
     glog.Errorf("Error reading entry from change %d for commit: %s", t, err)
@@ -336,17 +339,17 @@ func (r *RaftImpl) setLastApplied(t uint64) {
   }
 }
 
-func (r *RaftImpl) GetAppliedTracker() *ChangeTracker {
+func (r *Service) GetAppliedTracker() *ChangeTracker {
   return r.appliedTracker
 }
 
-func (r *RaftImpl) GetLastIndex() (uint64, uint64) {
+func (r *Service) GetLastIndex() (uint64, uint64) {
   r.latch.Lock()
   defer r.latch.Unlock()
   return r.lastIndex, r.lastTerm
 }
 
-func (r *RaftImpl) setLastIndex(ix uint64, term uint64) {
+func (r *Service) setLastIndex(ix uint64, term uint64) {
   r.latch.Lock()
   defer r.latch.Unlock()
   r.lastIndex = ix
@@ -354,46 +357,46 @@ func (r *RaftImpl) setLastIndex(ix uint64, term uint64) {
 }
 
 // Used only in unit testing. Forces us to never become a leader.
-func (r *RaftImpl) setFollowerOnly(f bool) {
+func (r *Service) setFollowerOnly(f bool) {
   r.followerOnly = f
 }
 
-func (r *RaftImpl) readCurrentTerm() uint64 {
+func (r *Service) readCurrentTerm() uint64 {
   ct, err := r.stor.GetMetadata(CurrentTermKey)
   if err != nil { panic("Fatal error reading state from database") }
   return ct
 }
 
-func (r *RaftImpl) writeCurrentTerm(ct uint64) {
+func (r *Service) writeCurrentTerm(ct uint64) {
   err := r.stor.SetMetadata(CurrentTermKey, ct)
   if err != nil { panic("Fatal error writing state to database") }
 }
 
-func (r *RaftImpl) readLastVote() uint64 {
+func (r *Service) readLastVote() uint64 {
   ct, err := r.stor.GetMetadata(VotedForKey)
   if err != nil { panic("Fatal error reading state from database") }
   return ct
 }
 
-func (r *RaftImpl) writeLastVote(ct uint64) {
+func (r *Service) writeLastVote(ct uint64) {
   err := r.stor.SetMetadata(VotedForKey, ct)
   if err != nil { panic("Fatal error writing state to database") }
 }
 
-func (r *RaftImpl) readLastCommit() uint64 {
+func (r *Service) readLastCommit() uint64 {
   mi, _, err := r.stor.GetLastIndex()
   if err != nil { panic("Fatal error reading state from database") }
   return mi
 }
 
-func (r *RaftImpl) readLastApplied() uint64 {
+func (r *Service) readLastApplied() uint64 {
   la, err := r.stor.GetMetadata(LastAppliedKey)
   if err != nil { panic("Fatal error reading state from state machine") }
   return la
 }
 
 // Election timeout is the default timeout, plus or minus one heartbeat interval
-func (r *RaftImpl) randomElectionTimeout() time.Duration {
+func (r *Service) randomElectionTimeout() time.Duration {
   rge := int64(HeartbeatTimeout * 2)
   min := int64(ElectionTimeout - HeartbeatTimeout)
   return time.Duration(raftRand.Int63n(rge) + min)

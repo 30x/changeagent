@@ -40,9 +40,9 @@ type ChangeTracker struct {
   waiters *changeHeap
 }
 
-var changeTrackers map[string]*ChangeTracker = make(map[string]*ChangeTracker)
-var trackerLock *sync.Mutex = new(sync.Mutex)
-var timeMax time.Time = time.Unix(1 << 40, 0)
+var changeTrackers = make(map[string]*ChangeTracker)
+var trackerLock = new(sync.Mutex)
+var timeMax = time.Unix(1 << 40, 0)
 
 func CreateTracker() *ChangeTracker {
   waiters := &changeHeap{}

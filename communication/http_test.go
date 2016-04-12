@@ -18,8 +18,8 @@ import (
 var expectedEntries []storage.Entry
 var expectedLock = sync.Mutex{}
 
-var tenant uuid.UUID = uuid.NewV4()
-var collection uuid.UUID = uuid.NewV4()
+var tenant = uuid.NewV4()
+var collection = uuid.NewV4()
 
 func TestRaftCalls(t *testing.T) {
   flag.Set("logtostderr", "true")
@@ -42,7 +42,7 @@ func TestRaftCalls(t *testing.T) {
   testRaft := makeTestRaft(t)
   mux := http.NewServeMux()
   var comm Communication
-  comm, err = StartHttpCommunication(mux, discovery)
+  comm, err = StartHTTPCommunication(mux, discovery)
   if err != nil { t.Fatalf("Error starting raft: %v", err) }
   comm.SetRaft(testRaft)
   go http.Serve(listener, mux)
@@ -51,7 +51,7 @@ func TestRaftCalls(t *testing.T) {
 
   req := VoteRequest{
     Term: 1,
-    CandidateId: 1,
+    CandidateID: 1,
   }
   ch := make(chan *VoteResponse, 1)
 
@@ -59,12 +59,12 @@ func TestRaftCalls(t *testing.T) {
   resp := <- ch
   if resp.Error != nil { t.Fatalf("Error from voteResponse: %v", resp.Error) }
   if resp.Term != 1 { t.Fatalf("Expected term 1, got %d", resp.Term) }
-  if resp.NodeId != 1 { t.Fatalf("Expected node is 1, got %d", resp.NodeId) }
+  if resp.NodeID != 1 { t.Fatalf("Expected node is 1, got %d", resp.NodeID) }
   if !resp.VoteGranted { t.Fatal("Expected vote to be granted") }
 
   ar := AppendRequest{
     Term: 1,
-    LeaderId: 1,
+    LeaderID: 1,
   }
   expectedEntries = nil
 
@@ -76,7 +76,7 @@ func TestRaftCalls(t *testing.T) {
 
   ar = AppendRequest{
     Term: 2,
-    LeaderId: 1,
+    LeaderID: 1,
   }
   e := storage.Entry{
     Index: 1,
@@ -140,7 +140,7 @@ func makeTestRaft(t *testing.T) *testRaft {
   }
 }
 
-func (r *testRaft) MyId() uint64 {
+func (r *testRaft) MyID() uint64 {
   return 1
 }
 

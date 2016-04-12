@@ -17,7 +17,7 @@ import (
 
 type ChangeAgent struct {
   stor storage.Storage
-  raft *raft.RaftImpl
+  raft *raft.Service
   router *mux.Router
 }
 
@@ -38,7 +38,7 @@ func StartChangeAgent(nodeId uint64,
                       disco discovery.Discovery,
                       dbFile string,
                       httpMux *http.ServeMux) (*ChangeAgent, error) {
-  comm, err := communication.StartHttpCommunication(httpMux, disco)
+  comm, err := communication.StartHTTPCommunication(httpMux, disco)
   if err != nil { return nil, err }
   stor, err := storage.CreateRocksDBStorage(dbFile, DBCacheSize)
   if err != nil { return nil, err }
@@ -71,7 +71,7 @@ func (a *ChangeAgent) Delete() {
   a.stor.Delete()
 }
 
-func (a *ChangeAgent) GetRaftState() raft.RaftState {
+func (a *ChangeAgent) GetRaftState() raft.State {
   return a.raft.GetState()
 }
 

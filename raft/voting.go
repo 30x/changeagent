@@ -9,13 +9,13 @@ import (
   "revision.aeip.apigee.net/greg/changeagent/communication"
 )
 
-func (r *RaftImpl) handleFollowerVote(state *raftState, cmd voteCommand) bool {
+func (r *Service) handleFollowerVote(state *raftState, cmd voteCommand) bool {
   glog.V(2).Infof("Node %d got vote request from %d at term %d",
-    r.id, cmd.vr.CandidateId, cmd.vr.Term)
+    r.id, cmd.vr.CandidateID, cmd.vr.Term)
   currentTerm := r.GetCurrentTerm()
 
   resp := communication.VoteResponse{
-    NodeId: r.id,
+    NodeID: r.id,
     Term: currentTerm,
   }
 
@@ -36,11 +36,11 @@ func (r *RaftImpl) handleFollowerVote(state *raftState, cmd voteCommand) bool {
   // 5.2, 5.2: If votedFor is null or candidateId, and candidate’s log is at
   // least as up-to-date as receiver’s log, grant vote
   commitIndex := r.GetCommitIndex()
-  if (state.votedFor == 0 || state.votedFor == cmd.vr.CandidateId) &&
+  if (state.votedFor == 0 || state.votedFor == cmd.vr.CandidateID) &&
      cmd.vr.LastLogIndex >= commitIndex {
-     state.votedFor = cmd.vr.CandidateId
-     r.writeLastVote(cmd.vr.CandidateId)
-     glog.V(2).Infof("Node %d voting for candidate %d", r.id, cmd.vr.CandidateId)
+     state.votedFor = cmd.vr.CandidateID
+     r.writeLastVote(cmd.vr.CandidateID)
+     glog.V(2).Infof("Node %d voting for candidate %d", r.id, cmd.vr.CandidateID)
      resp.VoteGranted = true
    } else {
      resp.VoteGranted = false
@@ -49,16 +49,16 @@ func (r *RaftImpl) handleFollowerVote(state *raftState, cmd voteCommand) bool {
   return resp.VoteGranted
 }
 
-func (r *RaftImpl) voteNo(state *raftState, cmd voteCommand) {
+func (r *Service) voteNo(state *raftState, cmd voteCommand) {
   resp := communication.VoteResponse{
-    NodeId: r.id,
+    NodeID: r.id,
     Term: r.GetCurrentTerm(),
     VoteGranted: false,
   }
   cmd.rc <- &resp
 }
 
-func (r *RaftImpl) sendVotes(state *raftState, index uint64, rc chan<- voteResult) {
+func (r *Service) sendVotes(state *raftState, index uint64, rc chan<- voteResult) {
   lastIndex, lastTerm, err := r.stor.GetLastIndex()
   if err != nil {
     glog.Infof("Error reading database to start election: %v", err)
@@ -73,7 +73,7 @@ func (r *RaftImpl) sendVotes(state *raftState, index uint64, rc chan<- voteResul
   currentTerm := r.GetCurrentTerm()
   vr := communication.VoteRequest{
     Term: currentTerm,
-    CandidateId: r.id,
+    CandidateID: r.id,
     LastLogIndex: lastIndex,
     LastLogTerm: lastTerm,
   }
@@ -98,14 +98,14 @@ func (r *RaftImpl) sendVotes(state *raftState, index uint64, rc chan<- voteResul
   for _, respChan := range(responses) {
     vresp := <- respChan
     if vresp.Error != nil {
-      glog.V(2).Infof("Error receiving vote: from %d", vresp.NodeId, vresp.Error)
+      glog.V(2).Infof("Error receiving vote: from %d", vresp.NodeID, vresp.Error)
     } else if vresp.VoteGranted {
       glog.V(2).Infof("Node %d received a yes vote from %d",
-        r.id, vresp.NodeId)
+        r.id, vresp.NodeID)
       votes++
     } else {
       glog.V(2).Infof("Node %d received a no vote from %d",
-        r.id, vresp.NodeId)
+        r.id, vresp.NodeID)
     }
   }
 

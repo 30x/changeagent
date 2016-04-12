@@ -34,7 +34,7 @@ func (a *ChangeAgent) initDiagnosticApi() {
 }
 
 func (a *ChangeAgent) handleIdCall(resp http.ResponseWriter, req *http.Request) {
-  msg := fmt.Sprintf("%d\n", a.raft.MyId())
+  msg := fmt.Sprintf("%d\n", a.raft.MyID())
   resp.Header().Set("Content-Type", PlainText)
   resp.Write([]byte(msg))
 }
@@ -63,9 +63,9 @@ func (a *ChangeAgent) handleRaftInfo(resp http.ResponseWriter, req *http.Request
 
 func (a *ChangeAgent) getLeaderID() uint64 {
   if a.GetRaftState() == raft.Leader {
-    return a.raft.MyId()
+    return a.raft.MyID()
   }
-  return a.raft.GetLeaderId()
+  return a.raft.GetLeaderID()
 }
 
 func handleStackCall(resp http.ResponseWriter, req *http.Request) {

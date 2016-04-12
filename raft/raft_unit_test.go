@@ -33,7 +33,7 @@ var _ = Describe("Raft Unit Tests", func() {
 
     ar := &communication.AppendRequest{
       Term: 2,
-      LeaderId: 1,
+      LeaderID: 1,
       PrevLogIndex: 0,
       PrevLogTerm: 0,
       LeaderCommit: 1,
@@ -64,7 +64,7 @@ var _ = Describe("Raft Unit Tests", func() {
     // Reply false if term < currentTerm (§5.1)
     req := &communication.VoteRequest{
       Term: 1,
-      CandidateId: 2,
+      CandidateID: 2,
       LastLogIndex: 3,
       LastLogTerm: 2,
     }
@@ -79,7 +79,7 @@ var _ = Describe("Raft Unit Tests", func() {
     // least as up-to-date as receiver’s log, grant vote (§5.2, §5.4)
     req := &communication.VoteRequest{
       Term: 1,
-      CandidateId: 2,
+      CandidateID: 2,
       LastLogIndex: 2,
       LastLogTerm: 2,
     }
@@ -93,7 +93,7 @@ var _ = Describe("Raft Unit Tests", func() {
     // Test valid voting, and that we keep track of who we voted for
     req := &communication.VoteRequest{
       Term: 3,
-      CandidateId: 2,
+      CandidateID: 2,
       LastLogIndex: 3,
       LastLogTerm: 2,
     }
@@ -104,7 +104,7 @@ var _ = Describe("Raft Unit Tests", func() {
 
     req = &communication.VoteRequest{
       Term: 3,
-      CandidateId: 2,
+      CandidateID: 2,
       LastLogIndex: 3,
       LastLogTerm: 2,
     }
@@ -115,7 +115,7 @@ var _ = Describe("Raft Unit Tests", func() {
 
     req = &communication.VoteRequest{
       Term: 3,
-      CandidateId: 3,
+      CandidateID: 3,
       LastLogIndex: 3,
       LastLogTerm: 2,
     }
@@ -133,7 +133,7 @@ var _ = Describe("Raft Unit Tests", func() {
     // Reply false if term < currentTerm (§5.1)
     req := &communication.AppendRequest{
       Term: 1,
-      LeaderId: 1,
+      LeaderID: 1,
     }
     resp, err := unitTestRaft.Append(req)
     Expect(err).Should(Succeed())
@@ -145,7 +145,7 @@ var _ = Describe("Raft Unit Tests", func() {
     // whose term matches prevLogTerm (§5.3)
     req := &communication.AppendRequest{
       Term: 1,
-      LeaderId: 1,
+      LeaderID: 1,
       PrevLogIndex: 10,
       PrevLogTerm: 2,
     }
@@ -157,7 +157,7 @@ var _ = Describe("Raft Unit Tests", func() {
   It("Log No Match Term", func() {
     req := &communication.AppendRequest{
       Term: 1,
-      LeaderId: 1,
+      LeaderID: 1,
       PrevLogIndex: 1,
       PrevLogTerm: 2,
     }
@@ -170,7 +170,7 @@ var _ = Describe("Raft Unit Tests", func() {
     // Append any new entries not already in the log
     req := &communication.AppendRequest{
       Term: 2,
-      LeaderId: 1,
+      LeaderID: 1,
       PrevLogIndex: 3,
       PrevLogTerm: 2,
       Entries: []storage.Entry{
@@ -202,7 +202,7 @@ var _ = Describe("Raft Unit Tests", func() {
     // follow it (§5.3)
     req = &communication.AppendRequest{
       Term: 3,
-      LeaderId: 1,
+      LeaderID: 1,
       PrevLogIndex: 3,
       PrevLogTerm: 2,
       Entries: []storage.Entry{
@@ -228,7 +228,7 @@ var _ = Describe("Raft Unit Tests", func() {
     // Append any new entries not already in the log, again
     req = &communication.AppendRequest{
       Term: 3,
-      LeaderId: 1,
+      LeaderID: 1,
       PrevLogIndex: 3,
       PrevLogTerm: 2,
       Entries: []storage.Entry{
@@ -260,7 +260,7 @@ var _ = Describe("Raft Unit Tests", func() {
     // TODO does this have to work even if we have no entries to append?
     req = &communication.AppendRequest{
       Term: 3,
-      LeaderId: 1,
+      LeaderID: 1,
       LeaderCommit: 3,
     }
     resp, err = unitTestRaft.Append(req)
@@ -270,7 +270,7 @@ var _ = Describe("Raft Unit Tests", func() {
 
     req = &communication.AppendRequest{
       Term: 3,
-      LeaderId: 1,
+      LeaderID: 1,
       LeaderCommit: 5,
       Entries: []storage.Entry{
         storage.Entry{
@@ -286,7 +286,7 @@ var _ = Describe("Raft Unit Tests", func() {
 
     req = &communication.AppendRequest{
       Term: 3,
-      LeaderId: 1,
+      LeaderID: 1,
       LeaderCommit: 99,
       Entries: []storage.Entry{
         storage.Entry{

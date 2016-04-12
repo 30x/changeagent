@@ -54,7 +54,7 @@ func TestStopFollower(t *testing.T) {
     }
 
     fmt.Fprintf(GinkgoWriter, "Stopping leader node %d\n", testRafts[leaderIndex].id)
-    savedId, savedPath, savedPort := stopOneNode(leaderIndex)
+    savedID, savedPath, savedPort := stopOneNode(leaderIndex)
     time.Sleep(time.Second)
 
     assertOneLeader()
@@ -62,8 +62,8 @@ func TestStopFollower(t *testing.T) {
     // Previous step read the storage so we can close it now.
     testRafts[leaderIndex].stor.Close()
 
-    fmt.Fprintf(GinkgoWriter, "Restarting node %d on port %d\n", savedId, savedPort)
-    err := restartOneNode(leaderIndex, savedId, savedPath, savedPort)
+    fmt.Fprintf(GinkgoWriter, "Restarting node %d on port %d\n", savedID, savedPort)
+    err := restartOneNode(leaderIndex, savedID, savedPath, savedPort)
     Expect(err).Should(Succeed())
 
     time.Sleep(time.Second)
@@ -81,7 +81,7 @@ func TestStopFollower(t *testing.T) {
     }
 
     fmt.Fprintf(GinkgoWriter, "Stopping follower node %d\n", testRafts[followerIndex].id)
-    savedId, savedPath, savedPort := stopOneNode(followerIndex)
+    savedID, savedPath, savedPort := stopOneNode(followerIndex)
     time.Sleep(time.Second)
 
     assertOneLeader()
@@ -89,8 +89,8 @@ func TestStopFollower(t *testing.T) {
     // Previous step read the storage so we can close it now.
     testRafts[followerIndex].stor.Close()
 
-    fmt.Fprintf(GinkgoWriter, "Restarting node %d on port %d\n", savedId, savedPort)
-    err := restartOneNode(followerIndex, savedId, savedPath, savedPort)
+    fmt.Fprintf(GinkgoWriter, "Restarting node %d on port %d\n", savedID, savedPort)
+    err := restartOneNode(followerIndex, savedID, savedPath, savedPort)
     Expect(err).Should(Succeed())
 
     time.Sleep(time.Second)
@@ -99,22 +99,22 @@ func TestStopFollower(t *testing.T) {
   })
 })
 
-func stopOneNode(stopId int) (uint64, string, int) {
-  savedId := testRafts[stopId].id
-  savedPath := testRafts[stopId].stor.GetDataPath()
-  _, savedPortStr, _ := net.SplitHostPort(testListener[stopId].Addr().String())
+func stopOneNode(stopID int) (uint64, string, int) {
+  savedID := testRafts[stopID].id
+  savedPath := testRafts[stopID].stor.GetDataPath()
+  _, savedPortStr, _ := net.SplitHostPort(testListener[stopID].Addr().String())
   savedPort, _ := strconv.Atoi(savedPortStr)
-  testRafts[stopId].Close()
-  testListener[stopId].Close()
-  return savedId, savedPath, savedPort
+  testRafts[stopID].Close()
+  testListener[stopID].Close()
+  return savedID, savedPath, savedPort
 }
 
-func restartOneNode(ix int, savedId uint64, savedPath string, savedPort int) error {
+func restartOneNode(ix int, savedID uint64, savedPath string, savedPort int) error {
   restartedListener, err := net.ListenTCP("tcp4", &net.TCPAddr{Port: savedPort})
   if err != nil { return err }
   testListener[ix] = restartedListener
   restartedRaft, err :=
-    startRaft(savedId, testDiscovery, testListener[ix], savedPath)
+    startRaft(savedID, testDiscovery, testListener[ix], savedPath)
   if err != nil { return err }
   testRafts[ix] = restartedRaft
   return nil
@@ -184,7 +184,7 @@ func countRafts() (int, int) {
   return followers, leaders
 }
 
-func getLeader() *RaftImpl {
+func getLeader() *Service {
   for _, r := range(testRafts) {
     if r.GetState() == Leader {
       return r
