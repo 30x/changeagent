@@ -1,6 +1,7 @@
 package raft
 
 import (
+  "fmt"
   "errors"
   "revision.aeip.apigee.net/greg/changeagent/communication"
   "revision.aeip.apigee.net/greg/changeagent/discovery"
@@ -23,6 +24,25 @@ import (
  */
 
 var _ = Describe("Raft Unit Tests", func() {
+  nodeSelf := discovery.Node{
+    ID: 1,
+  }
+  node1 := discovery.Node{
+    ID: 10,
+  }
+  node2 := discovery.Node{
+    ID: 20,
+  }
+  node3 := discovery.Node{
+    ID: 30,
+  }
+  node4 := discovery.Node{
+    ID: 40,
+  }
+  node5 := discovery.Node{
+    ID: 50,
+  }
+
   initialized := false
   var lastIndex uint64 = 3
 
@@ -311,30 +331,42 @@ var _ = Describe("Raft Unit Tests", func() {
    */
 
   It("No Commit Too Old", func() {
+    cur := discovery.NodeList{
+      New: []discovery.Node{nodeSelf, node1, node2, node3, node4},
+    }
+    cfg := &discovery.NodeConfig{
+      Current: &cur,
+    }
     matches := map[uint64]uint64{
-      1: 0,
-      2: 0,
-      3: 0,
-      4: 0,
+      10: 0,
+      20: 0,
+      30: 0,
+      40: 0,
     }
     state := &raftState{
       peerMatches: matches,
     }
-    newIndex := unitTestRaft.calculateCommitIndex(state)
+    newIndex := unitTestRaft.calculateCommitIndex(state, cfg)
     Expect(newIndex).Should(BeEquivalentTo(unitTestRaft.GetCommitIndex()))
   })
 
   It("No commit No Consensus", func() {
+    cur := discovery.NodeList{
+      New: []discovery.Node{nodeSelf, node1, node2, node3, node4},
+    }
+    cfg := &discovery.NodeConfig{
+      Current: &cur,
+    }
     matches := map[uint64]uint64{
-      1: lastIndex,
-      2: 1,
-      3: 1,
-      4: 1,
+      10: lastIndex,
+      20: 1,
+      30: 1,
+      40: 1,
     }
     state := &raftState{
       peerMatches: matches,
     }
-    newIndex := unitTestRaft.calculateCommitIndex(state)
+    newIndex := unitTestRaft.calculateCommitIndex(state, cfg)
     Expect(newIndex).Should(BeEquivalentTo(unitTestRaft.GetCommitIndex()))
   })
 
@@ -343,16 +375,22 @@ var _ = Describe("Raft Unit Tests", func() {
     defer unitTestRaft.setCommitIndex(oldIndex)
     unitTestRaft.setCommitIndex(lastIndex - 2)
 
+    cur := discovery.NodeList{
+      New: []discovery.Node{nodeSelf, node1, node2, node3, node4},
+    }
+    cfg := &discovery.NodeConfig{
+      Current: &cur,
+    }
     matches := map[uint64]uint64{
-      1: lastIndex,
-      2: lastIndex,
-      3: lastIndex,
-      4: 1,
+      10: lastIndex,
+      20: lastIndex,
+      30: lastIndex,
+      40: 1,
     }
     state := &raftState{
       peerMatches: matches,
     }
-    newIndex := unitTestRaft.calculateCommitIndex(state)
+    newIndex := unitTestRaft.calculateCommitIndex(state, cfg)
     Expect(newIndex).Should(BeEquivalentTo(lastIndex))
   })
 
@@ -361,41 +399,86 @@ var _ = Describe("Raft Unit Tests", func() {
     defer unitTestRaft.setCommitIndex(oldIndex)
     unitTestRaft.setCommitIndex(lastIndex - 2)
 
+    cur := discovery.NodeList{
+      New: []discovery.Node{nodeSelf, node1, node2, node3, node4},
+    }
+    cfg := &discovery.NodeConfig{
+      Current: &cur,
+    }
     matches := map[uint64]uint64{
-      1: 1,
-      2: lastIndex,
-      3: lastIndex - 1,
-      4: lastIndex - 1,
+      10: 1,
+      20: lastIndex,
+      30: lastIndex - 1,
+      40: lastIndex - 1,
     }
     state := &raftState{
       peerMatches: matches,
     }
-    newIndex := unitTestRaft.calculateCommitIndex(state)
+    newIndex := unitTestRaft.calculateCommitIndex(state, cfg)
     Expect(newIndex).Should(BeEquivalentTo(lastIndex - 1))
+  })
+
+  It("Commit Joint Consensus", func() {
+    oldIndex := unitTestRaft.GetCommitIndex()
+    defer unitTestRaft.setCommitIndex(oldIndex)
+    unitTestRaft.setCommitIndex(lastIndex - 2)
+
+    cur := discovery.NodeList{
+      New: []discovery.Node{nodeSelf, node1, node2, node3, node4, node5},
+      Old: []discovery.Node{nodeSelf, node1, node2},
+    }
+    cfg := &discovery.NodeConfig{
+      Current: &cur,
+    }
+
+    li, _ := unitTestRaft.GetLastIndex()
+    fmt.Fprintf(GinkgoWriter, "Joint consensus. lastIndex = %d last applied = %d\n",
+      lastIndex,li)
+    matches := map[uint64]uint64{
+      10: lastIndex - 2,
+      20: lastIndex,
+      30: lastIndex - 1,
+      40: lastIndex - 1,
+      50: lastIndex - 1,
+    }
+    state := &raftState{
+      peerMatches: matches,
+    }
+    newIndex := unitTestRaft.calculateCommitIndex(state, cfg)
+    fmt.Fprintf(GinkgoWriter, "Joint consensus. result = %d\n", newIndex)
+    Expect(newIndex).Should(BeEquivalentTo(lastIndex - 1))
+  })
+
+  It("Commit Joint Consensus 2", func() {
+    oldIndex := unitTestRaft.GetCommitIndex()
+    defer unitTestRaft.setCommitIndex(oldIndex)
+    unitTestRaft.setCommitIndex(lastIndex - 2)
+
+    cur := discovery.NodeList{
+      New: []discovery.Node{nodeSelf, node1, node2, node3, node4, node5},
+      Old: []discovery.Node{nodeSelf, node1, node2},
+    }
+    cfg := &discovery.NodeConfig{
+      Current: &cur,
+    }
+
+    matches := map[uint64]uint64{
+      10: 1,
+      20: lastIndex,
+      30: lastIndex,
+      40: lastIndex,
+      50: lastIndex - 1,
+    }
+    state := &raftState{
+      peerMatches: matches,
+    }
+    newIndex := unitTestRaft.calculateCommitIndex(state, cfg)
+    Expect(newIndex).Should(BeEquivalentTo(lastIndex))
   })
 
   /*
    * Voting. Handle both joint and regular consensus.
    */
-
-  nodeSelf := discovery.Node{
-    ID: 1,
-  }
-  node1 := discovery.Node{
-    ID: 10,
-  }
-  node2 := discovery.Node{
-    ID: 20,
-  }
-  node3 := discovery.Node{
-    ID: 30,
-  }
-  node4 := discovery.Node{
-    ID: 40,
-  }
-  node5 := discovery.Node{
-    ID: 50,
-  }
 
   It("Vote several nodes", func() {
     cur := discovery.NodeList{

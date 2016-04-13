@@ -235,7 +235,7 @@ func (r *Service) leaderLoop(state *raftState) chan bool {
       // Got back a changed applied index from a peer. Decide if we have a commit and
       // process it if we do.
       state.peerMatches[peerMatch.id] = peerMatch.newMatch
-      newIndex := r.calculateCommitIndex(state)
+      newIndex := r.calculateCommitIndex(state, r.getNodeConfig())
       if r.setCommitIndex(newIndex) {
         r.applyCommittedEntries(newIndex)
         for _, p := range(state.peers) {
@@ -279,48 +279,63 @@ func (r *Service) handleLeaderConfigChange(state *raftState, change discovery.Ch
   }
 }
 
-// If there exists an N such that N > commitIndex, a majority
-// of matchIndex[i] ≥ N, and log[N].term == currentTerm: set commitIndex = N (§5.3, §5.4).
-func (r *Service) calculateCommitIndex(state *raftState) uint64 {
-  // Start with the max possible index and work our way down to the min
-  var max uint64
-  for _, mi := range(state.peerMatches) {
-    if mi > max {
-      max = mi
+/*
+ * Given the current position of a number of peers, calculate the commit index according
+ * to the Raft spec. The result is the index that may be committed and propagated to the cluster.
+ *
+ * Use the following rules:
+ *   If there exists an N such that N > commitIndex, a majority
+ *   of matchIndex[i] ≥ N, and log[N].term == currentTerm: set commitIndex = N (§5.3, §5.4).
+ *
+ * In addition, take into consideration joint consensus.
+ * From section 6:
+ *   Agreement (for elections and entry commitment) requires separate majorities
+ *   from both the old and new configurations.
+ */
+func (r *Service) calculateCommitIndex(state *raftState, cfg *discovery.NodeConfig) uint64 {
+  // Go through the current config and calcluate commit index by building a slice of nodes
+  // and then sorting it. Keep in mind to include our index when we are part of the cluster.
+  // Once we have the sorted list, just pick element N / 2 + 1 and we have our answer.
+  // Don't forget to do that twice in the case of joint consensus.
+  newIndex := r.getPartialCommitIndex(state, cfg.Current.New)
+
+  if len(cfg.Current.Old) > 0 {
+    // Joint consensus. Pick the minimum of the two.
+    oldIndex := r.getPartialCommitIndex(state, cfg.Current.Old)
+    if oldIndex < newIndex {
+      newIndex = oldIndex
     }
   }
 
-  // Test each term to see if we have consensus
-  cur := max
-  for ; cur > r.GetCommitIndex(); cur-- {
-    if r.canCommit(cur, state) {
-      glog.V(2).Infof("Returning new commit index of %d", cur)
-      return cur
+  // If we found a new index, see if we can get one that matches the term
+  for ix := newIndex; ix > r.GetCommitIndex(); ix-- {
+    entry, err := r.stor.GetEntry(ix)
+    if err != nil {
+      glog.V(2).Infof("Error reading entry from log: %v", err)
+      break
+    } else if entry != nil && entry.Term == r.GetCurrentTerm() {
+      glog.V(2).Infof("Returning new commit index %d", ix)
+      return ix
     }
   }
   return r.GetCommitIndex()
 }
 
-// If there exists an N such that N > commitIndex, a majority
-// of matchIndex[i] ≥ N, and log[N].term == currentTerm:
-func (r *Service) canCommit(ix uint64, state *raftState) bool {
-  votes := 0
-  for _, m := range(state.peerMatches) {
-    if m >= ix {
-      votes++
+func (r *Service) getPartialCommitIndex(state *raftState, nodes []discovery.Node) uint64 {
+  var indices []uint64
+  for _, node := range(nodes) {
+    if node.ID == r.id {
+      last, _ := r.GetLastIndex()
+      indices = append(indices, last)
+    } else {
+      indices = append(indices, state.peerMatches[node.ID])
     }
   }
 
-  // Remember that we are also considering our own commit index elsewhere.
-  // So look just for a simple majority and not for a quorum
-  // (N / 2) rather than (N / 2) + 1
-  if votes >= (len(state.peerMatches) / 2) {
-    entry, err := r.stor.GetEntry(ix)
-    if err != nil {
-      glog.V(2).Infof("Error reading entry from log: %v", err)
-    } else if entry != nil && entry.Term == r.GetCurrentTerm() {
-      return true
-    }
-  }
-  return false
+  if len(indices) == 0 { return 0 }
+  sortUint64(indices)
+
+  // Since indices are zero-based, this will return element N / 2 + 1
+  p := len(indices) / 2
+  return indices[p]
 }
