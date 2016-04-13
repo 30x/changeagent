@@ -394,6 +394,29 @@ var _ = Describe("Raft Unit Tests", func() {
     Expect(newIndex).Should(BeEquivalentTo(lastIndex))
   })
 
+  It("Commit Consensus Even", func() {
+    oldIndex := unitTestRaft.GetCommitIndex()
+    defer unitTestRaft.setCommitIndex(oldIndex)
+    unitTestRaft.setCommitIndex(lastIndex - 2)
+
+    cur := discovery.NodeList{
+      New: []discovery.Node{nodeSelf, node1, node2, node3},
+    }
+    cfg := &discovery.NodeConfig{
+      Current: &cur,
+    }
+    matches := map[uint64]uint64{
+      10: lastIndex - 2,
+      20: lastIndex - 1,
+      30: lastIndex,
+    }
+    state := &raftState{
+      peerMatches: matches,
+    }
+    newIndex := unitTestRaft.calculateCommitIndex(state, cfg)
+    Expect(newIndex).Should(BeEquivalentTo(lastIndex - 1))
+  })
+
   It("Commit Consensus 2", func() {
     oldIndex := unitTestRaft.GetCommitIndex()
     defer unitTestRaft.setCommitIndex(oldIndex)

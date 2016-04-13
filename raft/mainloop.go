@@ -333,7 +333,7 @@ func (r *Service) getPartialCommitIndex(state *raftState, nodes []discovery.Node
   }
 
   if len(indices) == 0 { return 0 }
-  sortUint64(indices)
+  reverseSortUint64(indices)
 
   // Since indices are zero-based, this will return element N / 2 + 1
   p := len(indices) / 2
