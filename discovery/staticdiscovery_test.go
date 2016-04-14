@@ -1,158 +1,214 @@
 package discovery
 
 import (
-  "testing"
+  "fmt"
   "time"
   "os"
   . "github.com/onsi/ginkgo"
   . "github.com/onsi/gomega"
+  //"golang.org/x/tools/benchmark/parse"
 )
 
 var _ = Describe("Static Discovery", func() {
   It("Discovery File", func() {
     d, err := ReadDiscoveryFile("./testfiles/testdisco", 0)
     Expect(err).Should(Succeed())
+    defer d.Close()
 
-    Expect(len(d.GetNodes())).Should(Equal(2))
-    Expect(d.GetNodes()[0].ID).Should(BeEquivalentTo(1))
-    Expect(d.GetNodes()[0].Address).Should(Equal("localhost:1234"))
-    Expect(d.GetNodes()[1].ID).Should(BeEquivalentTo(2))
-    Expect(d.GetNodes()[1].Address).Should(Equal("localhost:2345"))
+    cfg := d.GetCurrentConfig()
+    Expect(cfg.Previous).Should(BeNil())
+    Expect(cfg.Current.Old).Should(BeNil())
+
+    n := cfg.Current.New
+
+    Expect(len(n)).Should(Equal(2))
+    Expect(n[0].ID).Should(BeEquivalentTo(1))
+    Expect(n[0].Address).Should(Equal("localhost:1234"))
+    Expect(n[1].ID).Should(BeEquivalentTo(2))
+    Expect(n[1].Address).Should(Equal("localhost:2345"))
+
+    tn1 := Node{
+      ID: 1,
+      Address: "localhost:1234",
+    }
+    tn2 := Node{
+      ID: 2,
+      Address: "localhost:2345",
+    }
+    Expect(tn1.Equal(n[0])).Should(BeTrue())
+    Expect(tn2.Equal(n[1])).Should(BeTrue())
+    Expect(tn1.Equal(n[1])).Should(BeFalse())
+    Expect(tn2.Equal(n[0])).Should(BeFalse())
+    Expect(tn1.String()).Should(Equal(n[0].String()))
+    Expect(tn2.String()).Should(Equal(n[1].String()))
+
+    nc := d.GetCurrentConfig()
+    Expect(nc).Should(Equal(cfg))
+    Expect(nc.Equal(cfg)).Should(BeTrue())
+  })
+
+  It("Fixed Discovery", func() {
+    d := CreateStaticDiscovery([]string{"one", "two", "three"})
+    defer d.Close()
+
+    cfg := d.GetCurrentConfig()
+    Expect(cfg.Previous).Should(BeNil())
+    Expect(cfg.Current.Old).Should(BeNil())
+
+    n := cfg.Current.New
+    fmt.Fprintf(GinkgoWriter, "Nodes: %v\n", n)
+
+    Expect(len(n)).Should(Equal(3))
+
+    tn1 := Node{
+      ID: 1,
+      State: 2,
+      Address: "one",
+    }
+    tn2 := Node{
+      ID: 2,
+      State: 2,
+      Address: "two",
+    }
+    tn3 := Node{
+      ID: 3,
+      State: 2,
+      Address: "three",
+    }
+
+    Expect(tn1.Equal(n[0])).Should(BeTrue())
+    Expect(tn2.Equal(n[1])).Should(BeTrue())
+    Expect(tn3.Equal(n[2])).Should(BeTrue())
+  })
+
+  It("Changes", func() {
+    d := CreateStaticDiscovery([]string{"one", "two", "three"})
+    defer d.Close()
+
+    // Hack this to easily create a different set of nodes and test internally replacing them
+    newNodes := CreateStaticDiscovery([]string{"one", "two", "three", "four"}).GetCurrentConfig().Current.New
+
+    syncChanges := make(chan bool, 1)
+    go func() {
+      changeWatcher := d.Watch()
+      syncChanges <- true
+      change := <- changeWatcher
+      Expect(change).Should(Equal(NodesChanged))
+      syncChanges <- true
+    }()
+
+    // Manually do what an SPI would do for itself,
+    // but only after other channel is ready
+    <- syncChanges
+    d.updateNodes(newNodes)
+
+    Eventually(syncChanges).Should(Receive(BeTrue()))
+  })
+
+  It("Changes two watchers", func() {
+    d := CreateStaticDiscovery([]string{"one", "two", "three"})
+    defer d.Close()
+
+    // Hack this to easily create a different set of nodes and test internally replacing them
+    newNodes := CreateStaticDiscovery([]string{"one", "two", "three", "four"}).GetCurrentConfig().Current.New
+
+    syncChanges := make(chan bool, 1)
+
+    go func() {
+      changeWatcher := d.Watch()
+      syncChanges <- true
+      change := <- changeWatcher
+      Expect(change).Should(Equal(NodesChanged))
+      syncChanges <- true
+    }()
+
+    go func() {
+      changeWatcher := d.Watch()
+      syncChanges <- true
+      change := <- changeWatcher
+      Expect(change).Should(Equal(NodesChanged))
+      syncChanges <- true
+    }()
+
+    // Manually do what an SPI would do for itself,
+    // but only after other channel is ready
+    <- syncChanges
+    <- syncChanges
+    d.updateNodes(newNodes)
+
+    Eventually(syncChanges).Should(Receive(BeTrue()))
+    Eventually(syncChanges).Should(Receive(BeTrue()))
+  })
+
+  It("Changes Address only", func() {
+    d := CreateStaticDiscovery([]string{"one", "two", "three"})
+    defer d.Close()
+
+    // Hack this to easily create a different set of nodes and test internally replacing them
+    newNodes := CreateStaticDiscovery([]string{"one", "two", "four"}).GetCurrentConfig().Current.New
+
+    syncChanges := make(chan bool, 1)
+    go func() {
+      changeWatcher := d.Watch()
+      syncChanges <- true
+      change := <- changeWatcher
+      Expect(change).Should(Equal(AddressesChanged))
+      syncChanges <- true
+    }()
+
+    // Manually do what an SPI would do for itself,
+    // but only after other channel is ready
+    <- syncChanges
+    d.updateNodes(newNodes)
+
+    Eventually(syncChanges).Should(Receive(BeTrue()))
+  })
+
+  It("Discovery file update", func() {
+    err := copyFile("./testfiles/testdisco", "./testfiles/tmp")
+    Expect(err).Should(Succeed())
+    defer os.Remove("./testfiles/tmp")
+
+    d, err := ReadDiscoveryFile("./testfiles/tmp", 250 * time.Millisecond)
+    Expect(err).Should(Succeed())
+    defer d.Close()
+
+    expected1 := &NodeList{
+      New: []Node{
+        {ID: 1, Address: "localhost:1234"},
+        {ID: 2, Address: "localhost:2345"},
+      },
+    }
+
+    Expect(expected1.Equal(d.GetCurrentConfig().Current)).Should(BeTrue())
+
+    syncChanges := make(chan bool, 1)
+    go func() {
+      expected2 := &NodeList{
+        New: []Node{
+          {ID: 1, Address: "localhost:1234"},
+          {ID: 2, Address: "localhost:9999"},
+        },
+      }
+
+      changeWatcher := d.Watch()
+      syncChanges <- true
+      change := <- changeWatcher
+
+      Expect(change).Should(Equal(AddressesChanged))
+      Expect(expected2.Equal(d.GetCurrentConfig().Current)).Should(BeTrue())
+      syncChanges <- true
+    }()
+
+    <- syncChanges
+    err = copyFile("./testfiles/testdisco2", "./testfiles/tmp")
+
+    Expect(err).Should(Succeed())
+    Eventually(syncChanges).Should(Receive(BeTrue()))
   })
 })
 
-func TestFixedDiscovery(t *testing.T) {
-  d := CreateStaticDiscovery([]string{"one", "two", "three"})
-
-  if len(d.GetNodes()) != 3 { t.Fatal("Expected three entries") }
-  if d.GetNodes()[0].ID != 1 { t.Fatal("invalid node ID") }
-  if d.GetNodes()[0].Address != "one" { t.Fatal("invalid address") }
-  if d.GetNodes()[1].ID != 2 { t.Fatal("invalid node ID") }
-  if d.GetNodes()[1].Address != "two" { t.Fatal("invalid address") }
-  if d.GetNodes()[2].ID != 3 { t.Fatal("invalid node ID") }
-  if d.GetNodes()[2].Address != "three" { t.Fatal("invalid address") }
-}
-
-func TestDiscoveryChanges(t *testing.T) {
-  d := CreateStaticDiscovery([]string{"one", "two", "three"})
-  // Hack this to easily create a different set of nodes and test internally replacing them.
-  newNodes := CreateStaticDiscovery([]string{"one", "two", "three", "four"}).GetNodes()
-
-  syncChanges := make(chan bool, 1)
-  go func() {
-    changeWatcher := d.Watch()
-    syncChanges <- true
-    change := <- changeWatcher
-    if change.Action != NewNode { t.Fatal("Got wrong action on add node") }
-    syncChanges <- true
-  }()
-
-  // Manually do what an SPI would do for itself,
-  // but only after other channel is ready
-  <- syncChanges
-  d.updateNodes(newNodes)
-
-  timeout := time.After(2 * time.Second)
-  select {
-  case <- syncChanges:
-    t.Log("Successfully picked up change")
-  case <- timeout:
-    t.Fatal("Never got change notification")
-  }
-}
-
-func TestDiscoveryTwoWatchers(t *testing.T) {
-  d := CreateStaticDiscovery([]string{"one", "two", "three"})
-  // Hack this to easily create a different set of nodes and test internally replacing them.
-  newNodes := CreateStaticDiscovery([]string{"one", "two", "three", "four"}).GetNodes()
-
-  syncChanges := make(chan bool, 1)
-
-  go func() {
-    changeWatcher := d.Watch()
-    syncChanges <- true
-    change := <- changeWatcher
-    if change.Action != NewNode { t.Fatal("Got wrong action on add node") }
-    t.Log("Watcher 1 got a change")
-    syncChanges <- true
-  }()
-
-  go func() {
-    changeWatcher := d.Watch()
-    syncChanges <- true
-    change := <- changeWatcher
-    if change.Action != NewNode { t.Fatal("Got wrong action on add node") }
-    t.Log("Watcher 2 got a change")
-    syncChanges <- true
-  }()
-
-  // Manually do what an SPI would do for itself,
-  // but only after other channel is ready
-  <- syncChanges
-  <- syncChanges
-  d.updateNodes(newNodes)
-
-  timeout := time.After(2 * time.Second)
-  select {
-  case <- syncChanges:
-    <- syncChanges
-    t.Log("Successfully picked up change")
-  case <- timeout:
-    t.Fatal("Never got change notification")
-  }
-}
-
-func TestDiscoveryFileUpdate(t *testing.T) {
-  err := copyFile(t, "./testfiles/testdisco", "./testfiles/tmp")
-  if err != nil { t.Fatalf("%v", err) }
-  defer os.Remove("./testfiles/tmp")
-
-  d, err := ReadDiscoveryFile("./testfiles/tmp", 250 * time.Millisecond)
-  if err != nil { t.Fatalf("Error reading file: %v", err) }
-
-  if len(d.GetNodes()) != 2 {
-    t.Fatal("Expected only two nodes to be discovered")
-  }
-  if d.GetNodes()[0].ID != 1 {
-    t.Fatalf("Expected node ID 1 instead of %d", d.GetNodes()[0].ID)
-  }
-  if d.GetNodes()[0].Address != "localhost:1234" {
-    t.Fatal("Invalid address for first node")
-  }
-  if d.GetNodes()[1].ID != 2 {
-    t.Fatalf("Expected node ID 2 instead of %d", d.GetNodes()[1].ID)
-  }
-  if d.GetNodes()[1].Address != "localhost:2345" {
-    t.Fatal("Invalid address for second node")
-  }
-
-  syncChanges := make(chan bool, 1)
-  go func() {
-    changeWatcher := d.Watch()
-    syncChanges <- true
-    change := <- changeWatcher
-    if change.Action != UpdatedNode { t.Fatal("Got wrong action on add node") }
-    if change.Node.Address != "localhost:9999" { t.Fatal("Got wrong address on node") }
-    if change.Node.ID != 2 { t.Fatal("Got wrong ID on node") }
-    syncChanges <- true
-  }()
-
-  // Manually do what an SPI would do for itself,
-  // but only after other channel is ready
-  <- syncChanges
-  err = copyFile(t, "./testfiles/testdisco2", "./testfiles/tmp")
-  if err != nil { t.Fatalf("%v", err) }
-
-  timeout := time.After(2 * time.Second)
-  select {
-  case <- syncChanges:
-    t.Log("Successfully picked up change")
-  case <- timeout:
-    t.Fatal("Never got change notification")
-  }
-}
-
-func copyFile(t *testing.T, src string, dst string) error {
+func copyFile(src string, dst string) error {
   dstFile, err := os.OpenFile(dst, os.O_RDWR | os.O_CREATE, 0666)
   if err != nil { return err }
   defer dstFile.Close()
@@ -168,6 +224,5 @@ func copyFile(t *testing.T, src string, dst string) error {
   if err != nil { return err }
   _, err = dstFile.Write(buf)
   if err != nil { return err }
-  t.Logf("Copied %d bytes", len(buf))
   return nil
 }

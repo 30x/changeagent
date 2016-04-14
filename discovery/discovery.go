@@ -18,27 +18,20 @@ const (
   StateMember = iota
   StateDeleting = iota
 
-  NewNode = iota
-  DeletedNode = iota
-  UpdatedNode = iota
+  // Indicate that the node list has changed
+  NodesChanged = iota
+  // Indicate that the addresses of certain nodes have changed but not the nodes
+  AddressesChanged = iota
 )
 
 /*
- * A single node in the system. Nodes have unique IDs, and an address which is currently an HTTP URI,
- * followed by a state that helps us track whether they are done initializing.
+ * A single node in the system. Nodes have unique IDs, and an address which is currently a host:port
+ * string, followed by a state that helps us track whether they are done initializing.
  */
 type Node struct {
   ID uint64
   Address string
   State int
-}
-
-/*
- * A change represents a new, deleted, or updated node.
- */
-type Change struct {
-  Action int
-  Node *Node
 }
 
 /*
@@ -69,22 +62,17 @@ type Discovery interface {
   GetCurrentConfig() *NodeConfig
 
   /*
-   * Get a list of nodes from this discovery service. Safe to be called from
-   * many threads.
-   */
-  GetNodes() []Node
-
-  /*
    * Shortcut to get just the "address" field from a single node identified
    * by its node ID. Also safe to be called from many threads.
    */
   GetAddress(id uint64) string
 
   /*
-   * Return a channel that will be notified via a Change object every time
-   * the list of nodes is changed.
+   * Return a channel that will be notified whenever the configuration changes. If the
+   * list of nodes changed, then it will receive the value "NodesChanged." Otherwise it
+   * will receive the value "AddressesChanged"
    */
-  Watch() <-chan Change
+  Watch() <-chan int
 
   /*
    * Stop any resources created by the service.
@@ -238,30 +226,30 @@ func (n *NodeList) Equal(o *NodeList) bool {
   return true
 }
 
-func (n *NodeConfig) String() string {
+func (c *NodeConfig) String() string {
   buf := &bytes.Buffer{}
-  if n.Current != nil {
-    fmt.Fprintf(buf, "Current: %s ", n.Current.String())
+  if c.Current != nil {
+    fmt.Fprintf(buf, "Current: %s ", c.Current.String())
   }
-  if n.Previous != nil {
-    fmt.Fprintf(buf, "Previous: %s", n.Previous.String())
+  if c.Previous != nil {
+    fmt.Fprintf(buf, "Previous: %s", c.Previous.String())
   }
   return buf.String()
 }
 
-func (n *NodeConfig) Equal(o *NodeConfig) bool {
-  if n.Current == nil {
+func (c *NodeConfig) Equal(o *NodeConfig) bool {
+  if c.Current == nil {
     if o.Current != nil { return false }
   } else {
     if o.Current == nil { return false }
-    if !n.Current.Equal(o.Current) { return false }
+    if !c.Current.Equal(o.Current) { return false }
   }
 
-  if n.Previous == nil {
+  if c.Previous == nil {
     if o.Previous != nil { return false }
   } else {
     if o.Previous == nil { return false }
-    if !n.Previous.Equal(o.Previous) { return false }
+    if !c.Previous.Equal(o.Previous) { return false }
   }
   return true
 }

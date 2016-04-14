@@ -1,155 +1,198 @@
 package discovery
 
 import (
-  "testing"
+  . "github.com/onsi/ginkgo"
+  . "github.com/onsi/gomega"
 )
 
-func TestEmptyChanges(t *testing.T) {
-  var old []Node
-  var new []Node
-  changes := compareChanges(old, new)
-  if len(changes) != 0 { t.Fatal("Changes found!") }
-}
+var _ = Describe("Change comparisions", func() {
+  It("Empty node lists", func() {
+    var old []Node
+    var new []Node
+    Expect(getChangeType(old, new)).Should(Equal(0))
+  })
 
-func TestAdd(t *testing.T) {
-  var old []Node
+  It("Add node", func() {
+    var old []Node
 
-  new := []Node{{
-    ID: 1,
-    Address: "foo:1234",
-  }}
+    new := []Node{{
+      ID: 1,
+      Address: "foo:1234",
+    }}
+    Expect(getChangeType(old, new)).Should(Equal(NodesChanged))
+  })
 
-  changes := compareChanges(old, new)
-  if len(changes) != 1 { t.Fatal("No changes found!") }
-  if changes[0].Action != NewNode { t.Fatal("Invalid node type") }
-  if changes[0].Node.Address != new[0].Address { t.Fatal("Invalid address") }
-}
+  It("Add node 2", func() {
+    old := []Node{
+      {
+        ID: 10,
+        Address: "foo:1234",
+      },
+      {
+        ID: 30,
+        Address: "baz:1234",
+      }}
 
-func TestAdd2(t *testing.T) {
-  old := []Node{
-  {
-    ID: 10,
-    Address: "foo:1234",
-  },
-  {
-    ID: 30,
-    Address: "baz:1234",
-  }}
+    new := []Node{
+      {
+        ID: 10,
+        Address: "foo:1234",
+      },
+      {
+        ID: 20,
+        Address: "bar:1234",
+      },
+      {
+        ID: 30,
+        Address: "baz:1234",
+      }}
+    Expect(getChangeType(old, new)).Should(Equal(NodesChanged))
+  })
 
-  new := []Node{
-  {
-    ID: 10,
-    Address: "foo:1234",
-  },
-  {
-    ID: 20,
-    Address: "bar:1234",
-  },
-  {
-    ID: 30,
-    Address: "baz:1234",
-  }}
+  It("Remove node", func() {
+    new := []Node{
+      {
+        ID: 10,
+        Address: "foo:1234",
+      },
+      {
+        ID: 30,
+        Address: "baz:1234",
+      }}
 
-  changes := compareChanges(old, new)
-  if len(changes) != 1 { t.Fatal("No changes found!") }
-  if changes[0].Action != NewNode { t.Fatal("Invalid node type") }
-  if changes[0].Node.ID != 20 { t.Fatalf("Wrong node ID %d", changes[0].Node.ID) }
-  if changes[0].Node.Address != "bar:1234" { t.Fatal("Invalid address") }
-}
+    old := []Node{
+      {
+        ID: 10,
+        Address: "foo:1234",
+      },
+      {
+        ID: 20,
+        Address: "bar:1234",
+      },
+      {
+        ID: 30,
+        Address: "baz:1234",
+      }}
+    Expect(getChangeType(old, new)).Should(Equal(NodesChanged))
+  })
 
-func TestRemove(t *testing.T) {
-  old := []Node{{
-    ID: 1,
-    Address: "foo:1234",
-  }}
-  var new []Node
+  It("Remove node 2", func() {
+    new := []Node{
+      {
+        ID: 10,
+        Address: "foo:1234",
+      },
+      {
+        ID: 30,
+        Address: "baz:1234",
+      }}
 
-  changes := compareChanges(old, new)
-  if len(changes) != 1 { t.Fatal("No changes found!") }
-  if changes[0].Action != DeletedNode { t.Fatal("Invalid node type") }
-  if changes[0].Node.Address != old[0].Address { t.Fatal("Invalid address") }
-}
+    old := []Node{
+      {
+        ID: 10,
+        Address: "foo:1234",
+      },
+      {
+        ID: 20,
+        Address: "bar:1234",
+      },
+      {
+        ID: 30,
+        Address: "baz:1234",
+      }}
+    Expect(getChangeType(old, new)).Should(Equal(NodesChanged))
+  })
 
-func TestRemove2(t *testing.T) {
-  new := []Node{
-  {
-    ID: 10,
-    Address: "foo:1234",
-  },
-  {
-    ID: 30,
-    Address: "baz:1234",
-  }}
+  It("Update node", func() {
+    old := []Node{
+      {
+        ID: 10,
+        Address: "foo:1234",
+      },
+      {
+        ID: 20,
+        Address: "bar:1234",
+      },
+      {
+        ID: 30,
+        Address: "baz:1234",
+      }}
 
-  old := []Node{
-  {
-    ID: 10,
-    Address: "foo:1234",
-  },
-  {
-    ID: 20,
-    Address: "bar:1234",
-  },
-  {
-    ID: 30,
-    Address: "baz:1234",
-  }}
+    new := []Node{
+      {
+        ID: 10,
+        Address: "foo:1234",
+      },
+      {
+        ID: 20,
+        Address: "bar:1234",
+      },
+      {
+        ID: 30,
+        Address: "frooby:1234",
+      }}
+    Expect(getChangeType(old, new)).Should(Equal(AddressesChanged))
+  })
 
-  changes := compareChanges(old, new)
-  if len(changes) != 1 { t.Fatal("No changes found!") }
-  if changes[0].Action != DeletedNode { t.Fatal("Invalid node type") }
-  if changes[0].Node.ID != 20 { t.Fatalf("Wrong node ID %d", changes[0].Node.ID) }
-  if changes[0].Node.Address != "bar:1234" { t.Fatal("Invalid address") }
-}
+  It("Swap nodes", func() {
+    old := []Node{
+      {
+        ID: 10,
+        Address: "foo:1234",
+      },
+      {
+        ID: 20,
+        Address: "bar:1234",
+      },
+      {
+        ID: 30,
+        Address: "baz:1234",
+      }}
 
-func TestUpdate(t *testing.T) {
-  old := []Node{{
-    ID: 1,
-    Address: "foo:1234",
-  }}
-  new := []Node{{
-    ID: 1,
-    Address: "bar:1234",
-  }}
+    new := []Node{
+      {
+        ID: 10,
+        Address: "foo:1234",
+      },
+      {
+        ID: 20,
+        Address: "bar:1234",
+      },
+      {
+        ID: 40,
+        Address: "frooby:1234",
+      }}
+    Expect(getChangeType(old, new)).Should(Equal(NodesChanged))
+  })
 
-  changes := compareChanges(old, new)
-  if len(changes) != 1 { t.Fatal("No changes found!") }
-  if changes[0].Action != UpdatedNode { t.Fatal("Invalid node type") }
-  if changes[0].Node.Address != "bar:1234" { t.Fatal("Invalid change propagated") }
-}
+  It("No change", func() {
+    old := []Node{
+      {
+        ID: 10,
+        Address: "foo:1234",
+      },
+      {
+        ID: 20,
+        Address: "bar:1234",
+      },
+      {
+        ID: 30,
+        Address: "baz:1234",
+      }}
 
-func TestUpdate2(t *testing.T) {
-  old := []Node{
-  {
-    ID: 10,
-    Address: "foo:1234",
-  },
-  {
-    ID: 20,
-    Address: "bar:1234",
-  },
-  {
-    ID: 30,
-    Address: "baz:1234",
-  }}
-
-  new := []Node{
-  {
-    ID: 10,
-    Address: "foo:1234",
-  },
-  {
-    ID: 20,
-    Address: "bar:1234",
-  },
-  {
-    ID: 30,
-    Address: "frooby:1234",
-  }}
-
-  changes := compareChanges(old, new)
-  if len(changes) != 1 { t.Fatal("No changes found!") }
-  if changes[0].Action != UpdatedNode { t.Fatal("Invalid node type") }
-  if changes[0].Node.ID != 30 { t.Fatalf("Wrong node ID %d", changes[0].Node.ID) }
-  if changes[0].Node.Address != "frooby:1234" { t.Fatal("Invalid address") }
-}
+    new := []Node{
+      {
+        ID: 10,
+        Address: "foo:1234",
+      },
+      {
+        ID: 20,
+        Address: "bar:1234",
+      },
+      {
+        ID: 30,
+        Address: "baz:1234",
+      }}
+    Expect(getChangeType(old, new)).Should(Equal(0))
+  })
+})

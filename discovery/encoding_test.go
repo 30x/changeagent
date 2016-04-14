@@ -2,9 +2,14 @@ package discovery
 
 import (
   "fmt"
+  "flag"
   "testing"
   . "github.com/onsi/ginkgo"
   . "github.com/onsi/gomega"
+)
+
+const (
+  DebugMode = false
 )
 
 func TestDiscovery(t *testing.T) {
@@ -12,10 +17,23 @@ func TestDiscovery(t *testing.T) {
 	RunSpecs(t, "Discovery Suite")
 }
 
+var _ = BeforeSuite(func() {
+  flag.Set("logtostderr", "true")
+  if DebugMode {
+    flag.Set("v", "5")
+  }
+  flag.Parse()
+})
+
 var _ = Describe("Node Encoding", func() {
   node1 := Node{
     ID: 1,
     Address: "localhost:123",
+    State: 1,
+  }
+  node1a := Node{
+    ID: 1,
+    Address: "localhost:12345",
     State: 1,
   }
   node2 := Node{
@@ -26,6 +44,11 @@ var _ = Describe("Node Encoding", func() {
   node3 := Node{
     ID: 3,
     Address: "localhost:111",
+    State: -1,
+  }
+  node3a := Node{
+    ID: 3,
+    Address: "localhost:9999",
     State: -1,
   }
 
@@ -113,5 +136,28 @@ var _ = Describe("Node Encoding", func() {
     fmt.Fprintf(GinkgoWriter, "Before: %s\n", &cfg)
     fmt.Fprintf(GinkgoWriter, "After: %s\n", decCfg)
     Expect(decCfg.Equal(&cfg)).Should(BeTrue())
+  })
+
+  It("Uniquify Node List", func() {
+    nl := NodeList{
+      New: []Node{node1, node2, node3a},
+      Old: []Node{node1a, node3},
+    }
+    ol := NodeList{
+      New: []Node{node2},
+    }
+    cfg := NodeConfig{
+      Current: &nl,
+      Previous: &ol,
+    }
+
+    expected := []Node{node1, node2, node3a}
+    un := cfg.GetUniqueNodes()
+    fmt.Fprintf(GinkgoWriter, "Expected: %v\n", expected)
+    fmt.Fprintf(GinkgoWriter, "Unique:   %v\n", un)
+    Expect(len(un)).Should(Equal(len(expected)))
+    for _, n := range(expected) {
+      Expect(un).Should(ContainElement(n))
+    }
   })
 })

@@ -61,7 +61,7 @@ type Service struct {
   leaderID uint64
   comm communication.Communication
   nodeConfig atomic.Value
-  configChanges <-chan discovery.Change
+  configChanges <-chan int
   stor storage.Storage
   stopChan chan chan bool
   voteCommands chan voteCommand
@@ -145,7 +145,7 @@ func StartRaft(id uint64,
   r.commitIndex = r.readLastCommit()
   r.lastApplied = r.readLastApplied()
 
-  if len(disco.GetNodes()) == 1 {
+  if len(disco.GetCurrentConfig().Current.New) == 1 {
     glog.Info("Only one node. Starting in leader mode.\n")
     r.state = int32(Leader)
   }

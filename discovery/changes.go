@@ -1,5 +1,31 @@
 package discovery
 
+func getChangeType(old, new []Node) int {
+  if nodeIdsEqual(old, new) {
+    for k, v := range(old) {
+      if v.Address != new[k].Address {
+        return AddressesChanged
+      }
+    }
+    return 0
+  }
+  return NodesChanged
+}
+
+func nodeIdsEqual(old, new []Node) bool {
+  if len(old) == len(new) {
+    for k, v := range (old) {
+      if v.ID != new[k].ID {
+        return false
+      }
+    }
+    return true
+  }
+  return false
+}
+
+/* Old code to compare change lists
+
 func compareChanges(oldNodes []Node, newNodes []Node) []Change {
   var changes []Change
 
@@ -39,3 +65,5 @@ func compareChanges(oldNodes []Node, newNodes []Node) []Change {
 
   return changes
 }
+
+*/

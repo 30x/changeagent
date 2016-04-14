@@ -154,8 +154,7 @@ func (r *Service) followerLoop(isCandidate bool, state *raftState) chan bool {
 
     case change := <- r.configChanges:
       // Discovery service now up to date, so not much to do
-      glog.Infof("Received configuration change type %d for node %d",
-        change.Action, change.Node.ID)
+      glog.Infof("Received configuration change type %d", change)
 
     case stopDone := <- r.stopChan:
       r.setState(Stopping)
@@ -244,7 +243,7 @@ func (r *Service) leaderLoop(state *raftState) chan bool {
       }
 
     case change := <- r.configChanges:
-      r.handleLeaderConfigChange(state, change)
+      glog.Infof("IGNORING configuration change type %d", change)
 
     case stopDone := <- r.stopChan:
       r.setState(Stopping)
@@ -260,6 +259,7 @@ func stopPeers(state *raftState) {
   }
 }
 
+/*
 func (r *Service) handleLeaderConfigChange(state *raftState, change discovery.Change) {
   id := change.Node.ID
   switch change.Action {
@@ -278,6 +278,7 @@ func (r *Service) handleLeaderConfigChange(state *raftState, change discovery.Ch
     glog.Infof("New address for node %d: %s", id, change.Node.Address)
   }
 }
+*/
 
 /*
  * Given the current position of a number of peers, calculate the commit index according

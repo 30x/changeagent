@@ -9,6 +9,7 @@ import (
   "regexp"
   "strconv"
   "time"
+  "github.com/golang/glog"
 )
 
 var fileLine = regexp.MustCompile("^([0-9]+)\\s(.+)")
@@ -35,11 +36,58 @@ func CreateStaticDiscovery(addrs []string) *Service {
 func ReadDiscoveryFile(fileName string, updateInterval time.Duration) (*Service, error) {
   nodes, err := readFile(fileName)
   if err != nil { return nil, err }
-  ret := createImpl(nodes, nil)
-  if updateInterval > 0 {
-    go ret.fileReadLoop(fileName, updateInterval)
+
+  rdr := fileReader{
+    fileName: fileName,
+    interval: updateInterval,
+    stopChan: make(chan bool, 1),
   }
+
+  ret := createImpl(nodes, &rdr)
+  rdr.d = ret
+
+  rdr.start()
   return ret, nil
+}
+
+type fileReader struct {
+  d *Service
+  fileName string
+  interval time.Duration
+  stopChan chan bool
+}
+
+func (r *fileReader) start() {
+  if r.interval == 0 {
+    return
+  }
+  go r.readLoop()
+}
+
+func (r *fileReader) stop() {
+  r.stopChan <- true
+}
+
+func (r *fileReader) readLoop() {
+  ticker := time.NewTicker(r.interval)
+  sentError := false
+
+  for {
+    select {
+    case <-ticker.C:
+      newNodes, err := readFile(r.fileName)
+      if err == nil {
+        r.d.updateNodes(newNodes)
+      } else if !sentError {
+        glog.Errorf("Error reading discovery file for changes: %v", err)
+        sentError = true
+      }
+
+    case <-r.stopChan:
+      ticker.Stop()
+      return
+    }
+  }
 }
 
 func readFile(fileName string) ([]Node, error) {
@@ -84,12 +132,3 @@ func readFile(fileName string) ([]Node, error) {
   return nodes, nil
 }
 
-func (d *Service) fileReadLoop(fileName string, interval time.Duration) {
-  for {
-    time.Sleep(interval)
-    newNodes, err := readFile(fileName)
-    if err == nil {
-      d.updateNodes(newNodes)
-    }
-  }
-}
