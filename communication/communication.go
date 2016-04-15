@@ -5,11 +5,18 @@ import (
   "revision.aeip.apigee.net/greg/changeagent/storage"
 )
 
+//go:generate protoc --go_out=. communication.proto
+
+/*
+ * The raft implementation needs to export this interface in order to be able to plug in
+ * to this package. It represents the calls that we'll make to it when we get stuff from
+ * the network.
+ */
 type Raft interface {
   MyID() uint64
-  RequestVote(req *VoteRequest) (*VoteResponse, error)
-  Append(req *AppendRequest) (*AppendResponse, error)
-  Propose(e *storage.Entry) (uint64, error)
+  RequestVote(req VoteRequest) (VoteResponse, error)
+  Append(req AppendRequest) (AppendResponse, error)
+  Propose(e storage.Entry) (uint64, error)
 }
 
 type VoteRequest struct {
@@ -82,7 +89,7 @@ func (a *ProposalResponse) String() string {
 
 type Communication interface {
   SetRaft(raft Raft)
-  RequestVote(id uint64, req VoteRequest, ch chan<- VoteResponse)
-  Append(id uint64, req *AppendRequest) (AppendResponse, error)
-  Propose(id uint64, e *storage.Entry) (ProposalResponse, error)
+  RequestVote(address string, req VoteRequest, ch chan<- VoteResponse)
+  Append(address string, req AppendRequest) (AppendResponse, error)
+  Propose(address string, e storage.Entry) (ProposalResponse, error)
 }

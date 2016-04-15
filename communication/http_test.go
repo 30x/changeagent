@@ -11,8 +11,13 @@ import (
   "sync"
   "time"
   "github.com/satori/go.uuid"
-  "revision.aeip.apigee.net/greg/changeagent/discovery"
   "revision.aeip.apigee.net/greg/changeagent/storage"
+  . "github.com/onsi/ginkgo"
+  . "github.com/onsi/gomega"
+)
+
+const (
+  debugEnabled = false
 )
 
 var expectedEntries []storage.Entry
@@ -21,138 +26,157 @@ var expectedLock = sync.Mutex{}
 var tenant = uuid.NewV4()
 var collection = uuid.NewV4()
 
-func TestRaftCalls(t *testing.T) {
+var testListener *net.TCPListener
+var testRaft Raft
+var address string
+var comm Communication
+
+func TestCommunication(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "Communication Suite")
+}
+
+var _ = BeforeSuite(func() {
   flag.Set("logtostderr", "true")
-  flag.Set("v", "2")
+  if debugEnabled {
+    flag.Set("v", "2")
+  }
   flag.Parse()
 
   anyPort := &net.TCPAddr{}
   listener, err := net.ListenTCP("tcp", anyPort)
-  if err != nil { t.Fatal("Can't listen on TCP port") }
-  defer listener.Close()
+  Expect(err).Should(Succeed())
+  testListener = listener
 
   _, port, err := net.SplitHostPort(listener.Addr().String())
-  if err != nil { t.Fatal("Error parsing port") }
-  t.Logf("Listening on %s", port)
-  addrs := []string{
-    fmt.Sprintf("localhost:%s", port),
-  }
+  Expect(err).Should(Succeed())
+  fmt.Fprintf(GinkgoWriter, "Listening on %s\n", port)
+  address = fmt.Sprintf("localhost:%s", port)
 
-  discovery := discovery.CreateStaticDiscovery(addrs)
-  testRaft := makeTestRaft(t)
+  testRaft = makeTestRaft()
   mux := http.NewServeMux()
-  var comm Communication
-  comm, err = StartHTTPCommunication(mux, discovery)
-  if err != nil { t.Fatalf("Error starting raft: %v", err) }
+
+  comm, err = StartHTTPCommunication(mux)
+  Expect(err).Should(Succeed())
   comm.SetRaft(testRaft)
   go http.Serve(listener, mux)
-  if err != nil { t.Fatal("Error listening on http") }
-  time.Sleep(time.Second)
+  Expect(err).Should(Succeed())
+})
 
-  req := VoteRequest{
-    Term: 1,
-    CandidateID: 1,
-  }
-  ch := make(chan VoteResponse, 1)
+var _ = AfterSuite(func() {
+  testListener.Close()
+})
 
-  comm.RequestVote(1, req, ch)
-  resp := <- ch
-  if resp.Error != nil { t.Fatalf("Error from voteResponse: %v", resp.Error) }
-  if resp.Term != 1 { t.Fatalf("Expected term 1, got %d", resp.Term) }
-  if resp.NodeID != 1 { t.Fatalf("Expected node is 1, got %d", resp.NodeID) }
-  if !resp.VoteGranted { t.Fatal("Expected vote to be granted") }
+var _ = Describe("Communication", func() {
+  It("Request Vote", func() {
+    req := VoteRequest{
+      Term: 1,
+      CandidateID: 1,
+    }
+    ch := make(chan VoteResponse, 1)
 
-  ar := AppendRequest{
-    Term: 1,
-    LeaderID: 1,
-  }
-  expectedEntries = nil
+    comm.RequestVote(address, req, ch)
+    resp := <-ch
+    Expect(resp.Error).Should(Succeed())
+    Expect(resp.Term).Should(BeEquivalentTo(1))
+    Expect(resp.NodeID).Should(BeEquivalentTo(1))
+    Expect(resp.VoteGranted).Should(BeTrue())
+  })
 
-  aresp, err := comm.Append(1, &ar)
-  if err != nil { t.Fatalf("Error from voteResponse: %v", resp.Error) }
-  if aresp.Error != nil { t.Fatalf("Error from voteResponse: %v", resp.Error) }
-  if aresp.Term != 1 { t.Fatalf("Expected term 1, got %d", resp.Term) }
-  if !aresp.Success { t.Fatal("Expected success") }
+  It("Append", func() {
+    ar := AppendRequest{
+      Term: 1,
+      LeaderID: 1,
+    }
+    expectedEntries = nil
 
-  ar = AppendRequest{
-    Term: 2,
-    LeaderID: 1,
-  }
-  e := storage.Entry{
-    Index: 1,
-    Term: 2,
-    Timestamp: time.Now(),
-    Tenant: tenant,
-    Collection: collection,
-    Key: "baz",
-    Data: []byte("Hello!"),
-  }
-  ar.Entries = append(ar.Entries, e)
-  e2 := storage.Entry{
-    Index: 2,
-    Term: 3,
-    Timestamp: time.Now(),
-    Tenant: tenant,
-    Collection: collection,
-    Key: "baz",
-    Data: []byte("Goodbye!"),
-  }
-  ar.Entries = append(ar.Entries, e2)
+    aresp, err := comm.Append(address, ar)
+    Expect(err).Should(Succeed())
+    Expect(aresp.Error).Should(Succeed())
+    Expect(aresp.Term).Should(BeEquivalentTo(1))
+    Expect(aresp.Success).Should(BeTrue())
+  })
 
-  expectedLock.Lock()
-  expectedEntries = ar.Entries
-  expectedLock.Unlock()
+  It("Append 2", func() {
+    ar := AppendRequest{
+      Term: 2,
+      LeaderID: 1,
+    }
+    e := storage.Entry{
+      Index: 1,
+      Term: 2,
+      Timestamp: time.Now(),
+      Tenant: tenant,
+      Collection: collection,
+      Key: "baz",
+      Data: []byte("Hello!"),
+    }
+    ar.Entries = append(ar.Entries, e)
+    e2 := storage.Entry{
+      Index: 2,
+      Term: 3,
+      Timestamp: time.Now(),
+      Tenant: tenant,
+      Collection: collection,
+      Key: "baz",
+      Data: []byte("Goodbye!"),
+    }
+    ar.Entries = append(ar.Entries, e2)
 
-  aresp, err = comm.Append(1, &ar)
-  if err != nil { t.Fatalf("Error from voteResponse: %v", err) }
-  if aresp.Error != nil { t.Fatalf("Error from voteResponse: %v", aresp.Error) }
-  if aresp.Term != 2 { t.Fatalf("Expected term 2, got %d", resp.Term) }
-  if aresp.Success { t.Fatal("Expected not success") }
+    expectedLock.Lock()
+    expectedEntries = ar.Entries
+    expectedLock.Unlock()
 
-  e3 := storage.Entry{
-    Timestamp: time.Now(),
-    Index: 3,
-    Term: 3,
-    Tenant: tenant,
-    Collection: collection,
-    Key: "baz",
-    Data: []byte("Hello, World!"),
-  }
+    aresp, err := comm.Append(address, ar)
+    Expect(err).Should(Succeed())
+    Expect(aresp.Error).Should(Succeed())
+    Expect(aresp.Term).Should(BeEquivalentTo(2))
+    Expect(aresp.Success).Should(BeFalse())
+  })
 
-  expectedLock.Lock()
-  expectedEntries = make([]storage.Entry, 1)
-  expectedEntries[0] = e3
-  expectedLock.Unlock()
+  It("Propose", func() {
+    e3 := storage.Entry{
+      Timestamp: time.Now(),
+      Index: 3,
+      Term: 3,
+      Tenant: tenant,
+      Collection: collection,
+      Key: "baz",
+      Data: []byte("Hello, World!"),
+    }
 
-  presp, err := comm.Propose(1, &e3)
-  if err != nil { t.Fatalf("Error from propose: %v", err) }
-  if presp.Error != nil { t.Fatalf("Error from propose: %v", presp.Error) }
-  if presp.NewIndex == 0 { t.Fatal("Expected a non-zero index") }
+    expectedLock.Lock()
+    expectedEntries = make([]storage.Entry, 1)
+    expectedEntries[0] = e3
+    expectedLock.Unlock()
+
+    presp, err := comm.Propose(address, e3)
+    Expect(err).Should(Succeed())
+    Expect(presp.Error).Should(Succeed())
+    Expect(presp.NewIndex).ShouldNot(BeZero())
+  })
+})
+
+type testImpl struct {
 }
 
-type testRaft struct {
-  t *testing.T
+func makeTestRaft() *testImpl {
+  return &testImpl{}
 }
 
-func makeTestRaft(t *testing.T) *testRaft {
-  return &testRaft{
-    t: t,
-  }
-}
-
-func (r *testRaft) MyID() uint64 {
+func (r *testImpl) MyID() uint64 {
   return 1
 }
 
-func (r *testRaft) RequestVote(req *VoteRequest) (*VoteResponse, error) {
+func (r *testImpl) RequestVote(req VoteRequest) (VoteResponse, error) {
   vr := VoteResponse{
     Term: req.Term,
     VoteGranted: req.Term == 1,
   }
-  return &vr, nil
+  return vr, nil
 }
 
-func (r *testRaft) Append(req *AppendRequest) (*AppendResponse, error) {
+func (r *testImpl) Append(req AppendRequest) (AppendResponse, error) {
   expectedLock.Lock()
   defer expectedLock.Unlock()
 
@@ -160,36 +184,35 @@ func (r *testRaft) Append(req *AppendRequest) (*AppendResponse, error) {
     Term: req.Term,
     Success: req.Term == 1,
   }
-  r.t.Logf("Expected: %v", expectedEntries)
-  r.t.Logf("Got: %v", req.Entries)
+
   for i, e := range(req.Entries) {
     ee := expectedEntries[i]
     if e.Index != ee.Index {
-      r.t.Fatalf("%d: Expected index %d and got %d", i, expectedEntries[i].Index, e.Index)
+      vr.Error = fmt.Errorf("%d: Expected index %d and got %d", i, expectedEntries[i].Index, e.Index)
     }
     if e.Term != ee.Term {
-      r.t.Fatal("Terms do not match")
+      vr.Error = fmt.Errorf("Terms do not match")
     }
     if e.Timestamp != ee.Timestamp {
-      r.t.Fatal("Timestamps do not match")
+      vr.Error = fmt.Errorf("Timestamps do not match")
     }
     if !uuid.Equal(e.Tenant, ee.Tenant) {
-      r.t.Fatal("Tenants do not match")
+      vr.Error = fmt.Errorf("Tenants do not match")
     }
     if !uuid.Equal(e.Collection, ee.Collection) {
-      r.t.Fatal("Collections do not match")
+      vr.Error = fmt.Errorf("Collections do not match")
     }
     if e.Key != ee.Key {
-     r.t.Fatal("Keys do not match")
+     vr.Error = fmt.Errorf("Keys do not match")
     }
     if !bytes.Equal(e.Data, expectedEntries[i].Data) {
-      r.t.Fatal("Bytes do not match")
+      vr.Error = fmt.Errorf("Bytes do not match")
     }
   }
-  return &vr, nil
+  return vr, nil
 }
 
-func (r *testRaft) Propose(e *storage.Entry) (uint64, error) {
+func (r *testImpl) Propose(e storage.Entry) (uint64, error) {
   expectedLock.Lock()
   defer expectedLock.Unlock()
 

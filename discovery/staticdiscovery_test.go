@@ -24,8 +24,11 @@ var _ = Describe("Static Discovery", func() {
     Expect(len(n)).Should(Equal(2))
     Expect(n[0].ID).Should(BeEquivalentTo(1))
     Expect(n[0].Address).Should(Equal("localhost:1234"))
+    Expect(cfg.GetAddress(1)).Should(Equal("localhost:1234"))
     Expect(n[1].ID).Should(BeEquivalentTo(2))
     Expect(n[1].Address).Should(Equal("localhost:2345"))
+    Expect(n[1].Address).Should(Equal("localhost:2345"))
+    Expect(cfg.GetAddress(2)).Should(Equal("localhost:2345"))
 
     tn1 := Node{
       ID: 1,

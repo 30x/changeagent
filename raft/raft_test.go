@@ -146,7 +146,7 @@ func appendAndVerify(msg string, expectedCount int) uint64 {
     Data: data,
     Timestamp: time.Now(),
   }
-  index, err := leader.Propose(&newEntry)
+  index, err := leader.Propose(newEntry)
   Expect(err).Should(Succeed())
   Expect(index).Should(Equal(lastIndex + 1))
   fmt.Fprintf(GinkgoWriter, "Wrote data at index %d\n", lastIndex + 1)

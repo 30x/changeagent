@@ -23,14 +23,14 @@ func (r *Service) handleFollowerVote(state *raftState, cmd voteCommand) bool {
   // 5.1: Reply false if term < currentTerm
   if cmd.vr.Term < currentTerm {
     resp.VoteGranted = false
-    cmd.rc <- &resp
+    cmd.rc <- resp
     return false
   }
 
   // Important to double-check state at this point as well since channels are buffered
   if r.GetState() != Follower {
     resp.VoteGranted = false
-    cmd.rc <- &resp
+    cmd.rc <- resp
     return false
   }
 
@@ -46,7 +46,7 @@ func (r *Service) handleFollowerVote(state *raftState, cmd voteCommand) bool {
    } else {
      resp.VoteGranted = false
    }
-  cmd.rc <- &resp
+  cmd.rc <- resp
   return resp.VoteGranted
 }
 
@@ -56,7 +56,7 @@ func (r *Service) voteNo(state *raftState, cmd voteCommand) {
     Term: r.GetCurrentTerm(),
     VoteGranted: false,
   }
-  cmd.rc <- &resp
+  cmd.rc <- resp
 }
 
 func (r *Service) sendVotes(state *raftState, index uint64, rc chan<- voteResult) {
@@ -97,7 +97,7 @@ func (r *Service) sendVotes(state *raftState, index uint64, rc chan<- voteResult
     }
     rc := make(chan communication.VoteResponse)
     responseChannels = append(responseChannels, rc)
-    r.comm.RequestVote(node.ID, vr, rc)
+    r.comm.RequestVote(node.Address, vr, rc)
   }
 
   // Pick up all the response channels. This will block until we get all responses.

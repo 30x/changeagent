@@ -53,7 +53,7 @@ var _ = Describe("Raft Unit Tests", func() {
 
     unitTestRaft.setFollowerOnly(true)
 
-    ar := &communication.AppendRequest{
+    ar := communication.AppendRequest{
       Term: 2,
       LeaderID: 1,
       PrevLogIndex: 0,
@@ -84,7 +84,7 @@ var _ = Describe("Raft Unit Tests", func() {
 
   It("Vote Old Term", func() {
     // Reply false if term < currentTerm (§5.1)
-    req := &communication.VoteRequest{
+    req := communication.VoteRequest{
       Term: 1,
       CandidateID: 2,
       LastLogIndex: 3,
@@ -99,7 +99,7 @@ var _ = Describe("Raft Unit Tests", func() {
   It("Vote Out Of Date", func() {
     // If votedFor is null or candidateId, and candidate’s log is at
     // least as up-to-date as receiver’s log, grant vote (§5.2, §5.4)
-    req := &communication.VoteRequest{
+    req := communication.VoteRequest{
       Term: 1,
       CandidateID: 2,
       LastLogIndex: 2,
@@ -113,7 +113,7 @@ var _ = Describe("Raft Unit Tests", func() {
 
   It("Voting", func() {
     // Test valid voting, and that we keep track of who we voted for
-    req := &communication.VoteRequest{
+    req := communication.VoteRequest{
       Term: 3,
       CandidateID: 2,
       LastLogIndex: 3,
@@ -124,7 +124,7 @@ var _ = Describe("Raft Unit Tests", func() {
     Expect(err).Should(Succeed())
     Expect(resp.VoteGranted).Should(BeTrue())
 
-    req = &communication.VoteRequest{
+    req = communication.VoteRequest{
       Term: 3,
       CandidateID: 2,
       LastLogIndex: 3,
@@ -135,7 +135,7 @@ var _ = Describe("Raft Unit Tests", func() {
     Expect(err).Should(Succeed())
     Expect(resp.VoteGranted).Should(BeTrue())
 
-    req = &communication.VoteRequest{
+    req = communication.VoteRequest{
       Term: 3,
       CandidateID: 3,
       LastLogIndex: 3,
@@ -153,7 +153,7 @@ var _ = Describe("Raft Unit Tests", func() {
 
   It("Old Term Append", func() {
     // Reply false if term < currentTerm (§5.1)
-    req := &communication.AppendRequest{
+    req := communication.AppendRequest{
       Term: 1,
       LeaderID: 1,
     }
@@ -165,7 +165,7 @@ var _ = Describe("Raft Unit Tests", func() {
   It("Log No Match", func() {
     // Reply false if log doesn’t contain an entry at prevLogIndex
     // whose term matches prevLogTerm (§5.3)
-    req := &communication.AppendRequest{
+    req := communication.AppendRequest{
       Term: 1,
       LeaderID: 1,
       PrevLogIndex: 10,
@@ -177,7 +177,7 @@ var _ = Describe("Raft Unit Tests", func() {
   })
 
   It("Log No Match Term", func() {
-    req := &communication.AppendRequest{
+    req := communication.AppendRequest{
       Term: 1,
       LeaderID: 1,
       PrevLogIndex: 1,
@@ -190,7 +190,7 @@ var _ = Describe("Raft Unit Tests", func() {
 
   It("Append", func() {
     // Append any new entries not already in the log
-    req := &communication.AppendRequest{
+    req := communication.AppendRequest{
       Term: 2,
       LeaderID: 1,
       PrevLogIndex: 3,
@@ -222,7 +222,7 @@ var _ = Describe("Raft Unit Tests", func() {
     // If an existing entry conflicts with a new one (same index
     // but different terms), delete the existing entry and all that
     // follow it (§5.3)
-    req = &communication.AppendRequest{
+    req = communication.AppendRequest{
       Term: 3,
       LeaderID: 1,
       PrevLogIndex: 3,
@@ -248,7 +248,7 @@ var _ = Describe("Raft Unit Tests", func() {
     Expect(entry).Should(BeNil())
 
     // Append any new entries not already in the log, again
-    req = &communication.AppendRequest{
+    req = communication.AppendRequest{
       Term: 3,
       LeaderID: 1,
       PrevLogIndex: 3,
@@ -280,7 +280,7 @@ var _ = Describe("Raft Unit Tests", func() {
     // If leaderCommit > commitIndex, set commitIndex =
     // min(leaderCommit, index of last new entry)
     // TODO does this have to work even if we have no entries to append?
-    req = &communication.AppendRequest{
+    req = communication.AppendRequest{
       Term: 3,
       LeaderID: 1,
       LeaderCommit: 3,
@@ -290,7 +290,7 @@ var _ = Describe("Raft Unit Tests", func() {
     Expect(resp.Success).Should(BeTrue())
     Expect(resp.CommitIndex).Should(BeEquivalentTo(3))
 
-    req = &communication.AppendRequest{
+    req = communication.AppendRequest{
       Term: 3,
       LeaderID: 1,
       LeaderCommit: 5,
@@ -306,7 +306,7 @@ var _ = Describe("Raft Unit Tests", func() {
     Expect(resp.Success).Should(BeTrue())
     Expect(resp.CommitIndex).Should(BeEquivalentTo(5))
 
-    req = &communication.AppendRequest{
+    req = communication.AppendRequest{
       Term: 3,
       LeaderID: 1,
       LeaderCommit: 99,

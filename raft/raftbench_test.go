@@ -35,7 +35,7 @@ func doAppendBenchmark(b *testing.B, waitFrequency int) {
       Timestamp: time.Now(),
       Data: []byte(proposal),
     }
-    newIndex, err := leader.Propose(&newEntry)
+    newIndex, err := leader.Propose(newEntry)
     if err != nil { b.Fatalf("Error on proposal: %v", err) }
     if newIndex != (lastIndex + 1) {
       b.Fatalf("Expected new index of %d rather than %d", lastIndex + 1, newIndex)

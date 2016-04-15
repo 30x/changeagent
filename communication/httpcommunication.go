@@ -9,7 +9,6 @@ import (
   "net/http"
   "github.com/golang/glog"
   "github.com/golang/protobuf/proto"
-  "revision.aeip.apigee.net/greg/changeagent/discovery"
   "revision.aeip.apigee.net/greg/changeagent/storage"
 )
 
@@ -27,14 +26,10 @@ var httpClient = &http.Client{
 
 type HTTPCommunication struct {
   raft Raft
-  discovery discovery.Discovery
 }
 
-func StartHTTPCommunication(mux *http.ServeMux,
-                            discovery discovery.Discovery) (*HTTPCommunication, error) {
-  comm := HTTPCommunication{
-    discovery: discovery,
-  }
+func StartHTTPCommunication(mux *http.ServeMux) (*HTTPCommunication, error) {
+  comm := HTTPCommunication{}
   mux.HandleFunc(RequestVoteURI, comm.handleRequestVote)
   mux.HandleFunc(AppendURI, comm.handleAppend)
   mux.HandleFunc(ProposeURI, comm.handlePropose)
@@ -45,16 +40,7 @@ func (h *HTTPCommunication) SetRaft(raft Raft) {
   h.raft = raft
 }
 
-func (h *HTTPCommunication) RequestVote(id uint64, req VoteRequest, ch chan<- VoteResponse) {
-  addr := h.discovery.GetAddress(id)
-  if addr == "" {
-    vr := VoteResponse{
-      Error: fmt.Errorf("Invalid peer ID %d", id),
-    }
-    ch <- vr
-    return
-  }
-
+func (h *HTTPCommunication) RequestVote(addr string, req VoteRequest, ch chan<- VoteResponse) {
   go h.sendVoteRequest(addr, req, ch)
 }
 
@@ -114,12 +100,7 @@ func (h *HTTPCommunication) sendVoteRequest(addr string, req VoteRequest, ch cha
   ch <- voteResp
 }
 
-func (h *HTTPCommunication) Append(id uint64, req *AppendRequest) (AppendResponse, error) {
-  addr := h.discovery.GetAddress(id)
-  if addr == "" {
-    return DefaultAppendResponse, fmt.Errorf("Invalid peer ID %d", id)
-  }
-
+func (h *HTTPCommunication) Append(addr string, req AppendRequest) (AppendResponse, error) {
   uri := fmt.Sprintf("http://%s%s", addr, AppendURI)
 
   reqPb := AppendRequestPb{
@@ -174,15 +155,10 @@ func (h *HTTPCommunication) Append(id uint64, req *AppendRequest) (AppendRespons
   return appResp, nil
 }
 
-func (h *HTTPCommunication) Propose(id uint64, e *storage.Entry) (ProposalResponse, error) {
-  addr := h.discovery.GetAddress(id)
-  if addr == "" {
-    return DefaultProposalResponse, fmt.Errorf("Invalid peer ID %d", id)
-  }
-
+func (h *HTTPCommunication) Propose(addr string, e storage.Entry) (ProposalResponse, error) {
   uri := fmt.Sprintf("http://%s%s", addr, ProposeURI)
 
-  reqBody, err := storage.EncodeEntry(e)
+  reqBody, err := storage.EncodeEntry(&e)
   if err != nil {
     return DefaultProposalResponse, err
   }
@@ -254,7 +230,7 @@ func (h *HTTPCommunication) handleRequestVote(resp http.ResponseWriter, req *htt
     LastLogTerm: reqpb.GetLastLogTerm(),
   }
 
-  voteResp, err := h.raft.RequestVote(&voteReq)
+  voteResp, err := h.raft.RequestVote(voteReq)
   if err != nil {
     resp.WriteHeader(http.StatusBadRequest)
     return
@@ -321,7 +297,7 @@ func (h *HTTPCommunication) handleAppend(resp http.ResponseWriter, req *http.Req
 
   glog.V(3).Infof("Received %s", &apReq)
 
-  appResp, err := h.raft.Append(&apReq)
+  appResp, err := h.raft.Append(apReq)
   if err != nil {
     resp.WriteHeader(http.StatusInternalServerError)
     return
@@ -368,7 +344,7 @@ func (h *HTTPCommunication) handlePropose(resp http.ResponseWriter, req *http.Re
 
   glog.V(3).Infof("Received proposal: %v", newEntry)
 
-  newIndex, err := h.raft.Propose(newEntry)
+  newIndex, err := h.raft.Propose(*newEntry)
   if err != nil {
     glog.V(1).Infof("Error in proposal: %s", err)
     resp.WriteHeader(http.StatusInternalServerError)

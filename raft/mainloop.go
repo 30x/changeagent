@@ -129,7 +129,8 @@ func (r *Service) followerLoop(isCandidate bool, state *raftState) chan bool {
       } else {
         go func() {
           glog.V(2).Infof("Forwarding proposal to leader node %d", leaderID)
-          fr, err := r.comm.Propose(leaderID, &prop.entry)
+          leaderAddr := r.getNodeConfig().GetAddress(leaderID)
+          fr, err := r.comm.Propose(leaderAddr, prop.entry)
           pr := proposalResult{
             index: fr.NewIndex,
           }
@@ -158,12 +159,12 @@ func (r *Service) followerLoop(isCandidate bool, state *raftState) chan bool {
       }
 
     case change := <- r.configChanges:
-      // If the change changes the nodes, then ignore this -- wait for the leader
-      // to propose the new change.
-      // If the change changes the addresses, we have to update our own definition
-      // of the leader's address since we might be contacting it.
-      // TODO this.
-      glog.Infof("Received configuration change type %d", change)
+      if change == discovery.AddressesChanged {
+        // Process the change only if it's just to addresses. Otherwise wait for the leader.
+        newCfg := r.disco.GetCurrentConfig()
+        r.setNodeConfig(newCfg)
+        r.updatePeerList(newCfg, state)
+      }
 
     case stopDone := <- r.stopChan:
       r.setState(Stopping)
@@ -179,7 +180,7 @@ func (r *Service) leaderLoop(state *raftState) chan bool {
     if n.ID == r.id {
       continue
     }
-    state.peers[n.ID] = startPeer(n.ID, r, state.peerMatchChanges)
+    state.peers[n.ID] = startPeer(n.ID, n.Address, r, state.peerMatchChanges)
     state.peerMatches[n.ID] = 0
   }
 
@@ -310,13 +311,13 @@ func (r *Service) processConfigChange(changeType int, state *raftState) error {
     state.configChangeCommit = ix
     state.configChangeMode = proposedJointConsensus
 
-    // TODO start new peers if necessary, and update addresses!
+    r.updatePeerList(newCfg, state)
 
   } else {
-    /*
-     * TODO: process address-only change
-     */
-    glog.Infof("IGNORING configuration change type %d", changeType)
+    // Only the addresses changed. Just need to update based on what changed.
+    newCfg := r.disco.GetCurrentConfig()
+    r.setNodeConfig(newCfg)
+    r.updatePeerList(newCfg, state)
   }
   return nil
 }
@@ -360,7 +361,7 @@ func (r *Service) updateConfigChange(commitIndex uint64, state *raftState) error
     r.setNodeConfig(state.proposedConfig)
     state.configChangeMode = noChange
 
-    // TODO!: Can now stop peers for any nodes in the "old" but not the "new" config.
+    r.updatePeerList(state.proposedConfig, state)
 
   }
   return nil
@@ -393,25 +394,35 @@ func (r *Service) makeFinalConsensus() *discovery.NodeConfig {
 }
 
 /*
-func (r *Service) handleLeaderConfigChange(state *raftState, change discovery.Change) {
-  id := change.Node.ID
-  switch change.Action {
-  case discovery.NewNode:
-    glog.Infof("Adding new node %d", id)
-    state.peers[id] = startPeer(id, r, state.peerMatchChanges)
-    state.peerMatches[id] = 0
+ * Whenever configuration changes, go through the list of peers and see what we need to do.
+ */
+func (r *Service) updatePeerList(cfg *discovery.NodeConfig, state *raftState) {
+  foundNodes := make(map[uint64]bool)
+  nodes := cfg.GetUniqueNodes()
 
-  case discovery.DeletedNode:
-    glog.Infof("Stopping communications to node %d", id)
-    state.peers[id].stop()
-    delete(state.peers, id)
-    delete(state.peerMatches, id)
+  // Add any missing nodes, and update addresses of found ones
+  for i := range(nodes) {
+    id := nodes[i].ID
+    foundNodes[id] = true
+    if state.peers[id] == nil {
+      glog.Infof("Starting communications with new node %d", id)
+      state.peers[id] = startPeer(id, nodes[i].Address, r, state.peerMatchChanges)
+      state.peerMatches[id] = 0
+    } else {
+      state.peers[id].updateAddress(nodes[i].Address)
+    }
+  }
 
-  case discovery.UpdatedNode:
-    glog.Infof("New address for node %d: %s", id, change.Node.Address)
+  // Delete any nodes that are no longer in the configuration
+  for id := range(state.peers) {
+    if !foundNodes[id] {
+      glog.Infof("Stopping communications to deleted node %d", id)
+      state.peers[id].stop()
+      delete(state.peers, id)
+      delete(state.peerMatches, id)
+    }
   }
 }
-*/
 
 /*
  * Given the current position of a number of peers, calculate the commit index according

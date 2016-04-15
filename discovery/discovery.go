@@ -69,12 +69,6 @@ type Discovery interface {
   CompareCurrentConfig(oldCfg *NodeConfig) int
 
   /*
-   * Shortcut to get just the "address" field from a single node identified
-   * by its node ID. Also safe to be called from many threads.
-   */
-  GetAddress(id uint64) string
-
-  /*
    * Return a channel that will be notified whenever the configuration changes. If the
    * list of nodes changed, then it will receive the value "NodesChanged." Otherwise it
    * will receive the value "AddressesChanged"
@@ -148,6 +142,27 @@ func (c *NodeConfig) GetUniqueNodes() []Node {
   var ret []Node
   for _, n := range(nl) {
     ret = append(ret, n)
+  }
+  return ret
+}
+
+/*
+ * Find the address of a node in the specific config, or return an empty string.
+ * Check both old and new configurations so that we get the newest address first.
+ */
+func (c *NodeConfig) GetAddress(id uint64) string {
+  ret := ""
+  if c.Current != nil {
+    for i := range(c.Current.Old) {
+      if c.Current.Old[i].ID == id {
+        ret = c.Current.Old[i].Address
+      }
+    }
+    for i := range(c.Current.New) {
+      if c.Current.New[i].ID == id {
+        ret = c.Current.New[i].Address
+      }
+    }
   }
   return ret
 }

@@ -99,13 +99,13 @@ type Service struct {
 }
 
 type voteCommand struct {
-  vr *communication.VoteRequest
-  rc chan *communication.VoteResponse
+  vr communication.VoteRequest
+  rc chan communication.VoteResponse
 }
 
 type appendCommand struct {
-  ar *communication.AppendRequest
-  rc chan *communication.AppendResponse
+  ar communication.AppendRequest
+  rc chan communication.AppendResponse
 }
 
 type proposalResult struct {
@@ -209,7 +209,7 @@ func (r *Service) cleanup() {
   for len(r.voteCommands) > 0 {
     glog.V(2).Info("Sending cleanup command for vote request")
     vc := <- r.voteCommands
-    vc.rc <- &communication.VoteResponse{
+    vc.rc <- communication.VoteResponse{
       Error: errors.New("Raft is shutting down"),
     }
   }
@@ -218,7 +218,7 @@ func (r *Service) cleanup() {
   for len(r.appendCommands) > 0 {
     glog.V(2).Info("Sending cleanup command for append request")
     vc := <- r.appendCommands
-    vc.rc <- &communication.AppendResponse{
+    vc.rc <- communication.AppendResponse{
       Error: errors.New("Raft is shutting down"),
     }
   }
@@ -227,12 +227,12 @@ func (r *Service) cleanup() {
   //close(r.receivedAppendChan)
 }
 
-func (r *Service) RequestVote(req *communication.VoteRequest) (*communication.VoteResponse, error) {
+func (r *Service) RequestVote(req communication.VoteRequest) (communication.VoteResponse, error) {
   if r.GetState() == Stopping || r.GetState() == Stopped {
-    return nil, errors.New("Raft is stopped")
+    return communication.VoteResponse{}, errors.New("Raft is stopped")
   }
 
-  rc := make(chan *communication.VoteResponse)
+  rc := make(chan communication.VoteResponse)
   cmd := voteCommand{
     vr: req,
     rc: rc,
@@ -242,13 +242,13 @@ func (r *Service) RequestVote(req *communication.VoteRequest) (*communication.Vo
   return vr, vr.Error
 }
 
-func (r *Service) Append(req *communication.AppendRequest) (*communication.AppendResponse, error) {
+func (r *Service) Append(req communication.AppendRequest) (communication.AppendResponse, error) {
   glog.V(2).Infof("Node %d append request. State is %v", r.id, r.GetState())
   if r.GetState() == Stopping || r.GetState() == Stopped {
-    return nil, errors.New("Raft is stopped")
+    return communication.AppendResponse{}, errors.New("Raft is stopped")
   }
 
-  rc := make(chan *communication.AppendResponse)
+  rc := make(chan communication.AppendResponse)
   cmd := appendCommand{
     ar: req,
     rc: rc,
@@ -259,14 +259,14 @@ func (r *Service) Append(req *communication.AppendRequest) (*communication.Appen
   return resp, resp.Error
 }
 
-func (r *Service) Propose(e *storage.Entry) (uint64, error) {
+func (r *Service) Propose(e storage.Entry) (uint64, error) {
   if r.GetState() == Stopping || r.GetState() == Stopped {
     return 0, errors.New("Raft is stopped")
   }
 
   rc := make(chan proposalResult, 1)
   cmd := proposalCommand{
-    entry: *e,
+    entry: e,
     rc: rc,
   }
 

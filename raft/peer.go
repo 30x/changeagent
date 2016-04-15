@@ -22,20 +22,24 @@ type rpcResponse struct {
 
 type raftPeer struct {
   id uint64
+  address string
   r *Service
   proposals chan uint64
   pokes chan bool
   changeChan chan<- peerMatchResult
+  addressChan chan  string
   stopChan chan bool
 }
 
-func startPeer(id uint64, r *Service, changes chan<- peerMatchResult) *raftPeer {
+func startPeer(id uint64, address string, r *Service, changes chan<- peerMatchResult) *raftPeer {
   p := &raftPeer{
     id: id,
+    address: address,
     r: r,
     proposals: make(chan uint64, 1000),
     pokes: make(chan bool, 1),
     changeChan: changes,
+    addressChan: make(chan string, 1),
     stopChan: make(chan bool, 1),
   }
   go p.peerLoop()
@@ -48,6 +52,10 @@ func (p *raftPeer) stop() {
 
 func (p *raftPeer) propose(ix uint64) {
   p.proposals <- ix
+}
+
+func (p *raftPeer) updateAddress(addr string) {
+  p.addressChan <- addr
 }
 
 // Wake up the loop and send another heartbeat with a new commit index
@@ -120,6 +128,12 @@ func (p *raftPeer) peerLoop() {
         failureDelay = true
       }
 
+    case newAddress := <- p.addressChan:
+      if newAddress != p.address {
+        glog.Infof("Updating address of node %d to %s", p.id, newAddress)
+        p.address = newAddress
+      }
+
     case <- p.stopChan:
       glog.V(2).Infof("Peer %d stopping", p.id)
       return
@@ -163,7 +177,7 @@ func (p *raftPeer) handleRPCResult(resp rpcResponse) uint64 {
  */
 func (p *raftPeer) sendHeartbeat(index uint64, rc chan rpcResponse) {
   lastIndex, lastTerm := p.r.GetLastIndex()
-  ar := &communication.AppendRequest{
+  ar := communication.AppendRequest{
     Term: p.r.GetCurrentTerm(),
     LeaderID: p.r.id,
     PrevLogIndex: lastIndex,
@@ -174,7 +188,7 @@ func (p *raftPeer) sendHeartbeat(index uint64, rc chan rpcResponse) {
   glog.V(2).Infof("Sending heartbeat for index %d to peer %d", index, p.id)
 
   go func() {
-    success, err := p.r.sendAppend(p.id, ar)
+    success, err := p.r.sendAppend(p.address, ar)
     rpcResp := rpcResponse{
       success: success,
       newIndex: index,
@@ -229,7 +243,7 @@ func (p *raftPeer) sendUpdates(desired uint64, next uint64, rc chan rpcResponse)
   glog.V(2).Infof("Sending %d entries between %d and %d to %d",
     len(sendEntries), next, desired, p.id)
 
-  ar := &communication.AppendRequest{
+  ar := communication.AppendRequest{
     Term: p.r.GetCurrentTerm(),
     LeaderID: p.r.id,
     PrevLogIndex: lastIndex,
@@ -241,7 +255,7 @@ func (p *raftPeer) sendUpdates(desired uint64, next uint64, rc chan rpcResponse)
   // Do the send in a new goroutine because it will block. The main loop will continue
   // and won't do anything else until the response comes back.
   go func() {
-    success, err := p.r.sendAppend(p.id, ar)
+    success, err := p.r.sendAppend(p.address, ar)
     newIndex := next
     if success { newIndex = desired }
     rpcResp := rpcResponse{

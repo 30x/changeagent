@@ -25,7 +25,7 @@ func (r *Service) handleAppend(state *raftState, cmd appendCommand) {
   if cmd.ar.Term < r.currentTerm {
     glog.V(2).Infof("Term does not match current term %d", r.currentTerm)
     resp.Success = false
-    cmd.rc <- &resp
+    cmd.rc <- resp
     return
   }
 
@@ -36,7 +36,7 @@ func (r *Service) handleAppend(state *raftState, cmd appendCommand) {
     ourEntry, err := r.stor.GetEntry(cmd.ar.PrevLogIndex)
     if err != nil {
       resp.Error = err
-      cmd.rc <- &resp
+      cmd.rc <- resp
       return
     }
     ourTerm := uint64(0)
@@ -47,7 +47,7 @@ func (r *Service) handleAppend(state *raftState, cmd appendCommand) {
       glog.V(2).Infof("Term %d at index %d does not match %d in request",
         ourTerm, cmd.ar.PrevLogIndex, cmd.ar.PrevLogTerm)
       resp.Success = false
-      cmd.rc <- &resp
+      cmd.rc <- resp
       return
     }
   }
@@ -56,7 +56,7 @@ func (r *Service) handleAppend(state *raftState, cmd appendCommand) {
     err := r.appendEntries(cmd.ar.Entries)
     if err != nil {
       resp.Error = err
-      cmd.rc <- &resp
+      cmd.rc <- resp
       return
     }
   }
@@ -70,7 +70,7 @@ func (r *Service) handleAppend(state *raftState, cmd appendCommand) {
     lastIndex, _, err := r.stor.GetLastIndex()
     if err != nil {
       resp.Error = err
-      cmd.rc <- &resp
+      cmd.rc <- resp
       return
     }
 
@@ -85,7 +85,7 @@ func (r *Service) handleAppend(state *raftState, cmd appendCommand) {
     err = r.applyCommittedEntries(commitIndex)
     if err != nil {
       resp.Error = err
-      cmd.rc <- &resp
+      cmd.rc <- resp
       return
     }
   }
@@ -94,7 +94,7 @@ func (r *Service) handleAppend(state *raftState, cmd appendCommand) {
   resp.Success = true
   resp.CommitIndex = commitIndex
 
-  cmd.rc <- &resp
+  cmd.rc <- resp
 }
 
 func (r *Service) applyCommittedEntries(commitIndex uint64) error {
@@ -106,10 +106,10 @@ func (r *Service) applyCommittedEntries(commitIndex uint64) error {
   return nil
 }
 
-func (r *Service) sendAppend(id uint64, ar *communication.AppendRequest) (bool, error) {
-  glog.V(2).Infof("Sending append request to node %d for term %d", id, ar.Term)
+func (r *Service) sendAppend(address string, ar communication.AppendRequest) (bool, error) {
+  glog.V(2).Infof("Sending append request to %s for term %d", address, ar.Term)
 
-  resp, err := r.comm.Append(id, ar)
+  resp, err := r.comm.Append(address, ar)
   if err == nil {
     return resp.Success, nil
   }

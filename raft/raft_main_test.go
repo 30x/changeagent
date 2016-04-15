@@ -19,7 +19,7 @@ const (
   DataDir = "./rafttestdata"
   PreserveDatabases = false
   DumpDatabases = false
-  DebugMode = true
+  DebugMode = false
 )
 
 var testRafts []*Service
@@ -88,7 +88,7 @@ var _ = AfterSuite(func() {
 
 func startRaft(id uint64, disco discovery.Discovery, listener *net.TCPListener, dir string) (*Service, error) {
   mux := http.NewServeMux()
-  comm, err := communication.StartHTTPCommunication(mux, disco)
+  comm, err := communication.StartHTTPCommunication(mux)
   if err != nil { return nil, err }
   stor, err := storage.CreateRocksDBStorage(dir, 1000)
   if err != nil { return nil, err }
