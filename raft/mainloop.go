@@ -10,6 +10,7 @@ import (
   "time"
   "github.com/golang/glog"
   "revision.aeip.apigee.net/greg/changeagent/discovery"
+  "revision.aeip.apigee.net/greg/changeagent/storage"
 )
 
 type voteResult struct {
@@ -30,6 +31,9 @@ type raftState struct {
   peers map[uint64]*raftPeer
   peerMatches map[uint64]uint64
   peerMatchChanges chan peerMatchResult
+  proposedConfig *discovery.NodeConfig
+  configChangeMode int
+  configChangeCommit uint64
 }
 
 func (r *Service) mainLoop() {
@@ -40,6 +44,7 @@ func (r *Service) mainLoop() {
     peers: make(map[uint64]*raftPeer),
     peerMatches: make(map[uint64]uint64),
     peerMatchChanges: make(chan peerMatchResult, 1),
+    configChangeMode: noChange,
   }
 
   var stopDone chan bool
@@ -153,7 +158,11 @@ func (r *Service) followerLoop(isCandidate bool, state *raftState) chan bool {
       }
 
     case change := <- r.configChanges:
-      // Discovery service now up to date, so not much to do
+      // If the change changes the nodes, then ignore this -- wait for the leader
+      // to propose the new change.
+      // If the change changes the addresses, we have to update our own definition
+      // of the leader's address since we might be contacting it.
+      // TODO this.
       glog.Infof("Received configuration change type %d", change)
 
     case stopDone := <- r.stopChan:
@@ -164,11 +173,7 @@ func (r *Service) followerLoop(isCandidate bool, state *raftState) chan bool {
 }
 
 func (r *Service) leaderLoop(state *raftState) chan bool {
-  // Upon election: send initial empty AppendEntries RPCs (heartbeat) to
-  // each server; repeat during idle periods to prevent
-  // election timeouts (§5.2)
-  //   We will do this inside the "peers" module
-  // Get the list of nodes here from the current discovery service.
+  // Get the list of nodes here from the current configuration.
   nodes := r.getNodeConfig().GetUniqueNodes()
   for _, n := range(nodes) {
     if n.ID == r.id {
@@ -190,6 +195,15 @@ func (r *Service) leaderLoop(state *raftState) chan bool {
     r.setState(Follower)
     stopPeers(state)
     return nil
+  }
+
+  cfgChange := r.disco.CompareCurrentConfig(r.getNodeConfig())
+  if cfgChange != 0 {
+    err := r.processConfigChange(cfgChange, state)
+    if err != nil {
+      // Should we panic now? Set a state to retry?
+      glog.Errorf("Error processing config change: %v", err)
+    }
   }
 
   for {
@@ -238,12 +252,21 @@ func (r *Service) leaderLoop(state *raftState) chan bool {
       if r.setCommitIndex(newIndex) {
         r.applyCommittedEntries(newIndex)
         for _, p := range(state.peers) {
+          // Send another notification to each peer to reduce latency.
           p.poke()
+        }
+        err := r.updateConfigChange(newIndex, state)
+        if err != nil {
+          // Should we exit or panic here?
+          glog.Errorf("Error updating configuration change: %v", err)
         }
       }
 
     case change := <- r.configChanges:
-      glog.Infof("IGNORING configuration change type %d", change)
+      err = r.processConfigChange(change, state)
+      if err != nil {
+        glog.Errorf("Error processing configuration change: %v", err)
+      }
 
     case stopDone := <- r.stopChan:
       r.setState(Stopping)
@@ -257,6 +280,116 @@ func stopPeers(state *raftState) {
   for _, p := range(state.peers) {
     p.stop()
   }
+}
+
+/*
+ * A configuration change was detected in the discovery service.
+ * This can happen even if a configuration change is in progress. We're going to
+ * just treat them all the same -- any change results in us proposing a new
+ * state and going back to the start of the config change process.
+ */
+func (r *Service) processConfigChange(changeType int, state *raftState) error {
+  if changeType == discovery.NodesChanged {
+    glog.Info("Configuration change detected. Proposing joint consensus configuration.")
+    // Starting the config change process. We must create joint consensus and propose it.
+    newCfg := r.makeJointConsensus()
+    glog.V(2).Infof("Proposed joint consensus configuration: %s", newCfg)
+    newCfgBuf, err := discovery.EncodeConfig(newCfg)
+    if err != nil { return err }
+    proposal := storage.Entry{
+      Timestamp: time.Now(),
+      Type: MembershipChange,
+      Data: newCfgBuf,
+    }
+    ix, err := r.makeProposal(&proposal, state)
+    if err != nil { return err }
+    glog.V(2).Infof("Joint consensus proposal is entry %d", ix)
+
+    // Persist the new config and start using it for subsequent communications
+    r.setNodeConfig(newCfg)
+    state.configChangeCommit = ix
+    state.configChangeMode = proposedJointConsensus
+
+    // TODO start new peers if necessary, and update addresses!
+
+  } else {
+    /*
+     * TODO: process address-only change
+     */
+    glog.Infof("IGNORING configuration change type %d", changeType)
+  }
+  return nil
+}
+
+/**
+ * Called on every commit to see if a configuration change is in progress and needs updating.
+ */
+func (r *Service) updateConfigChange(commitIndex uint64, state *raftState) error {
+  switch state.configChangeMode {
+
+  case proposedJointConsensus:
+    if commitIndex < state.configChangeCommit {
+      return nil
+    }
+    glog.Info("Joint consensus proposal successful. Proposing final configuration.")
+    // Our joint consensus was successful. Now create the final consensus.
+    newCfg := r.makeFinalConsensus()
+    glog.V(2).Infof("Proposed final configuration: %s", newCfg)
+    newCfgBuf, err := discovery.EncodeConfig(newCfg)
+    if err != nil { return err }
+    proposal := storage.Entry{
+      Timestamp: time.Now(),
+      Type: MembershipChange,
+      Data: newCfgBuf,
+    }
+    ix, err := r.makeProposal(&proposal, state)
+    if err != nil { return err }
+    glog.V(2).Infof("Final configuration proposal is entry %d", ix)
+
+    // Don't use the new config yet -- wait for it to commit.
+    state.proposedConfig = newCfg
+    state.configChangeCommit = ix
+    state.configChangeMode = proposedFinalConsensus
+
+  case proposedFinalConsensus:
+    if commitIndex < state.configChangeCommit {
+      return nil
+    }
+    glog.Info("Final consensus proposal successful. Configuration change complete.")
+    // Final consensus was reached. Now we can start using the new config exclusively.
+    r.setNodeConfig(state.proposedConfig)
+    state.configChangeMode = noChange
+
+    // TODO!: Can now stop peers for any nodes in the "old" but not the "new" config.
+
+  }
+  return nil
+}
+
+/*
+ * Create a new NodeConfig that includes the old state, plus the new state of
+ * joint consensus.
+ */
+func (r *Service) makeJointConsensus() *discovery.NodeConfig {
+  oldCfg := r.getNodeConfig()
+  newCfg := r.disco.GetCurrentConfig()
+  newCfg.Current.Old = oldCfg.Current.New
+  newCfg.Previous = oldCfg.Current
+  return newCfg
+}
+
+/*
+ * Turn a joint consensus entry into a final entry.
+ */
+func (r *Service) makeFinalConsensus() *discovery.NodeConfig {
+  oldCfg := r.getNodeConfig()
+  newCfg := discovery.NodeConfig{
+    Previous: oldCfg.Current,
+    Current: &discovery.NodeList{
+      New: oldCfg.Current.New,
+    },
+  }
+  return &newCfg
 }
 
 /*

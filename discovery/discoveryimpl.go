@@ -40,6 +40,10 @@ func (d *Service) GetCurrentConfig() *NodeConfig {
   return &NodeConfig{Current: &cur}
 }
 
+func (d *Service) CompareCurrentConfig(oldCfg *NodeConfig) int {
+  return getChangeType(d.getNodes(), oldCfg.Current.New)
+}
+
 func (d *Service) getNodes() []Node {
   d.latch.Lock()
   defer d.latch.Unlock()
@@ -50,6 +54,39 @@ func (d *Service) setNodes(newNodes []Node) {
   d.latch.Lock()
   d.nodes = newNodes
   d.latch.Unlock()
+}
+
+func (d *Service) SetNode(newNode Node) {
+  d.latch.Lock()
+  defer d.latch.Unlock()
+
+  var newNodes []Node
+  added := false
+  for _, n := range(d.nodes) {
+    if n.ID == newNode.ID {
+      newNodes = append(newNodes, newNode)
+      added = true
+    } else {
+      newNodes = append(newNodes, n)
+    }
+  }
+  if !added {
+    newNodes = append(newNodes, newNode)
+  }
+  d.updateNodes(newNodes)
+}
+
+func (d *Service) DeleteNode(id uint64) {
+  d.latch.Lock()
+  defer d.latch.Unlock()
+
+  var newNodes []Node
+  for i := range(d.nodes) {
+    if d.nodes[i].ID != id {
+      newNodes = append(newNodes, d.nodes[i])
+    }
+  }
+  d.updateNodes(newNodes)
 }
 
 func (d *Service) GetAddress(id uint64) string {
@@ -97,6 +134,10 @@ func (d *Service) discoveryLoop() {
     case c := <- d.changeChan:
       changeType := getChangeType(d.getNodes(), c)
       glog.V(2).Infof("Got a new change of type %d", changeType)
+      if (glog.V(3)) {
+        glog.Infof("Old node list: %s", d.getNodes())
+        glog.Infof("New node list: %s", c)
+      }
       if changeType != 0 {
         d.setNodes(c)
         for _, w := range (watchers) {

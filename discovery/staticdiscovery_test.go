@@ -85,9 +85,6 @@ var _ = Describe("Static Discovery", func() {
     d := CreateStaticDiscovery([]string{"one", "two", "three"})
     defer d.Close()
 
-    // Hack this to easily create a different set of nodes and test internally replacing them
-    newNodes := CreateStaticDiscovery([]string{"one", "two", "three", "four"}).GetCurrentConfig().Current.New
-
     syncChanges := make(chan bool, 1)
     go func() {
       changeWatcher := d.Watch()
@@ -100,7 +97,7 @@ var _ = Describe("Static Discovery", func() {
     // Manually do what an SPI would do for itself,
     // but only after other channel is ready
     <- syncChanges
-    d.updateNodes(newNodes)
+    d.SetNode(Node{ID: 4, Address: "four"})
 
     Eventually(syncChanges).Should(Receive(BeTrue()))
   })
@@ -109,9 +106,6 @@ var _ = Describe("Static Discovery", func() {
     d := CreateStaticDiscovery([]string{"one", "two", "three"})
     defer d.Close()
 
-    // Hack this to easily create a different set of nodes and test internally replacing them
-    newNodes := CreateStaticDiscovery([]string{"one", "two", "three", "four"}).GetCurrentConfig().Current.New
-
     syncChanges := make(chan bool, 1)
 
     go func() {
@@ -134,7 +128,7 @@ var _ = Describe("Static Discovery", func() {
     // but only after other channel is ready
     <- syncChanges
     <- syncChanges
-    d.updateNodes(newNodes)
+    d.SetNode(Node{ID: 4, Address: "four"})
 
     Eventually(syncChanges).Should(Receive(BeTrue()))
     Eventually(syncChanges).Should(Receive(BeTrue()))
@@ -143,9 +137,6 @@ var _ = Describe("Static Discovery", func() {
   It("Changes Address only", func() {
     d := CreateStaticDiscovery([]string{"one", "two", "three"})
     defer d.Close()
-
-    // Hack this to easily create a different set of nodes and test internally replacing them
-    newNodes := CreateStaticDiscovery([]string{"one", "two", "four"}).GetCurrentConfig().Current.New
 
     syncChanges := make(chan bool, 1)
     go func() {
@@ -159,7 +150,7 @@ var _ = Describe("Static Discovery", func() {
     // Manually do what an SPI would do for itself,
     // but only after other channel is ready
     <- syncChanges
-    d.updateNodes(newNodes)
+    d.SetNode(Node{ID: 3, Address: "four"})
 
     Eventually(syncChanges).Should(Receive(BeTrue()))
   })

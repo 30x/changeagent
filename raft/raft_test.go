@@ -4,8 +4,10 @@ import (
   "bytes"
   "fmt"
   "net"
+  "path"
   "strconv"
   "time"
+  "revision.aeip.apigee.net/greg/changeagent/discovery"
   "revision.aeip.apigee.net/greg/changeagent/storage"
   . "github.com/onsi/ginkgo"
   . "github.com/onsi/gomega"
@@ -23,26 +25,6 @@ var _ = Describe("Raft Tests", func() {
   It("Wait for leader", func() {
     appendAndVerify("First test", 3)
   })
-
-  /*
-func TestStopFollower(t *testing.T) {
-  waitForLeader(t)
-
-  var follower *RaftImpl = nil
-  //var i int
-  var r *RaftImpl
-  for _, r = range(testRafts) {
-    if r.GetState() == StateFollower {
-      follower = r
-    }
-  }
-
-  follower.Close()
-  //testRafts[i] = nil
-  time.Sleep(time.Second)
-  waitForLeader(t)
-}
-*/
 
   // After stopping the leader, a new one is elected
   It("Stop Leader", func() {
@@ -96,6 +78,23 @@ func TestStopFollower(t *testing.T) {
     time.Sleep(time.Second)
     assertOneLeader()
     appendAndVerify("Restarted third node. Yay!", 3)
+  })
+
+  It("Add Node", func() {
+    appendAndVerify("Before leadership change", 3)
+
+    listener, addr := startListener()
+    newRaft, err := startRaft(4, testDiscovery, listener, path.Join(DataDir, "test4"))
+    Expect(err).Should(Succeed())
+    testListener = append(testListener, listener)
+    testRafts = append(testRafts, newRaft)
+
+    time.Sleep(time.Second)
+    fmt.Fprintf(GinkgoWriter, "Adding new configuration for node 4\n")
+    testDiscovery.SetNode(discovery.Node{ID: 4, Address: addr})
+    time.Sleep(time.Second)
+    assertOneLeader()
+    appendAndVerify("New leader elected. Yay!", 4)
   })
 })
 

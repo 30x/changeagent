@@ -14,8 +14,11 @@ import (
   "revision.aeip.apigee.net/greg/changeagent/storage"
 )
 
+/*
+ * Keys for the metadata API -- each goes into the metadata collection in the storage API.
+ * Make these hard-coded rather than "iota" because they go in a database!
+ */
 const (
-  // Make these hard-coded rather than "iota" because they go in a database!
   CurrentTermKey = 1
   VotedForKey = 2
   LocalIDKey = 3
@@ -24,18 +27,34 @@ const (
 )
 
 const (
+  // Special message type for membership changes. Also persists between nodes.
+  MembershipChange = -1
+
+  // Some timeouts
   ElectionTimeout = 10 * time.Second
   HeartbeatTimeout = 2 * time.Second
 )
 
 type State int32
 
+/*
+ * State of this particular node.
+ */
 const (
   Follower State = iota
   Candidate
   Leader
   Stopping
   Stopped
+)
+
+/*
+ * State of the current membership change process
+ */
+const (
+  noChange = iota
+  proposedJointConsensus
+  proposedFinalConsensus
 )
 
 func (r State) String() string {
@@ -60,6 +79,7 @@ type Service struct {
   state int32
   leaderID uint64
   comm communication.Communication
+  disco discovery.Discovery
   nodeConfig atomic.Value
   configChanges <-chan int
   stor storage.Storage
@@ -110,10 +130,11 @@ func StartRaft(id uint64,
     comm: comm,
     nodeConfig: atomic.Value{},
     stor: stor,
+    disco: disco,
     stopChan: make(chan chan bool, 1),
     voteCommands: make(chan voteCommand, 1),
     appendCommands: make(chan appendCommand, 1),
-    proposals: make(chan proposalCommand, 1),
+    proposals: make(chan proposalCommand, 100),
     latch: sync.Mutex{},
     followerOnly: false,
     appliedTracker: CreateTracker(),
@@ -133,10 +154,6 @@ func StartRaft(id uint64,
 
   err = r.loadCurrentConfig(disco, stor)
   if err != nil { return nil, err }
-
-  if disco.GetAddress(r.id) == "" {
-    return nil, fmt.Errorf("Id %d cannot be found in discovery data", r.id)
-  }
 
   r.lastIndex, r.lastTerm, err = r.stor.GetLastIndex()
   if err != nil { return nil, err }
@@ -368,6 +385,15 @@ func (r *Service) setLastIndex(ix uint64, term uint64) {
 
 func (r *Service) getNodeConfig() *discovery.NodeConfig {
   return r.nodeConfig.Load().(*discovery.NodeConfig)
+}
+
+func (r *Service) setNodeConfig(newCfg *discovery.NodeConfig) error {
+  encoded, err := discovery.EncodeConfig(newCfg)
+  if err != nil { return err }
+  err = r.stor.SetRawMetadata(NodeConfig, encoded)
+  if err != nil { return err }
+  r.nodeConfig.Store(newCfg)
+  return nil
 }
 
 // Used only in unit testing. Forces us to never become a leader.

@@ -8,6 +8,7 @@ import (
   "github.com/golang/glog"
   "revision.aeip.apigee.net/greg/changeagent/communication"
   "revision.aeip.apigee.net/greg/changeagent/storage"
+  "revision.aeip.apigee.net/greg/changeagent/discovery"
 )
 
 func (r *Service) handleAppend(state *raftState, cmd appendCommand) {
@@ -134,11 +135,24 @@ func (r *Service) appendEntries(entries []storage.Entry) error {
     }
   }
 
-  // Append any new entries not already in the log
+  // Note: What happens if we just deleted the most recent version of the config? Should we backtrack
+  // to the version before that?
+  // The only reason that would happen is if a new leader was elected before consensus was reached.
+  // If that is the case, then the new leader should re-publish the new new config once it has
+  // realized from the discovery service that things have changed. So that should take care of this.
+  // But we'll have to test it.
+
+  var configChange *storage.Entry
+
   for _, e := range(entries) {
+    // Append any new entries not already in the log
     if terms[e.Index] == 0 {
       err = r.stor.AppendEntry(&e)
       if err != nil { return err }
+    }
+    // Check to see if it's a membership change
+    if e.Type == MembershipChange {
+      configChange = &e
     }
   }
 
@@ -146,6 +160,22 @@ func (r *Service) appendEntries(entries []storage.Entry) error {
   if len(entries) > 0 {
     last := entries[len(entries) - 1]
     r.setLastIndex(last.Index, last.Term)
+  }
+
+  if configChange != nil {
+    newCfg, err := discovery.DecodeConfig(configChange.Data)
+    if err != nil {
+      glog.Errorf("Invalid configuration change record received: %v", err)
+      return err
+    }
+    glog.V(2).Infof("Applying a new configuration %s", newCfg)
+
+    curCfg := r.getNodeConfig()
+    newCfg.Previous = curCfg.Current
+    r.setNodeConfig(newCfg)
+    glog.Info("Applied a new node configuration from the master")
+
+    // TODO Still have to see if the node address changed for the master.
   }
 
   return nil

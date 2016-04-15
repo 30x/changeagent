@@ -19,7 +19,7 @@ const (
   DataDir = "./rafttestdata"
   PreserveDatabases = false
   DumpDatabases = false
-  DebugMode = false
+  DebugMode = true
 )
 
 var testRafts []*Service
@@ -27,6 +27,7 @@ var testListener []*net.TCPListener
 var unitTestRaft *Service
 var unitTestListener *net.TCPListener
 var testDiscovery discovery.Discovery
+var anyPort net.TCPAddr
 
 func TestRaft(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -42,26 +43,19 @@ var _ = BeforeSuite(func() {
   flag.Parse()
 
   // Create three TCP listeners -- we'll use them for a cluster
-  anyPort := &net.TCPAddr{}
+
   var addrs []string
   for li := 0; li < 3; li++ {
-    listener, err := net.ListenTCP("tcp4", anyPort)
-    Expect(err).Should(Succeed())
-    _, port, err := net.SplitHostPort(listener.Addr().String())
-    Expect(err).Should(Succeed())
-    addrs = append(addrs, fmt.Sprintf("localhost:%s", port))
+    listener, addr := startListener()
+    addrs = append(addrs, addr)
     testListener = append(testListener, listener)
   }
   disco := discovery.CreateStaticDiscovery(addrs)
   testDiscovery = disco
 
   // Create one more for unit tests
-  unitTestListener, err := net.ListenTCP("tcp4", anyPort)
-  if err != nil { panic("Can't listen on a TCP port") }
-  _, port, err := net.SplitHostPort(unitTestListener.Addr().String())
-  if err != nil { panic("Invalid listen address") }
-  unitAddr := []string{fmt.Sprintf("localhost:%s", port)}
-  unitDisco := discovery.CreateStaticDiscovery(unitAddr)
+  unitTestListener, unitAddr := startListener()
+  unitDisco := discovery.CreateStaticDiscovery([]string{unitAddr})
 
   raft1, err := startRaft(1, disco, testListener[0], path.Join(DataDir, "test1"))
   Expect(err).Should(Succeed())
@@ -78,6 +72,15 @@ var _ = BeforeSuite(func() {
   unitTestRaft, err = startRaft(1, unitDisco, unitTestListener, path.Join(DataDir, "unit"))
   Expect(err).Should(Succeed())
 })
+
+func startListener() (*net.TCPListener, string) {
+  listener, err := net.ListenTCP("tcp4", &anyPort)
+  Expect(err).Should(Succeed())
+  _, port, err := net.SplitHostPort(listener.Addr().String())
+  Expect(err).Should(Succeed())
+  addr := fmt.Sprintf("localhost:%s", port)
+  return listener, addr
+}
 
 var _ = AfterSuite(func() {
   cleanRafts()

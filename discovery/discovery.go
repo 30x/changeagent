@@ -62,6 +62,13 @@ type Discovery interface {
   GetCurrentConfig() *NodeConfig
 
   /*
+   * Compare the current configuration to the supplied configuration and return the same
+   * "change type" that we'd return to the "watch" channel. We use this in case we
+   * missed some notifications.
+   */
+  CompareCurrentConfig(oldCfg *NodeConfig) int
+
+  /*
    * Shortcut to get just the "address" field from a single node identified
    * by its node ID. Also safe to be called from many threads.
    */
@@ -78,6 +85,16 @@ type Discovery interface {
    * Stop any resources created by the service.
    */
   Close()
+
+  /*
+   * For testing only: Add a new node to the config, or update an existing node.
+   */
+  SetNode(n Node)
+
+  /*
+   * For testing only: Delete a node.
+   */
+  DeleteNode(id uint64)
 }
 
 /*
