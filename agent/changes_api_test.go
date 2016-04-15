@@ -31,7 +31,7 @@ var _ = Describe("Changes API Test", func() {
     request := "{\"hello\": \"world!\", \"foo\": 123}"
     resp := postChange(request)
 
-    entry, err := unmarshalJson(strings.NewReader(resp))
+    entry, err := unmarshalJSON(strings.NewReader(resp))
     Expect(err).Should(Succeed())
     expected := fmt.Sprintf("{\"_id\":%d}", entry.Index)
     Expect(resp).Should(MatchJSON(expected))
@@ -49,13 +49,13 @@ var _ = Describe("Changes API Test", func() {
     fmt.Fprintf(GinkgoWriter, "Get changes peer \"%s\"\n", peerChanges)
     Expect(err).Should(Succeed())
 
-    url := fmt.Sprintf("%s/changes/%d", listenUri, lastNewChange)
+    url := fmt.Sprintf("%s/changes/%d", listenURI, lastNewChange)
     gr, err := http.Get(url)
     Expect(err).Should(Succeed())
     defer gr.Body.Close()
     Expect(gr.StatusCode).Should(Equal(200))
 
-    change, err := unmarshalJson(gr.Body)
+    change, err := unmarshalJSON(gr.Body)
     Expect(err).Should(Succeed())
     Expect(gr.StatusCode).Should(Equal(200))
     Expect(change.Index).Should(Equal(lastNewChange))
@@ -86,7 +86,7 @@ var _ = Describe("Changes API Test", func() {
     request := "{\"data\":{\"hello\":\"world!\",\"foo\":998}}"
 
     pr, err := http.Post(
-      fmt.Sprintf("%s/tenants/%s/changes", listenUri, tenant),
+      fmt.Sprintf("%s/tenants/%s/changes", listenURI, tenant),
       jsonContent, strings.NewReader(request))
     Expect(err).Should(Succeed())
     body, err := ioutil.ReadAll(pr.Body)
@@ -157,7 +157,7 @@ var _ = Describe("Changes API Test", func() {
     request := "{\"key\":\"fooey\",\"data\":{\"hello\":\"world!\",\"foo\":888}}"
 
     pr, err := http.Post(
-      fmt.Sprintf("%s/collections/%s/keys", listenUri, collection),
+      fmt.Sprintf("%s/collections/%s/keys", listenURI, collection),
       jsonContent, strings.NewReader(request))
     Expect(err).Should(Succeed())
     body, err := ioutil.ReadAll(pr.Body)
@@ -199,7 +199,7 @@ var _ = Describe("Changes API Test", func() {
     changes := postChanges(collection, 3)
 
     respBody := getChanges(0, 100, 0)
-    var results []JsonData
+    var results []JSONData
     err := json.Unmarshal(respBody, &results)
     Expect(err).Should(Succeed())
     Expect(len(results)).Should(BeNumerically(">=", 3))
@@ -209,19 +209,19 @@ var _ = Describe("Changes API Test", func() {
     err = json.Unmarshal(respBody, &results)
     Expect(err).Should(Succeed())
     Expect(len(results)).Should(Equal(1))
-    Expect(results[0].Id).Should(Equal(changes[0]))
+    Expect(results[0].ID).Should(Equal(changes[0]))
 
     respBody = getChanges(changes[0] - 1, 2, 0)
     err = json.Unmarshal(respBody, &results)
     Expect(err).Should(Succeed())
     Expect(len(results)).Should(Equal(2))
-    Expect(results[0].Id).Should(Equal(changes[0]))
-    Expect(results[1].Id).Should(Equal(changes[1]))
+    Expect(results[0].ID).Should(Equal(changes[0]))
+    Expect(results[1].ID).Should(Equal(changes[1]))
   })
 
   It("Blocking retrieval", func() {
     respBody := getChanges(lastNewChange, 100, 0)
-    var results []JsonData
+    var results []JSONData
     err := json.Unmarshal(respBody, &results)
     Expect(err).Should(Succeed())
     Expect(len(results)).Should(Equal(0))
@@ -230,10 +230,10 @@ var _ = Describe("Changes API Test", func() {
 
     go func() {
       newResp := getChanges(lastNewChange, 100, 5)
-      var newResults []JsonData
+      var newResults []JSONData
       json.Unmarshal(newResp, &newResults)
       if len(newResults) == 1 {
-        ch <- newResults[0].Id
+        ch <- newResults[0].ID
       } else {
         ch <- 0
       }
@@ -243,19 +243,19 @@ var _ = Describe("Changes API Test", func() {
     time.Sleep(500 * time.Millisecond)
     resp := postChange(request)
 
-    var postResult JsonData
+    var postResult JSONData
     err = json.Unmarshal([]byte(resp), &postResult)
     Expect(err).Should(Succeed())
-    lastNewChange = postResult.Id
+    lastNewChange = postResult.ID
 
     waitResult := <- ch
 
-    Expect(waitResult).Should(Equal(postResult.Id))
+    Expect(waitResult).Should(Equal(postResult.ID))
   })
 
   It("Blocking retrieval after abnormal change", func() {
     respBody := getChanges(lastNewChange, 100, 0)
-    var results []JsonData
+    var results []JSONData
     err := json.Unmarshal(respBody, &results)
     Expect(err).Should(Succeed())
     Expect(len(results)).Should(Equal(0))
@@ -266,10 +266,10 @@ var _ = Describe("Changes API Test", func() {
 
     go func() {
       newResp := getChanges(lastNewChange, 100, 5)
-      var newResults []JsonData
+      var newResults []JSONData
       json.Unmarshal(newResp, &newResults)
       if len(newResults) == 1 {
-        ch <- newResults[0].Id
+        ch <- newResults[0].ID
       } else {
         ch <- 0
       }
@@ -279,14 +279,14 @@ var _ = Describe("Changes API Test", func() {
     time.Sleep(500 * time.Millisecond)
     resp := postChange(request)
 
-    var postResult JsonData
+    var postResult JSONData
     err = json.Unmarshal([]byte(resp), &postResult)
     Expect(err).Should(Succeed())
-    lastNewChange = postResult.Id
+    lastNewChange = postResult.ID
 
     waitResult := <- ch
 
-    Expect(waitResult).Should(Equal(postResult.Id))
+    Expect(waitResult).Should(Equal(postResult.ID))
   })
 })
 
@@ -307,7 +307,7 @@ func postChanges(collection string, count int) []uint64 {
 }
 
 func postChange(request string) string {
-  uri := listenUri + "/changes"
+  uri := listenURI + "/changes"
 
   fmt.Fprintf(GinkgoWriter, "POST change: %s\n", request)
   pr, err := http.Post(uri, jsonContent, strings.NewReader(request))
@@ -327,7 +327,7 @@ func postChange(request string) string {
 
 func getChanges(since uint64, limit int, block int) []byte {
   url := fmt.Sprintf("%s/changes?since=%d&limit=%d&block=%d",
-    listenUri, since, limit, block)
+    listenURI, since, limit, block)
   gr, err := http.Get(url)
   Expect(err).Should(Succeed())
   defer gr.Body.Close()
@@ -342,7 +342,7 @@ func getChanges(since uint64, limit int, block int) []byte {
 
 func getTenantChanges(tenant string, since uint64, limit int, block int) []byte {
   url := fmt.Sprintf("%s/tenants/%s/changes?since=%d&limit=%d&block=%d",
-    listenUri, tenant, since, limit, block)
+    listenURI, tenant, since, limit, block)
   gr, err := http.Get(url)
   Expect(err).Should(Succeed())
   defer gr.Body.Close()

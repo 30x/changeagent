@@ -24,13 +24,13 @@ func main() {
 }
 
 func runAgentMain() int {
-  var nodeId uint64
+  var nodeID uint64
   var port int
   var dbDir string
   var discoveryFile string
   var help bool
 
-  flag.Uint64Var(&nodeId, "id", DefaultNode, "Node ID. Must be in discovery data.")
+  flag.Uint64Var(&nodeID, "id", DefaultNode, "Node ID. Must be in discovery data.")
   flag.IntVar(&port, "p", DefaultPort, "Port to listen on.")
   flag.StringVar(&dbDir, "d", "", "Directory in which to place data.")
   flag.StringVar(&discoveryFile, "s", "", "File from which to read list of peers")
@@ -60,7 +60,7 @@ func runAgentMain() int {
   defer disco.Close()
 
   mux := http.NewServeMux()
-  agent, err := StartChangeAgent(nodeId, disco, dbDir, mux)
+  agent, err := StartChangeAgent(nodeID, disco, dbDir, mux)
   if err != nil {
     fmt.Printf("Error starting agent: %s\n", err)
     return 6

@@ -9,10 +9,10 @@ import (
   "github.com/satori/go.uuid"
 )
 
-var defaultTime time.Time = time.Time{}
+var defaultTime = time.Time{}
 
-type JsonData struct {
-  Id uint64 `json:"_id,omitempty"`
+type JSONData struct {
+  ID uint64 `json:"_id,omitempty"`
   Timestamp int64 `json:"_ts,omitempty"`
   Tenant string `json:"tenant,omitempty"`
   Collection string `json:"collection,omitempty"`
@@ -20,20 +20,20 @@ type JsonData struct {
   Data json.RawMessage `json:"data,omitempty"`
 }
 
-type JsonError struct {
+type JSONError struct {
   Error string `json:"error"`
 }
 
 type TenantLink struct {
   Name string `json:"name"`
-  Id string `json:"_id,omitempty"`
+  ID string `json:"_id,omitempty"`
   Self string `json:"_self,omitempty"`
   Collections string `json:"_collections,omitempty"`
 }
 
 type CollectionLink struct {
   Name string `json:"name"`
-  Id string `json:"_id,omitempty"`
+  ID string `json:"_id,omitempty"`
   Self string `json:"_self,omitempty"`
   Keys string `json:"_keys,omitempty"`
 }
@@ -52,24 +52,24 @@ func unmarshalAny(in io.Reader, v interface{}) error {
  * bytes that exactly represents the original JSON, although possibly not
  * including white space.
  */
-func unmarshalJson(in io.Reader) (*storage.Entry, error) {
+func unmarshalJSON(in io.Reader) (storage.Entry, error) {
   body, err := ioutil.ReadAll(in)
-  if err != nil { return nil, err }
+  if err != nil { return storage.Entry{}, err }
 
-  var fullData JsonData
+  var fullData JSONData
   err = json.Unmarshal(body, &fullData)
 
-  if err != nil || (fullData.Data == nil) && (fullData.Id == 0) && (fullData.Timestamp == 0) {
+  if err != nil || (fullData.Data == nil) && (fullData.ID == 0) && (fullData.Timestamp == 0) {
     // No "data" entry -- assume that this is raw JSON
-    var rawJson json.RawMessage
-    err = json.Unmarshal(body, &rawJson)
-    if err != nil { return nil, err }
-    return &storage.Entry{
-      Data: rawJson,
+    var rawJSON json.RawMessage
+    err = json.Unmarshal(body, &rawJSON)
+    if err != nil { return storage.Entry{}, err }
+    return storage.Entry{
+      Data: rawJSON,
     }, nil
   }
   entry := storage.Entry{
-    Index: fullData.Id,
+    Index: fullData.ID,
     Key: fullData.Key,
     Data: fullData.Data,
   }
@@ -82,16 +82,16 @@ func unmarshalJson(in io.Reader) (*storage.Entry, error) {
 
   if fullData.Collection != "" {
     collectionID, err := uuid.FromString(fullData.Collection)
-    if err != nil { return nil, err }
+    if err != nil { return storage.Entry{}, err }
     entry.Collection = collectionID
   }
   if fullData.Tenant != "" {
     tenantID, err := uuid.FromString(fullData.Tenant)
-    if err != nil { return nil, err }
+    if err != nil { return storage.Entry{}, err }
     entry.Tenant = tenantID
   }
 
-  return &entry, nil
+  return entry, nil
 }
 
 /*
@@ -100,7 +100,7 @@ func unmarshalJson(in io.Reader) (*storage.Entry, error) {
  * named "data". Any fields in "metadata" that are non-empty will also be
  * added to the message.
  */
-func marshalJson(entry *storage.Entry) ([]byte, error) {
+func marshalJSON(entry storage.Entry) ([]byte, error) {
   jd := convertData(entry)
   outBody, err := json.Marshal(&jd)
   if err != nil { return nil, err }
@@ -120,17 +120,17 @@ func marshalChanges(changes []storage.Entry) ([]byte, error) {
   return outBody, nil
 }
 
-func convertChanges(changes []storage.Entry) []JsonData {
-  var changeList []JsonData
+func convertChanges(changes []storage.Entry) []JSONData {
+  var changeList []JSONData
   for _, change := range(changes) {
-    cd := convertData(&change)
+    cd := convertData(change)
     changeList = append(changeList, *cd)
   }
   return changeList
 }
 
 func marshalError(result error) string {
-  msg := &JsonError{
+  msg := &JSONError{
     Error: result.Error(),
   }
 
@@ -139,9 +139,9 @@ func marshalError(result error) string {
   return string(outBody)
 }
 
-func convertData(entry *storage.Entry) *JsonData {
-  ret := JsonData{
-    Id: entry.Index,
+func convertData(entry storage.Entry) *JSONData {
+  ret := JSONData{
+    ID: entry.Index,
     Key: entry.Key,
     Data: entry.Data,
   }

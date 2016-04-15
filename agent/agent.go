@@ -15,6 +15,8 @@ import (
   "revision.aeip.apigee.net/greg/changeagent/storage"
 )
 
+//go:generate protoc --go_out=. commands.proto
+
 type ChangeAgent struct {
   stor storage.Storage
   raft *raft.Service
@@ -34,11 +36,11 @@ const (
   DBCacheSize = 10 * 1024 * 1024
 )
 
-func StartChangeAgent(nodeId uint64,
+func StartChangeAgent(nodeID uint64,
                       disco discovery.Discovery,
                       dbFile string,
                       httpMux *http.ServeMux) (*ChangeAgent, error) {
-  comm, err := communication.StartHTTPCommunication(httpMux, disco)
+  comm, err := communication.StartHTTPCommunication(httpMux)
   if err != nil { return nil, err }
   stor, err := storage.CreateRocksDBStorage(dbFile, DBCacheSize)
   if err != nil { return nil, err }
@@ -48,12 +50,12 @@ func StartChangeAgent(nodeId uint64,
     router: mux.NewRouter(),
   }
 
-  raft, err := raft.StartRaft(nodeId, comm, disco, stor, agent)
+  raft, err := raft.StartRaft(nodeID, comm, disco, stor, agent)
   if err != nil { return nil, err }
   agent.raft = raft
   comm.SetRaft(raft)
 
-  agent.initDiagnosticApi()
+  agent.initDiagnosticAPI()
   agent.initChangesAPI()
   agent.initIndexAPI()
 
@@ -75,7 +77,7 @@ func (a *ChangeAgent) GetRaftState() raft.State {
   return a.raft.GetState()
 }
 
-func (a *ChangeAgent) makeProposal(proposal *storage.Entry) (*storage.Entry, error) {
+func (a *ChangeAgent) makeProposal(proposal storage.Entry) (storage.Entry, error) {
   // Timestamp and otherwise update the proposal
   proposal.Timestamp = time.Now()
 
@@ -83,7 +85,7 @@ func (a *ChangeAgent) makeProposal(proposal *storage.Entry) (*storage.Entry, err
   newIndex, err := a.raft.Propose(proposal)
   if err != nil {
     glog.Warningf("Fatal error making Raft proposal: %v", err)
-    return nil, err
+    return storage.Entry{}, err
   }
   glog.V(2).Infof("Proposed new change with index %d", newIndex)
 
@@ -95,10 +97,10 @@ func (a *ChangeAgent) makeProposal(proposal *storage.Entry) (*storage.Entry, err
     newEntry := storage.Entry{
       Index: newIndex,
     }
-    return &newEntry, nil
-  } else {
-    return nil, errors.New("Commit timeout")
+    return newEntry, nil
   }
+
+  return storage.Entry{}, errors.New("Commit timeout")
 }
 
 func (a *ChangeAgent) Commit(entry *storage.Entry) error {

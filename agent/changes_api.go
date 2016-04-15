@@ -57,7 +57,7 @@ func (a *ChangeAgent) postChange(resp http.ResponseWriter, req *http.Request, te
   }
 
   defer req.Body.Close()
-  proposal, err := unmarshalJson(req.Body)
+  proposal, err := unmarshalJSON(req.Body)
   if err != nil {
     writeError(resp, http.StatusBadRequest, errors.New("Invalid JSON"))
     return
@@ -82,7 +82,7 @@ func (a *ChangeAgent) postChange(resp http.ResponseWriter, req *http.Request, te
     return
   }
 
-  body, err := marshalJson(newEntry)
+  body, err := marshalJSON(newEntry)
   if err != nil {
     writeError(resp, http.StatusInternalServerError, err)
     return
@@ -222,7 +222,7 @@ func (a *ChangeAgent) handleGetChange(resp http.ResponseWriter, req *http.Reques
     writeError(resp, http.StatusNotFound, errors.New("Not found"))
 
   } else {
-    outBody, err := marshalJson(entry)
+    outBody, err := marshalJSON(*entry)
     if err != nil {
       writeError(resp, http.StatusInternalServerError, err)
       return

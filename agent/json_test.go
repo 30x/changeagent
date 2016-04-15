@@ -10,23 +10,23 @@ import (
 )
 
 const (
-  testJson1In =
+  testJSON1In =
     "{\"one\": \"one\", \"two\": 2, \"three\": 3.0, \"four\": true}"
-  testJson1Out =
+  testJSON1Out =
     "{\"data\":{\"one\":\"one\",\"two\":2,\"three\":3.0,\"four\":true}}"
-  testJson1Out2 =
+  testJSON1Out2 =
     "{\"_id\":123,\"_ts\":[0123456789]+,\"data\":{\"one\":\"one\",\"two\":2,\"three\":3.0,\"four\":true}}"
 
-  testJson2In =
+  testJSON2In =
     "{\"tenant\": \"99442130-fa86-40f4-928a-911faa86cafa\", \"collection\": \"C344ED17-5E73-4520-A940-0A80251E3B7A\", \"key\": \"baz\", \"data\": {\"one\": \"one\", \"two\": 2, \"three\": 3.0, \"four\": true}}"
-  testJson2Out =
+  testJSON2Out =
     "{\"tenant\":\"99442130-fa86-40f4-928a-911faa86cafa\",\"collection\":\"c344ed17-5e73-4520-a940-0a80251e3b7a\",\"key\":\"baz\",\"data\":{\"one\":\"one\",\"two\":2,\"three\":3.0,\"four\":true}}"
 
   testStringIn =
     "\"Hello, World!\""
   testStringOut =
     "{\"_id\":456,\"data\":\"Hello, World!\"}"
-  testInvalidJson =
+  testInvalidJSON =
     "{InvalidKey:123}"
 
   testErrorOut =
@@ -35,25 +35,25 @@ const (
 
 var _ = Describe("JSON encoding tests", func() {
   It("Marshal JSON", func() {
-    entry, err := unmarshalJson(bytes.NewReader([]byte(testJson1In)))
+    entry, err := unmarshalJSON(bytes.NewReader([]byte(testJSON1In)))
     Expect(err).Should(Succeed())
 
-    str, err := marshalJson(entry)
+    str, err := marshalJSON(entry)
     Expect(err).Should(Succeed())
-    Expect(str).Should(MatchRegexp(testJson1Out))
+    Expect(str).Should(MatchRegexp(testJSON1Out))
   })
 
   It("Marshal with metadata", func() {
-    entry, err := unmarshalJson(bytes.NewReader([]byte(testJson2In)))
+    entry, err := unmarshalJSON(bytes.NewReader([]byte(testJSON2In)))
     Expect(err).Should(Succeed())
 
-    str, err := marshalJson(entry)
+    str, err := marshalJSON(entry)
     Expect(err).Should(Succeed())
-    Expect(str).Should(MatchRegexp(testJson2Out))
+    Expect(str).Should(MatchRegexp(testJSON2Out))
   })
 
   It("Marshal and add metadata", func() {
-    entry, err := unmarshalJson(bytes.NewReader([]byte(testJson1In)))
+    entry, err := unmarshalJSON(bytes.NewReader([]byte(testJSON1In)))
     Expect(err).Should(Succeed())
     ts := time.Now()
 
@@ -63,17 +63,17 @@ var _ = Describe("JSON encoding tests", func() {
       Timestamp: ts,
     }
 
-    str, err := marshalJson(&md)
+    str, err := marshalJSON(md)
     Expect(err).Should(Succeed())
-    Expect(str).Should(MatchRegexp(testJson1Out2))
+    Expect(str).Should(MatchRegexp(testJSON1Out2))
 
-    entry2, err := unmarshalJson(bytes.NewBuffer([]byte(str)))
+    entry2, err := unmarshalJSON(bytes.NewBuffer([]byte(str)))
     Expect(err).Should(Succeed())
     Expect(entry2.Timestamp).Should(Equal(ts))
   })
 
   It("Marshal string", func() {
-    entry, err := unmarshalJson(bytes.NewReader([]byte(testStringIn)))
+    entry, err := unmarshalJSON(bytes.NewReader([]byte(testStringIn)))
     Expect(err).Should(Succeed())
 
     md := storage.Entry{
@@ -81,20 +81,20 @@ var _ = Describe("JSON encoding tests", func() {
       Data: entry.Data,
     }
 
-    str, err := marshalJson(&md)
+    str, err := marshalJSON(md)
     Expect(err).Should(Succeed())
     Expect(str).Should(MatchRegexp(testStringOut))
   })
 
   It("Marshal invalid data", func() {
-    _, err := unmarshalJson(bytes.NewReader([]byte(testInvalidJson)))
+    _, err := unmarshalJSON(bytes.NewReader([]byte(testInvalidJSON)))
     Expect(err).Should(HaveOccurred())
   })
 
   It("Test marshal list", func() {
-    entry1, err := unmarshalJson(bytes.NewReader([]byte(testJson1In)))
+    entry1, err := unmarshalJSON(bytes.NewReader([]byte(testJSON1In)))
     Expect(err).Should(Succeed())
-    entry2, err := unmarshalJson(bytes.NewReader([]byte(testStringIn)))
+    entry2, err := unmarshalJSON(bytes.NewReader([]byte(testStringIn)))
     Expect(err).Should(Succeed())
 
     cl := []storage.Entry{
@@ -112,7 +112,7 @@ var _ = Describe("JSON encoding tests", func() {
     Expect(err).Should(Succeed())
 
     outStr :=
-      "[" + testJson1Out2 + "," + testStringOut + "]"
+      "[" + testJSON1Out2 + "," + testStringOut + "]"
     Expect(str).Should(MatchRegexp(outStr))
   })
 
@@ -138,11 +138,11 @@ var _ = Describe("JSON encoding tests", func() {
       Index: 456,
     }
 
-    str, err := marshalJson(&e)
+    str, err := marshalJSON(e)
     Expect(err).Should(Succeed())
     Expect(str).Should(MatchJSON("{\"_id\":456}"))
 
-    re, err := unmarshalJson(bytes.NewBuffer([]byte(str)))
+    re, err := unmarshalJSON(bytes.NewBuffer([]byte(str)))
     Expect(err).Should(Succeed())
     Expect(re.Index).Should(BeEquivalentTo(456))
   })

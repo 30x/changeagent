@@ -47,11 +47,12 @@ func (a *ChangeAgent) handleGetTenants(resp http.ResponseWriter, req *http.Reque
     return
   }
 
-  links := make([]TenantLink, 0)
+  // Zero-length array so JSON returns "[]"
+  links := []TenantLink{}
   for _, t := range(tenants) {
     l := TenantLink{
       Name: t.Name,
-      Id: t.Id.String(),
+      ID: t.Id.String(),
       Self: linkURI(req, fmt.Sprintf("%s/%s", Tenants, t.Id)),
       Collections: linkURI(req, fmt.Sprintf("%s/%s/collections", Tenants, t.Id)),
     }
@@ -106,7 +107,7 @@ func (a *ChangeAgent) handleCreateTenant(resp http.ResponseWriter, req *http.Req
     Data: pb,
   }
 
-  _, err = a.makeProposal(&entry)
+  _, err = a.makeProposal(entry)
   if err != nil {
     writeError(resp, http.StatusInternalServerError, err)
     return
@@ -124,7 +125,7 @@ func (a *ChangeAgent) handleCreateTenant(resp http.ResponseWriter, req *http.Req
 
   l := TenantLink{
     Name: tenantName,
-    Id: id.String(),
+    ID: id.String(),
     Self: linkURI(req, fmt.Sprintf("%s/%s", Tenants, id)),
     Collections: linkURI(req, fmt.Sprintf("%s/%s/collections", Tenants, id)),
   }
@@ -144,7 +145,7 @@ func (a *ChangeAgent) handleGetTenant(resp http.ResponseWriter, req *http.Reques
 
   l := TenantLink{
     Name: tenantName,
-    Id: tenantID.String(),
+    ID: tenantID.String(),
     Self: linkURI(req, fmt.Sprintf("%s/%s", Tenants, tenantID)),
     Collections: linkURI(req, fmt.Sprintf("%s/%s/collections", Tenants, tenantID)),
   }
@@ -177,11 +178,11 @@ func (a *ChangeAgent) handleGetCollections(resp http.ResponseWriter, req *http.R
     return
   }
 
-  links := make ([]CollectionLink, 0)
-
+  // Make this an empty array, not an empty slice, so JSON returns "[]" instead of "null"
+  links := []CollectionLink{}
   for _, c := range(collections) {
     l := CollectionLink{
-      Id: c.Id.String(),
+      ID: c.Id.String(),
       Name: c.Name,
       Self: linkURI(req, fmt.Sprintf("/collections/%s", c.Id)),
       Keys: linkURI(req, fmt.Sprintf("/collections/%s/keys", c.Id)),
@@ -246,7 +247,7 @@ func (a *ChangeAgent) handleCreateCollection(resp http.ResponseWriter, req *http
     Data: pb,
   }
 
-  _, err = a.makeProposal(&entry)
+  _, err = a.makeProposal(entry)
   if err != nil {
     writeError(resp, http.StatusInternalServerError, err)
     return
@@ -264,7 +265,7 @@ func (a *ChangeAgent) handleCreateCollection(resp http.ResponseWriter, req *http
 
   l := CollectionLink{
     Name: collectionName,
-    Id: id.String(),
+    ID: id.String(),
     Self: linkURI(req, fmt.Sprintf("%s/%s", Collections, id)),
     Keys: linkURI(req, fmt.Sprintf("%s/%s/keys", Collections, id)),
   }
@@ -282,7 +283,7 @@ func (a *ChangeAgent) handleGetCollection(resp http.ResponseWriter, req *http.Re
 
   l := CollectionLink{
     Name: collectionName,
-    Id: collectionID.String(),
+    ID: collectionID.String(),
     Self: linkURI(req, fmt.Sprintf("%s/%s", Collections, collectionID)),
     Keys: linkURI(req, fmt.Sprintf("%s/%s/keys", Collections, collectionID)),
   }
@@ -307,7 +308,7 @@ func (a *ChangeAgent) handleGetTenantCollection(resp http.ResponseWriter, req *h
 
   l := CollectionLink{
     Name: collectionName,
-    Id: collectionID.String(),
+    ID: collectionID.String(),
     Self: linkURI(req, fmt.Sprintf("%s/%s", Collections, collectionID)),
     Keys: linkURI(req, fmt.Sprintf("%s/%s/keys", Collections, collectionID)),
   }
@@ -352,8 +353,7 @@ func (a *ChangeAgent) handleGetCollectionKeys(resp http.ResponseWriter, req *htt
     return
   }
 
-  entries := make([]storage.Entry, 0)
-
+  var entries []storage.Entry
   for _, ix := range(indices) {
     entry, err := a.stor.GetEntry(ix)
     if err != nil {
@@ -388,7 +388,7 @@ func (a *ChangeAgent) handleCreateCollectionKey(resp http.ResponseWriter, req *h
   }
 
   defer req.Body.Close()
-  proposal, err := unmarshalJson(req.Body)
+  proposal, err := unmarshalJSON(req.Body)
   if err != nil {
     writeError(resp, http.StatusBadRequest, errors.New("Invalid JSON"))
     return
@@ -411,7 +411,7 @@ func (a *ChangeAgent) handleCreateCollectionKey(resp http.ResponseWriter, req *h
     return
   }
 
-  body, err := marshalJson(newEntry)
+  body, err := marshalJSON(newEntry)
   if err != nil {
     writeError(resp, http.StatusInternalServerError, err)
     return
@@ -442,7 +442,7 @@ func (a *ChangeAgent) handleGetCollectionKey(resp http.ResponseWriter, req *http
     return
   }
 
-  body, err := marshalJson(entry)
+  body, err := marshalJSON(*entry)
   if err != nil {
     writeError(resp, http.StatusInternalServerError, err)
     return
@@ -468,34 +468,33 @@ func (a *ChangeAgent) validateTenant(ten string) (uuid.UUID, string, int, error)
     }
     return tenantID, tenantName, http.StatusOK, nil
 
-  } else {
-    // it's a tenant  name
-    tenantID, err := a.stor.GetTenantByName(ten)
-    if err != nil {
-      return uuid.Nil, "", http.StatusInternalServerError, err
-    }
-    if uuid.Equal(tenantID, uuid.Nil) {
-      return uuid.Nil, "", http.StatusNotFound, errors.New("Tenant not found")
-    }
-    return tenantID, ten, http.StatusOK, nil
   }
+
+  // it's a tenant  name
+  tenantID, err := a.stor.GetTenantByName(ten)
+  if err != nil {
+    return uuid.Nil, "", http.StatusInternalServerError, err
+  }
+  if uuid.Equal(tenantID, uuid.Nil) {
+    return uuid.Nil, "", http.StatusNotFound, errors.New("Tenant not found")
+  }
+  return tenantID, ten, http.StatusOK, nil
 }
 
 func (a *ChangeAgent) validateCollection(tenantID uuid.UUID, coll string) (uuid.UUID, string, uuid.UUID, int, error) {
   if uuidRE.MatchString(coll) {
     return a.validateCollectionID(coll)
-
-  } else {
-    // it's a tenant  name
-    collectionID, err := a.stor.GetCollectionByName(tenantID, coll)
-    if err != nil {
-      return uuid.Nil, "", uuid.Nil, http.StatusInternalServerError, err
-    }
-    if uuid.Equal(collectionID, uuid.Nil) {
-      return uuid.Nil, "", uuid.Nil, http.StatusNotFound, errors.New("Tenant not found")
-    }
-    return collectionID, coll, uuid.Nil, http.StatusOK, nil
   }
+
+  // it's a tenant  name
+  collectionID, err := a.stor.GetCollectionByName(tenantID, coll)
+  if err != nil {
+    return uuid.Nil, "", uuid.Nil, http.StatusInternalServerError, err
+  }
+  if uuid.Equal(collectionID, uuid.Nil) {
+    return uuid.Nil, "", uuid.Nil, http.StatusNotFound, errors.New("Tenant not found")
+  }
+  return collectionID, coll, uuid.Nil, http.StatusOK, nil
 }
 
 func (a *ChangeAgent) validateCollectionID(coll string) (uuid.UUID, string, uuid.UUID, int, error) {
@@ -533,5 +532,4 @@ func isFormContent(req *http.Request) bool {
 }
 
 func isJSONContent(req *http.Request) bool {
-  return req.Header.Get("Content-Type") == JSONContent
-}
+  return req.Header.Get("Content-Type") == JSONContent}
