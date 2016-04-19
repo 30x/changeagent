@@ -2,9 +2,6 @@
 
 ## Bugs
 
-Tenants have different UUIDs across nodes.
-  Happens all the time.
-
 Election deadlock is possible, at least with two out of three nodes running.
   Only happened a few times.
   
@@ -12,16 +9,34 @@ Insert performance is inconsistent. It seems like many inserts take as long as t
 
 ## High Priority
 
-Discovery.
+Finish membership change support:
+  Test removal of a follower
+  Implement removal of a leader (it should stop being leader even if still running)
+    What stops it from starting a new election?
+    Followers need to vote "no" until the leader timeout has expired, right?
+  Test address changes
+  Test node catchup with a big database
+  Test graceful stop of a node
 
 Support deletes!
 
-Create tenant-specific "changes" collections. Put them all together, but in a separate column family.
-Copy change data from main CF to "collection change" CF on each update.
+DNS SRV discovery
+
+Simplified discovery:
+  Discovery service produces a list of IP:port combinations only.
+  Does the leader even care what is behind each IP:port?
+  Just talk to them, and treat each IP:port as a separate node.
+  An address change is the same as any other cluster change.
+  Problem: What if a whole bunch of nodes change at once?
+  Solution: Leader has to enforce changing one at a time.
+  
+Add a unique cluster ID
+  Prevents configuration screw-ups
+  Cluster ID generated first time leader sends a message, as an "init" message.
+  Gets persisted on each node
+  Sent on each request. Node rejects anything with a bad cluster ID.
 
 Prune changes from tenant-specific changes DB on every update, and eventually every delete.
-
-Add a callback to each storage iteration function that will filter the entries.
 
 Create a lock manager. Lock on collection modifications. Prevent non-serializable behaviors as much
 as possible while maintaining weak guarantees in general:
