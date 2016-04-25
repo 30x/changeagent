@@ -213,3 +213,20 @@ management APIs to discover the real IP and port to use to communicate with each
 
 In this case, we will need to add some metadata to the K8s API so that each node puts its unique ID in a place
 where the other nodes can find it.
+
+Other ideas:
+
+Checkpoints. With change #.
+
+Another model:
+	Changes and tags, with tag filtering.
+
+Another model for tenants:
+	Just entries and tags. Let me filter by tags. That's it.
+	Each entry can have multiple tags.
+
+Possibility:
+	Delete all collections
+	Delete all tenants?
+	Add tags.
+	Optimize tag implementation.
