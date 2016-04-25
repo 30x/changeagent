@@ -22,28 +22,8 @@ var _ = Describe("Static Discovery", func() {
     n := cfg.Current.New
 
     Expect(len(n)).Should(Equal(2))
-    Expect(n[0].ID).Should(BeEquivalentTo(1))
-    Expect(n[0].Address).Should(Equal("localhost:1234"))
-    Expect(cfg.GetAddress(1)).Should(Equal("localhost:1234"))
-    Expect(n[1].ID).Should(BeEquivalentTo(2))
-    Expect(n[1].Address).Should(Equal("localhost:2345"))
-    Expect(n[1].Address).Should(Equal("localhost:2345"))
-    Expect(cfg.GetAddress(2)).Should(Equal("localhost:2345"))
-
-    tn1 := Node{
-      ID: 1,
-      Address: "localhost:1234",
-    }
-    tn2 := Node{
-      ID: 2,
-      Address: "localhost:2345",
-    }
-    Expect(tn1.Equal(n[0])).Should(BeTrue())
-    Expect(tn2.Equal(n[1])).Should(BeTrue())
-    Expect(tn1.Equal(n[1])).Should(BeFalse())
-    Expect(tn2.Equal(n[0])).Should(BeFalse())
-    Expect(tn1.String()).Should(Equal(n[0].String()))
-    Expect(tn2.String()).Should(Equal(n[1].String()))
+    Expect(n[0]).Should(Equal("localhost:1234"))
+    Expect(n[1]).Should(Equal("localhost:2345"))
 
     nc := d.GetCurrentConfig()
     Expect(nc).Should(Equal(cfg))
@@ -62,26 +42,9 @@ var _ = Describe("Static Discovery", func() {
     fmt.Fprintf(GinkgoWriter, "Nodes: %v\n", n)
 
     Expect(len(n)).Should(Equal(3))
-
-    tn1 := Node{
-      ID: 1,
-      State: 2,
-      Address: "one",
-    }
-    tn2 := Node{
-      ID: 2,
-      State: 2,
-      Address: "two",
-    }
-    tn3 := Node{
-      ID: 3,
-      State: 2,
-      Address: "three",
-    }
-
-    Expect(tn1.Equal(n[0])).Should(BeTrue())
-    Expect(tn2.Equal(n[1])).Should(BeTrue())
-    Expect(tn3.Equal(n[2])).Should(BeTrue())
+    Expect(n[0]).Should(Equal("one"))
+    Expect(n[1]).Should(Equal("two"))
+    Expect(n[2]).Should(Equal("three"))
   })
 
   It("Changes", func() {
@@ -93,16 +56,103 @@ var _ = Describe("Static Discovery", func() {
       changeWatcher := d.Watch()
       syncChanges <- true
       change := <- changeWatcher
-      Expect(change).Should(Equal(NodesChanged))
+      Expect(change).Should(BeTrue())
       syncChanges <- true
     }()
 
     // Manually do what an SPI would do for itself,
     // but only after other channel is ready
     <- syncChanges
-    d.SetNode(Node{ID: 4, Address: "four"})
+    d.AddNode("four")
 
     Eventually(syncChanges).Should(Receive(BeTrue()))
+
+    n := d.GetCurrentConfig().Current.New
+    Expect(len(n)).Should(Equal(4))
+    Expect(n[0]).Should(Equal("one"))
+    Expect(n[1]).Should(Equal("two"))
+    Expect(n[2]).Should(Equal("three"))
+    Expect(n[3]).Should(Equal("four"))
+  })
+
+  It("Changes overwrite", func() {
+    d := CreateStaticDiscovery([]string{"one", "two", "three"})
+    defer d.Close()
+
+    syncChanges := make(chan bool, 1)
+    go func() {
+      changeWatcher := d.Watch()
+      syncChanges <- true
+      change := <- changeWatcher
+      Expect(change).Should(BeTrue())
+      syncChanges <- true
+    }()
+
+    // Manually do what an SPI would do for itself,
+    // but only after other channel is ready
+    <- syncChanges
+    d.AddNode("three")
+
+    Eventually(syncChanges).ShouldNot(Receive(BeTrue()))
+
+    n := d.GetCurrentConfig().Current.New
+    Expect(len(n)).Should(Equal(3))
+    Expect(n[0]).Should(Equal("one"))
+    Expect(n[1]).Should(Equal("two"))
+    Expect(n[2]).Should(Equal("three"))
+  })
+
+  It("Changes Delete", func() {
+    d := CreateStaticDiscovery([]string{"one", "two", "three"})
+    defer d.Close()
+
+    syncChanges := make(chan bool, 1)
+    go func() {
+      changeWatcher := d.Watch()
+      syncChanges <- true
+      change := <- changeWatcher
+      Expect(change).Should(BeTrue())
+      syncChanges <- true
+    }()
+
+    // Manually do what an SPI would do for itself,
+    // but only after other channel is ready
+    <- syncChanges
+    d.DeleteNode("two")
+
+    Eventually(syncChanges).Should(Receive(BeTrue()))
+
+    n := d.GetCurrentConfig().Current.New
+    Expect(len(n)).Should(Equal(2))
+    Expect(n[0]).Should(Equal("one"))
+    Expect(n[1]).Should(Equal("three"))
+  })
+
+  It("Changes Delete No Effect", func() {
+    d := CreateStaticDiscovery([]string{"one", "two", "three"})
+    defer d.Close()
+
+    syncChanges := make(chan bool, 1)
+    go func() {
+      changeWatcher := d.Watch()
+      syncChanges <- true
+      change := <- changeWatcher
+      Expect(change).Should(BeTrue())
+      syncChanges <- true
+    }()
+
+    // Manually do what an SPI would do for itself,
+    // but only after other channel is ready
+    <- syncChanges
+    d.DeleteNode("four")
+
+    Eventually(syncChanges).ShouldNot(Receive(BeTrue()))
+
+    n := d.GetCurrentConfig().Current.New
+    Expect(len(n)).Should(Equal(3))
+    Expect(n[0]).Should(Equal("one"))
+    Expect(n[1]).Should(Equal("two"))
+    Expect(n[2]).Should(Equal("three"))
   })
 
   It("Changes two watchers", func() {
@@ -115,7 +165,7 @@ var _ = Describe("Static Discovery", func() {
       changeWatcher := d.Watch()
       syncChanges <- true
       change := <- changeWatcher
-      Expect(change).Should(Equal(NodesChanged))
+      Expect(change).Should(BeTrue())
       syncChanges <- true
     }()
 
@@ -123,7 +173,7 @@ var _ = Describe("Static Discovery", func() {
       changeWatcher := d.Watch()
       syncChanges <- true
       change := <- changeWatcher
-      Expect(change).Should(Equal(NodesChanged))
+      Expect(change).Should(BeTrue())
       syncChanges <- true
     }()
 
@@ -131,30 +181,9 @@ var _ = Describe("Static Discovery", func() {
     // but only after other channel is ready
     <- syncChanges
     <- syncChanges
-    d.SetNode(Node{ID: 4, Address: "four"})
+    d.AddNode("four")
 
     Eventually(syncChanges).Should(Receive(BeTrue()))
-    Eventually(syncChanges).Should(Receive(BeTrue()))
-  })
-
-  It("Changes Address only", func() {
-    d := CreateStaticDiscovery([]string{"one", "two", "three"})
-    defer d.Close()
-
-    syncChanges := make(chan bool, 1)
-    go func() {
-      changeWatcher := d.Watch()
-      syncChanges <- true
-      change := <- changeWatcher
-      Expect(change).Should(Equal(AddressesChanged))
-      syncChanges <- true
-    }()
-
-    // Manually do what an SPI would do for itself,
-    // but only after other channel is ready
-    <- syncChanges
-    d.SetNode(Node{ID: 3, Address: "four"})
-
     Eventually(syncChanges).Should(Receive(BeTrue()))
   })
 
@@ -168,10 +197,7 @@ var _ = Describe("Static Discovery", func() {
     defer d.Close()
 
     expected1 := &NodeList{
-      New: []Node{
-        {ID: 1, Address: "localhost:1234"},
-        {ID: 2, Address: "localhost:2345"},
-      },
+      New: []string{ "localhost:1234", "localhost:2345"},
     }
 
     Expect(expected1.Equal(d.GetCurrentConfig().Current)).Should(BeTrue())
@@ -179,17 +205,14 @@ var _ = Describe("Static Discovery", func() {
     syncChanges := make(chan bool, 1)
     go func() {
       expected2 := &NodeList{
-        New: []Node{
-          {ID: 1, Address: "localhost:1234"},
-          {ID: 2, Address: "localhost:9999"},
-        },
+        New: []string{ "localhost:1234", "localhost:9999"},
       }
 
       changeWatcher := d.Watch()
       syncChanges <- true
       change := <- changeWatcher
 
-      Expect(change).Should(Equal(AddressesChanged))
+      Expect(change).Should(BeTrue())
       Expect(expected2.Equal(d.GetCurrentConfig().Current)).Should(BeTrue())
       syncChanges <- true
     }()

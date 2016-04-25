@@ -6,6 +6,7 @@
 package raft
 
 import (
+  "fmt"
   "errors"
   "time"
   "github.com/golang/glog"
@@ -20,7 +21,7 @@ type voteResult struct {
 }
 
 type peerMatchResult struct {
-  id uint64
+  address string
   newMatch uint64
 }
 
@@ -28,8 +29,8 @@ type raftState struct {
   votedFor uint64
   voteIndex uint64              // Keep track of the voting channel in case something takes a long time
   voteResults chan voteResult
-  peers map[uint64]*raftPeer
-  peerMatches map[uint64]uint64
+  peers map[string]*raftPeer
+  peerMatches map[string]uint64
   peerMatchChanges chan peerMatchResult
   proposedConfig *discovery.NodeConfig
   configChangeMode int
@@ -41,8 +42,8 @@ func (r *Service) mainLoop() {
     voteIndex: 0,
     voteResults: make(chan voteResult, 1),
     votedFor: r.readLastVote(),
-    peers: make(map[uint64]*raftPeer),
-    peerMatches: make(map[uint64]uint64),
+    peers: make(map[string]*raftPeer),
+    peerMatches: make(map[string]uint64),
     peerMatchChanges: make(chan peerMatchResult, 1),
     configChangeMode: noChange,
   }
@@ -129,15 +130,19 @@ func (r *Service) followerLoop(isCandidate bool, state *raftState) chan bool {
       } else {
         go func() {
           glog.V(2).Infof("Forwarding proposal to leader node %d", leaderID)
-          leaderAddr := r.getNodeConfig().GetAddress(leaderID)
-          fr, err := r.comm.Propose(leaderAddr, prop.entry)
-          pr := proposalResult{
-            index: fr.NewIndex,
-          }
-          if err != nil {
-            pr.err = err
-          } else if fr.Error != nil {
-            pr.err = fr.Error
+          leaderAddr := r.getNodeAddress(leaderID)
+
+          pr := proposalResult{}
+          if leaderAddr == "" {
+            pr.err = fmt.Errorf("No address known for leader node %d", leaderID)
+          } else {
+            fr, err := r.comm.Propose(leaderAddr, prop.entry)
+            if err != nil {
+              pr.err = err
+            } else if fr.Error != nil {
+              pr.err = fr.Error
+            }
+            pr.index = fr.NewIndex
           }
           prop.rc <- pr
         }()
@@ -158,13 +163,8 @@ func (r *Service) followerLoop(isCandidate bool, state *raftState) chan bool {
         timeout.Reset(r.randomElectionTimeout())
       }
 
-    case change := <- r.configChanges:
-      if change == discovery.AddressesChanged {
-        // Process the change only if it's just to addresses. Otherwise wait for the leader.
-        newCfg := r.disco.GetCurrentConfig()
-        r.setNodeConfig(newCfg)
-        r.updatePeerList(newCfg, state)
-      }
+    case <- r.configChanges:
+      glog.V(2).Info("Node configuration changed. Waiting for a push from the leader.")
 
     case stopDone := <- r.stopChan:
       r.setState(Stopping)
@@ -176,12 +176,9 @@ func (r *Service) followerLoop(isCandidate bool, state *raftState) chan bool {
 func (r *Service) leaderLoop(state *raftState) chan bool {
   // Get the list of nodes here from the current configuration.
   nodes := r.getNodeConfig().GetUniqueNodes()
-  for _, n := range(nodes) {
-    if n.ID == r.id {
-      continue
-    }
-    state.peers[n.ID] = startPeer(n.ID, n.Address, r, state.peerMatchChanges)
-    state.peerMatches[n.ID] = 0
+  for _, node := range(nodes) {
+    state.peers[node] = startPeer(node, r, state.peerMatchChanges)
+    state.peerMatches[node] = 0
   }
 
   // Upon election: send initial empty AppendEntries RPCs (heartbeat) to
@@ -198,9 +195,9 @@ func (r *Service) leaderLoop(state *raftState) chan bool {
     return nil
   }
 
-  cfgChange := r.disco.CompareCurrentConfig(r.getNodeConfig())
-  if cfgChange != 0 {
-    err := r.processConfigChange(cfgChange, state)
+  discoConfig := r.disco.GetCurrentConfig()
+  if !discoConfig.Current.Equal(r.getNodeConfig().Current) {
+    err := r.processConfigChange(state)
     if err != nil {
       // Should we panic now? Set a state to retry?
       glog.Errorf("Error processing config change: %v", err)
@@ -248,7 +245,7 @@ func (r *Service) leaderLoop(state *raftState) chan bool {
     case peerMatch := <- state.peerMatchChanges:
       // Got back a changed applied index from a peer. Decide if we have a commit and
       // process it if we do.
-      state.peerMatches[peerMatch.id] = peerMatch.newMatch
+      state.peerMatches[peerMatch.address] = peerMatch.newMatch
       newIndex := r.calculateCommitIndex(state, r.getNodeConfig())
       if r.setCommitIndex(newIndex) {
         r.applyCommittedEntries(newIndex)
@@ -263,8 +260,8 @@ func (r *Service) leaderLoop(state *raftState) chan bool {
         }
       }
 
-    case change := <- r.configChanges:
-      err = r.processConfigChange(change, state)
+    case <- r.configChanges:
+      err = r.processConfigChange(state)
       if err != nil {
         glog.Errorf("Error processing configuration change: %v", err)
       }
@@ -289,36 +286,29 @@ func stopPeers(state *raftState) {
  * just treat them all the same -- any change results in us proposing a new
  * state and going back to the start of the config change process.
  */
-func (r *Service) processConfigChange(changeType int, state *raftState) error {
-  if changeType == discovery.NodesChanged {
-    glog.Info("Configuration change detected. Proposing joint consensus configuration.")
-    // Starting the config change process. We must create joint consensus and propose it.
-    newCfg := r.makeJointConsensus()
-    glog.V(2).Infof("Proposed joint consensus configuration: %s", newCfg)
-    newCfgBuf, err := discovery.EncodeConfig(newCfg)
-    if err != nil { return err }
-    proposal := storage.Entry{
-      Timestamp: time.Now(),
-      Type: MembershipChange,
-      Data: newCfgBuf,
-    }
-    ix, err := r.makeProposal(&proposal, state)
-    if err != nil { return err }
-    glog.V(2).Infof("Joint consensus proposal is entry %d", ix)
-
-    // Persist the new config and start using it for subsequent communications
-    r.setNodeConfig(newCfg)
-    state.configChangeCommit = ix
-    state.configChangeMode = proposedJointConsensus
-
-    r.updatePeerList(newCfg, state)
-
-  } else {
-    // Only the addresses changed. Just need to update based on what changed.
-    newCfg := r.disco.GetCurrentConfig()
-    r.setNodeConfig(newCfg)
-    r.updatePeerList(newCfg, state)
+func (r *Service) processConfigChange(state *raftState) error {
+  glog.Info("Configuration change detected. Proposing joint consensus configuration.")
+  // Starting the config change process. We must create joint consensus and propose it.
+  newCfg := r.makeJointConsensus()
+  glog.V(2).Infof("Proposed joint consensus configuration: %s", newCfg)
+  newCfgBuf, err := discovery.EncodeConfig(newCfg)
+  if err != nil { return err }
+  proposal := storage.Entry{
+    Timestamp: time.Now(),
+    Type: MembershipChange,
+    Data: newCfgBuf,
   }
+  ix, err := r.makeProposal(&proposal, state)
+  if err != nil { return err }
+  glog.V(2).Infof("Joint consensus proposal is entry %d", ix)
+
+  // Persist the new config and start using it for subsequent communications
+  r.setNodeConfig(newCfg)
+  state.configChangeCommit = ix
+  state.configChangeMode = proposedJointConsensus
+
+  r.updatePeerList(newCfg, state)
+
   return nil
 }
 
@@ -397,29 +387,27 @@ func (r *Service) makeFinalConsensus() *discovery.NodeConfig {
  * Whenever configuration changes, go through the list of peers and see what we need to do.
  */
 func (r *Service) updatePeerList(cfg *discovery.NodeConfig, state *raftState) {
-  foundNodes := make(map[uint64]bool)
+  foundNodes := make(map[string]bool)
   nodes := cfg.GetUniqueNodes()
 
-  // Add any missing nodes, and update addresses of found ones
+  // Add any missing nodes
   for i := range(nodes) {
-    id := nodes[i].ID
-    foundNodes[id] = true
-    if state.peers[id] == nil {
-      glog.Infof("Starting communications with new node %d", id)
-      state.peers[id] = startPeer(id, nodes[i].Address, r, state.peerMatchChanges)
-      state.peerMatches[id] = 0
-    } else {
-      state.peers[id].updateAddress(nodes[i].Address)
+    addr := nodes[i]
+    foundNodes[addr] = true
+    if state.peers[addr] == nil {
+      glog.Infof("Starting communications with new node at %s", addr)
+      state.peers[addr] = startPeer(addr, r, state.peerMatchChanges)
+      state.peerMatches[addr] = 0
     }
   }
 
   // Delete any nodes that are no longer in the configuration
-  for id := range(state.peers) {
-    if !foundNodes[id] {
-      glog.Infof("Stopping communications to deleted node %d", id)
-      state.peers[id].stop()
-      delete(state.peers, id)
-      delete(state.peerMatches, id)
+  for addr := range(state.peers) {
+    if !foundNodes[addr] {
+      glog.Infof("Stopping communications to deleted node at %s", addr)
+      state.peers[addr].stop()
+      delete(state.peers, addr)
+      delete(state.peerMatches, addr)
     }
   }
 }
@@ -466,14 +454,14 @@ func (r *Service) calculateCommitIndex(state *raftState, cfg *discovery.NodeConf
   return r.GetCommitIndex()
 }
 
-func (r *Service) getPartialCommitIndex(state *raftState, nodes []discovery.Node) uint64 {
+func (r *Service) getPartialCommitIndex(state *raftState, nodes []string) uint64 {
   var indices []uint64
   for _, node := range(nodes) {
-    if node.ID == r.id {
+    if node == r.getLocalAddress() {
       last, _ := r.GetLastIndex()
       indices = append(indices, last)
     } else {
-      indices = append(indices, state.peerMatches[node.ID])
+      indices = append(indices, state.peerMatches[node])
     }
   }
 

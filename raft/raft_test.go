@@ -7,7 +7,6 @@ import (
   "path"
   "strconv"
   "time"
-  "revision.aeip.apigee.net/greg/changeagent/discovery"
   "revision.aeip.apigee.net/greg/changeagent/storage"
   . "github.com/onsi/ginkgo"
   . "github.com/onsi/gomega"
@@ -45,7 +44,7 @@ var _ = Describe("Raft Tests", func() {
     testRafts[leaderIndex].stor.Close()
 
     fmt.Fprintf(GinkgoWriter, "Restarting node %d on port %d\n", savedID, savedPort)
-    err := restartOneNode(leaderIndex, savedID, savedPath, savedPort)
+    err := restartOneNode(leaderIndex, savedPath, savedPort)
     Expect(err).Should(Succeed())
 
     time.Sleep(time.Second)
@@ -72,7 +71,7 @@ var _ = Describe("Raft Tests", func() {
     testRafts[followerIndex].stor.Close()
 
     fmt.Fprintf(GinkgoWriter, "Restarting node %d on port %d\n", savedID, savedPort)
-    err := restartOneNode(followerIndex, savedID, savedPath, savedPort)
+    err := restartOneNode(followerIndex, savedPath, savedPort)
     Expect(err).Should(Succeed())
 
     time.Sleep(time.Second)
@@ -84,14 +83,14 @@ var _ = Describe("Raft Tests", func() {
     appendAndVerify("Before leadership change", 3)
 
     listener, addr := startListener()
-    newRaft, err := startRaft(4, testDiscovery, listener, path.Join(DataDir, "test4"))
+    newRaft, err := startRaft(testDiscovery, listener, path.Join(DataDir, "test4"))
     Expect(err).Should(Succeed())
     testListener = append(testListener, listener)
     testRafts = append(testRafts, newRaft)
 
     time.Sleep(time.Second)
     fmt.Fprintf(GinkgoWriter, "Adding new configuration for node 4\n")
-    testDiscovery.SetNode(discovery.Node{ID: 4, Address: addr})
+    testDiscovery.AddNode(addr)
     time.Sleep(time.Second)
     assertOneLeader()
     appendAndVerify("New leader elected. Yay!", 4)
@@ -108,12 +107,12 @@ func stopOneNode(stopID int) (uint64, string, int) {
   return savedID, savedPath, savedPort
 }
 
-func restartOneNode(ix int, savedID uint64, savedPath string, savedPort int) error {
+func restartOneNode(ix int, savedPath string, savedPort int) error {
   restartedListener, err := net.ListenTCP("tcp4", &net.TCPAddr{Port: savedPort})
   if err != nil { return err }
   testListener[ix] = restartedListener
   restartedRaft, err :=
-    startRaft(savedID, testDiscovery, testListener[ix], savedPath)
+    startRaft(testDiscovery, testListener[ix], savedPath)
   if err != nil { return err }
   testRafts[ix] = restartedRaft
   return nil

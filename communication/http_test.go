@@ -68,6 +68,12 @@ var _ = AfterSuite(func() {
 })
 
 var _ = Describe("Communication", func() {
+  It("Discover", func() {
+    id, err := comm.Discover(address)
+    Expect(err).Should(Succeed())
+    Expect(id).Should(BeEquivalentTo(1))
+  })
+
   It("Request Vote", func() {
     req := VoteRequest{
       Term: 1,
@@ -80,6 +86,7 @@ var _ = Describe("Communication", func() {
     Expect(resp.Error).Should(Succeed())
     Expect(resp.Term).Should(BeEquivalentTo(1))
     Expect(resp.NodeID).Should(BeEquivalentTo(1))
+    Expect(resp.NodeAddress).Should(Equal(address))
     Expect(resp.VoteGranted).Should(BeTrue())
   })
 

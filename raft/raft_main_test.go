@@ -28,6 +28,7 @@ var unitTestRaft *Service
 var unitTestListener *net.TCPListener
 var testDiscovery discovery.Discovery
 var anyPort net.TCPAddr
+var unitTestAddr string
 
 func TestRaft(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -55,22 +56,25 @@ var _ = BeforeSuite(func() {
 
   // Create one more for unit tests
   unitTestListener, unitAddr := startListener()
+  unitTestAddr = unitAddr
   unitDisco := discovery.CreateStaticDiscovery([]string{unitAddr})
 
-  raft1, err := startRaft(1, disco, testListener[0], path.Join(DataDir, "test1"))
+  raft1, err := startRaft(disco, testListener[0], path.Join(DataDir, "test1"))
   Expect(err).Should(Succeed())
   testRafts = append(testRafts, raft1)
 
-  raft2, err := startRaft(2, disco, testListener[1], path.Join(DataDir, "test2"))
+  raft2, err := startRaft(disco, testListener[1], path.Join(DataDir, "test2"))
   Expect(err).Should(Succeed())
   testRafts = append(testRafts, raft2)
 
-  raft3, err := startRaft(3, disco, testListener[2], path.Join(DataDir, "test3"))
+  raft3, err := startRaft(disco, testListener[2], path.Join(DataDir, "test3"))
   Expect(err).Should(Succeed())
   testRafts = append(testRafts, raft3)
 
-  unitTestRaft, err = startRaft(1, unitDisco, unitTestListener, path.Join(DataDir, "unit"))
+  unitTestRaft, err = startRaft(unitDisco, unitTestListener, path.Join(DataDir, "unit"))
   Expect(err).Should(Succeed())
+  // This happens normally -- need it to happen here for unit tests to work.
+  unitTestRaft.addDiscoveredNode(unitTestRaft.id, unitAddr)
 })
 
 func startListener() (*net.TCPListener, string) {
@@ -86,14 +90,14 @@ var _ = AfterSuite(func() {
   cleanRafts()
 })
 
-func startRaft(id uint64, disco discovery.Discovery, listener *net.TCPListener, dir string) (*Service, error) {
+func startRaft(disco discovery.Discovery, listener *net.TCPListener, dir string) (*Service, error) {
   mux := http.NewServeMux()
   comm, err := communication.StartHTTPCommunication(mux)
   if err != nil { return nil, err }
   stor, err := storage.CreateRocksDBStorage(dir, 1000)
   if err != nil { return nil, err }
 
-  raft, err := StartRaft(id, comm, disco, stor, &dummyStateMachine{})
+  raft, err := StartRaft(comm, disco, stor, &dummyStateMachine{})
   if err != nil { return nil, err }
   comm.SetRaft(raft)
   go func(){

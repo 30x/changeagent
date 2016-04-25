@@ -17,6 +17,7 @@ const (
   RequestVoteURI = "/raft/requestvote"
   AppendURI = "/raft/append"
   ProposeURI = "/raft/propose"
+  DiscoveryURI = "/raft/id"
   RequestTimeout = 10 * time.Second
 )
 
@@ -33,11 +34,33 @@ func StartHTTPCommunication(mux *http.ServeMux) (*HTTPCommunication, error) {
   mux.HandleFunc(RequestVoteURI, comm.handleRequestVote)
   mux.HandleFunc(AppendURI, comm.handleAppend)
   mux.HandleFunc(ProposeURI, comm.handlePropose)
+  mux.HandleFunc(DiscoveryURI, comm.handleDiscovery)
   return &comm, nil
 }
 
 func (h *HTTPCommunication) SetRaft(raft Raft) {
   h.raft = raft
+}
+
+func (h *HTTPCommunication) Discover(addr string) (uint64, error) {
+  uri := fmt.Sprintf("http://%s%s", addr, DiscoveryURI)
+
+  resp, err := httpClient.Get(uri)
+  if err != nil { return 0, err }
+
+  defer resp.Body.Close()
+  if resp.StatusCode != 200 {
+    return 0, fmt.Errorf("HTTP error getting node ID: %d %s", resp.StatusCode, resp.Status)
+  }
+
+  respBody, err := ioutil.ReadAll(resp.Body)
+  if err != nil { return 0, err }
+
+  var respPb DiscoveryResponsePb
+  err = proto.Unmarshal(respBody, &respPb)
+  if err != nil { return 0, err }
+
+  return respPb.GetNodeId(), nil
 }
 
 func (h *HTTPCommunication) RequestVote(addr string, req VoteRequest, ch chan<- VoteResponse) {
@@ -94,6 +117,7 @@ func (h *HTTPCommunication) sendVoteRequest(addr string, req VoteRequest, ch cha
 
   voteResp := VoteResponse{
     NodeID: respPb.GetNodeId(),
+    NodeAddress: addr,
     Term: respPb.GetTerm(),
     VoteGranted: respPb.GetVoteGranted(),
   }
@@ -357,6 +381,29 @@ func (h *HTTPCommunication) handlePropose(resp http.ResponseWriter, req *http.Re
   if err != nil {
     errMsg := err.Error()
     respPb.Error = &errMsg
+  }
+
+  respBody, err := proto.Marshal(&respPb)
+  if err != nil {
+    resp.WriteHeader(http.StatusInternalServerError)
+    return
+  }
+
+  resp.Header().Set(http.CanonicalHeaderKey("content-type"), ContentType)
+  resp.Write(respBody)
+}
+
+func (h *HTTPCommunication) handleDiscovery(resp http.ResponseWriter, req *http.Request) {
+  defer req.Body.Close()
+
+  if req.Method != "GET" {
+    resp.WriteHeader(http.StatusMethodNotAllowed)
+    return
+  }
+
+  nodeID := h.raft.MyID()
+  respPb := DiscoveryResponsePb{
+    NodeId: &nodeID,
   }
 
   respBody, err := proto.Marshal(&respPb)

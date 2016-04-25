@@ -21,25 +21,21 @@ type rpcResponse struct {
 }
 
 type raftPeer struct {
-  id uint64
   address string
   r *Service
   proposals chan uint64
   pokes chan bool
   changeChan chan<- peerMatchResult
-  addressChan chan  string
   stopChan chan bool
 }
 
-func startPeer(id uint64, address string, r *Service, changes chan<- peerMatchResult) *raftPeer {
+func startPeer(address string, r *Service, changes chan<- peerMatchResult) *raftPeer {
   p := &raftPeer{
-    id: id,
     address: address,
     r: r,
     proposals: make(chan uint64, 1000),
     pokes: make(chan bool, 1),
     changeChan: changes,
-    addressChan: make(chan string, 1),
     stopChan: make(chan bool, 1),
   }
   go p.peerLoop()
@@ -52,10 +48,6 @@ func (p *raftPeer) stop() {
 
 func (p *raftPeer) propose(ix uint64) {
   p.proposals <- ix
-}
-
-func (p *raftPeer) updateAddress(addr string) {
-  p.addressChan <- addr
 }
 
 // Wake up the loop and send another heartbeat with a new commit index
@@ -84,12 +76,12 @@ func (p *raftPeer) peerLoop() {
   failureDelay := false
 
   for {
-    glog.V(2).Infof("Peer %d: next = %d desired = %d", p.id, nextIndex, desiredIndex)
+    glog.V(2).Infof("Peer %s: next = %d desired = %d", p.address, nextIndex, desiredIndex)
 
     if !rpcRunning && !failureDelay && (desiredIndex > nextIndex) {
       err := p.sendUpdates(desiredIndex, nextIndex, responseChan)
       if err != nil {
-        glog.V(2).Infof("Error sending updates to peer %d: %s", p.id, err)
+        glog.V(2).Infof("Error sending updates to peer %s: %s", p.address, err)
       }
       rpcRunning = true
       hbTimeout.Reset(HeartbeatTimeout)
@@ -128,14 +120,8 @@ func (p *raftPeer) peerLoop() {
         failureDelay = true
       }
 
-    case newAddress := <- p.addressChan:
-      if newAddress != p.address {
-        glog.Infof("Updating address of node %d to %s", p.id, newAddress)
-        p.address = newAddress
-      }
-
     case <- p.stopChan:
-      glog.V(2).Infof("Peer %d stopping", p.id)
+      glog.V(2).Infof("Peer at %s stopping", p.address)
       return
     }
   }
@@ -147,11 +133,11 @@ func (p *raftPeer) handleRPCResult(resp rpcResponse) uint64 {
     // If successful: update nextIndex and matchIndex for
     // follower (§5.3)
     newIndex := resp.newIndex
-    glog.V(2).Infof("Client %d now up to date with index %d", p.id, resp.newIndex)
+    glog.V(2).Infof("Peer at %s now up to date with index %d", p.address, resp.newIndex)
 
     // Send a notification back to the main loop so it can update its own indices.
     change := peerMatchResult{
-      id: p.id,
+      address: p.address,
       newMatch: newIndex,
     }
     p.changeChan <- change
@@ -185,7 +171,7 @@ func (p *raftPeer) sendHeartbeat(index uint64, rc chan rpcResponse) {
     LeaderCommit: p.r.GetCommitIndex(),
   }
 
-  glog.V(2).Infof("Sending heartbeat for index %d to peer %d", index, p.id)
+  glog.V(2).Infof("Sending heartbeat for index %d to peer at %s", index, p.address)
 
   go func() {
     success, err := p.r.sendAppend(p.address, ar)
@@ -219,7 +205,7 @@ func (p *raftPeer) sendUpdates(desired uint64, next uint64, rc chan rpcResponse)
   allEntries, err := p.r.stor.GetEntries(start, uint(desired - start),
     func(e *storage.Entry) bool { return true })
   if err != nil {
-    glog.V(2).Infof("Error getting entries for peer %d: %v", p.id, err)
+    glog.V(2).Infof("Error getting entries for peer at %s: %v", p.address, err)
     return err
   }
   glog.V(2).Infof("Got %d updates", len(allEntries))
@@ -240,8 +226,8 @@ func (p *raftPeer) sendUpdates(desired uint64, next uint64, rc chan rpcResponse)
     sendEntries = allEntries[1:]
   }
 
-  glog.V(2).Infof("Sending %d entries between %d and %d to %d",
-    len(sendEntries), next, desired, p.id)
+  glog.V(2).Infof("Sending %d entries between %d and %d to %s",
+    len(sendEntries), next, desired, p.address)
 
   ar := communication.AppendRequest{
     Term: p.r.GetCurrentTerm(),

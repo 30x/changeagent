@@ -14,6 +14,7 @@ It has these top-level messages:
 	AppendRequestPb
 	AppendResponsePb
 	ProposalResponsePb
+	DiscoveryResponsePb
 */
 package communication
 
@@ -200,4 +201,20 @@ func (m *ProposalResponsePb) GetError() string {
 		return *m.Error
 	}
 	return ""
+}
+
+type DiscoveryResponsePb struct {
+	NodeId           *uint64 `protobuf:"varint,1,req,name=nodeId" json:"nodeId,omitempty"`
+	XXX_unrecognized []byte  `json:"-"`
+}
+
+func (m *DiscoveryResponsePb) Reset()         { *m = DiscoveryResponsePb{} }
+func (m *DiscoveryResponsePb) String() string { return proto.CompactTextString(m) }
+func (*DiscoveryResponsePb) ProtoMessage()    {}
+
+func (m *DiscoveryResponsePb) GetNodeId() uint64 {
+	if m != nil && m.NodeId != nil {
+		return *m.NodeId
+	}
+	return 0
 }

@@ -2,7 +2,6 @@ package raft
 
 import (
   "errors"
-  "fmt"
   "sync"
   "sync/atomic"
   "time"
@@ -76,17 +75,21 @@ func (r State) String() string {
 
 type Service struct {
   id uint64
+  localAddress atomic.Value
   state int32
   leaderID uint64
   comm communication.Communication
   disco discovery.Discovery
+  nodeDisco *nodeDiscovery
   nodeConfig atomic.Value
-  configChanges <-chan int
+  configChanges <-chan bool
   stor storage.Storage
   stopChan chan chan bool
   voteCommands chan voteCommand
   appendCommands chan appendCommand
   proposals chan proposalCommand
+  discoveredNodes map[uint64]string
+  discoveredAddresses map[string]uint64
   latch sync.Mutex
   followerOnly bool
   currentTerm uint64
@@ -120,14 +123,14 @@ type proposalCommand struct {
 
 var raftRand = makeRand()
 
-func StartRaft(id uint64,
-               comm communication.Communication,
+func StartRaft(comm communication.Communication,
                disco discovery.Discovery,
                stor storage.Storage,
                state StateMachine) (*Service, error) {
   r := &Service{
     state: int32(Follower),
     comm: comm,
+    localAddress: atomic.Value{},
     nodeConfig: atomic.Value{},
     stor: stor,
     disco: disco,
@@ -135,22 +138,23 @@ func StartRaft(id uint64,
     voteCommands: make(chan voteCommand, 1),
     appendCommands: make(chan appendCommand, 1),
     proposals: make(chan proposalCommand, 100),
+    discoveredNodes: make(map[uint64]string),
+    discoveredAddresses: make(map[string]uint64),
     latch: sync.Mutex{},
     followerOnly: false,
     appliedTracker: CreateTracker(),
     stateMachine: state,
   }
 
-  storedID, err := stor.GetMetadata(LocalIDKey)
+  nodeID, err := stor.GetMetadata(LocalIDKey)
   if err != nil { return nil, err }
-  if storedID == 0 {
-    err = stor.SetMetadata(LocalIDKey, id)
+  if nodeID == 0 {
+    nodeID = uint64(raftRand.Int63())
+    err = stor.SetMetadata(LocalIDKey, nodeID)
     if err != nil { return nil, err }
-  } else if id != storedID {
-    return nil, fmt.Errorf("ID in data store %d does not match requested value %d",
-      storedID, id)
   }
-  r.id = id
+  r.id = nodeID
+  glog.Infof("Node %d starting", r.id)
 
   err = r.loadCurrentConfig(disco, stor)
   if err != nil { return nil, err }
@@ -168,6 +172,8 @@ func StartRaft(id uint64,
   }
 
   r.configChanges = disco.Watch()
+
+  r.nodeDisco = startNodeDiscovery(disco, comm, r)
 
   go r.mainLoop()
 
@@ -203,6 +209,7 @@ func (r *Service) Close() {
     <- done
   }
   r.appliedTracker.Close()
+  r.nodeDisco.stop()
 }
 
 func (r *Service) cleanup() {
@@ -394,6 +401,34 @@ func (r *Service) setNodeConfig(newCfg *discovery.NodeConfig) error {
   if err != nil { return err }
   r.nodeConfig.Store(newCfg)
   return nil
+}
+
+func (r *Service) addDiscoveredNode(id uint64, addr string) {
+  r.latch.Lock()
+  r.discoveredNodes[id] = addr
+  r.discoveredAddresses[addr] = id
+  r.latch.Unlock()
+  if id == r.id {
+    r.localAddress.Store(&addr)
+  }
+}
+
+func (r *Service) getNodeAddress(id uint64) string {
+  r.latch.Lock()
+  defer r.latch.Unlock()
+  return r.discoveredNodes[id]
+}
+
+func (r *Service) getNodeID(address string) uint64 {
+  r.latch.Lock()
+  defer r.latch.Unlock()
+  return r.discoveredAddresses[address]
+}
+
+func (r *Service) getLocalAddress() string {
+  addr := r.localAddress.Load().(*string)
+  if addr == nil { return "" }
+  return *addr
 }
 
 // Used only in unit testing. Forces us to never become a leader.

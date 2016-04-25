@@ -28,6 +28,7 @@ type VoteRequest struct {
 
 type VoteResponse struct {
   NodeID uint64
+  NodeAddress string
   Term uint64
   VoteGranted bool
   Error error
@@ -89,6 +90,7 @@ func (a *ProposalResponse) String() string {
 
 type Communication interface {
   SetRaft(raft Raft)
+  Discover(address string) (uint64, error)
   RequestVote(address string, req VoteRequest, ch chan<- VoteResponse)
   Append(address string, req AppendRequest) (AppendResponse, error)
   Propose(address string, e storage.Entry) (ProposalResponse, error)

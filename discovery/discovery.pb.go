@@ -9,7 +9,6 @@ It is generated from these files:
 	discovery.proto
 
 It has these top-level messages:
-	NodePb
 	NodeListPb
 	NodeConfigPb
 */
@@ -24,56 +23,24 @@ var _ = proto.Marshal
 var _ = fmt.Errorf
 var _ = math.Inf
 
-type NodePb struct {
-	Id               *uint64 `protobuf:"varint,1,req,name=id" json:"id,omitempty"`
-	Address          *string `protobuf:"bytes,2,req,name=address" json:"address,omitempty"`
-	State            *int32  `protobuf:"varint,3,req,name=state" json:"state,omitempty"`
-	XXX_unrecognized []byte  `json:"-"`
-}
-
-func (m *NodePb) Reset()         { *m = NodePb{} }
-func (m *NodePb) String() string { return proto.CompactTextString(m) }
-func (*NodePb) ProtoMessage()    {}
-
-func (m *NodePb) GetId() uint64 {
-	if m != nil && m.Id != nil {
-		return *m.Id
-	}
-	return 0
-}
-
-func (m *NodePb) GetAddress() string {
-	if m != nil && m.Address != nil {
-		return *m.Address
-	}
-	return ""
-}
-
-func (m *NodePb) GetState() int32 {
-	if m != nil && m.State != nil {
-		return *m.State
-	}
-	return 0
-}
-
 type NodeListPb struct {
-	New              []*NodePb `protobuf:"bytes,1,rep,name=new" json:"new,omitempty"`
-	Old              []*NodePb `protobuf:"bytes,2,rep,name=old" json:"old,omitempty"`
-	XXX_unrecognized []byte    `json:"-"`
+	New              []string `protobuf:"bytes,1,rep,name=new" json:"new,omitempty"`
+	Old              []string `protobuf:"bytes,2,rep,name=old" json:"old,omitempty"`
+	XXX_unrecognized []byte   `json:"-"`
 }
 
 func (m *NodeListPb) Reset()         { *m = NodeListPb{} }
 func (m *NodeListPb) String() string { return proto.CompactTextString(m) }
 func (*NodeListPb) ProtoMessage()    {}
 
-func (m *NodeListPb) GetNew() []*NodePb {
+func (m *NodeListPb) GetNew() []string {
 	if m != nil {
 		return m.New
 	}
 	return nil
 }
 
-func (m *NodeListPb) GetOld() []*NodePb {
+func (m *NodeListPb) GetOld() []string {
 	if m != nil {
 		return m.Old
 	}

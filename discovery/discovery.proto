@@ -1,14 +1,8 @@
 package discovery;
 
-message NodePb {
-  required uint64 id = 1;
-  required string address = 2;
-  required int32 state = 3;
-}
-
 message NodeListPb {
-  repeated NodePb new = 1;
-  repeated NodePb old = 2;
+  repeated string new = 1;
+  repeated string old = 2;
 }
 
 message NodeConfigPb {

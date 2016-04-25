@@ -2,34 +2,15 @@ package discovery
 
 import (
   "bufio"
-  "errors"
-  "fmt"
   "io"
   "os"
-  "regexp"
-  "strconv"
+  "strings"
   "time"
   "github.com/golang/glog"
 )
 
-var fileLine = regexp.MustCompile("^([0-9]+)\\s(.+)")
-
-func CreateStaticDiscovery(addrs []string) *Service {
-  var id uint64 = 1
-  var nodes []Node
-
-  for _, na := range(addrs) {
-    nn := Node{
-      ID: id,
-      Address: na,
-      State: StateMember,
-    }
-    id++
-    nodes = append(nodes, nn)
-  }
-
+func CreateStaticDiscovery(nodes []string) *Service {
   ret := createImpl(nodes, nil)
-
   return ret
 }
 
@@ -90,44 +71,29 @@ func (r *fileReader) readLoop() {
   }
 }
 
-func readFile(fileName string) ([]Node, error) {
+func readFile(fileName string) ([]string, error) {
   f, err := os.Open(fileName)
   if err != nil { return nil, err }
   defer f.Close()
 
   rdr := bufio.NewReader(f)
-  var nodes []Node
+  var nodes []string
 
   for {
-    line, prefix, err := rdr.ReadLine()
+    line, err := rdr.ReadString('\n')
     if err == io.EOF {
       break
     }
     if err != nil {
       return nil, err
     }
-    if prefix {
-      return nil, errors.New("Line too long")
-    }
-    if string(line) == "" {
+
+    addr := strings.TrimSpace(line)
+    if addr == "" {
       continue
     }
 
-    matches := fileLine.FindStringSubmatch(string(line))
-    if matches == nil {
-      return nil, fmt.Errorf("Invalid input line: \"%s\"", string(line))
-    }
-
-    id, err := strconv.ParseUint(matches[1], 10, 64)
-    if err != nil {
-      return nil, fmt.Errorf("Invalid node ID: %s", matches[1])
-    }
-
-    nn := Node{
-      ID: id,
-      Address: matches[2],
-    }
-    nodes = append(nodes, nn)
+    nodes = append(nodes, addr)
   }
   return nodes, nil
 }

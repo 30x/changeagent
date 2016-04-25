@@ -31,3 +31,7 @@ message ProposalResponsePb {
   required uint64 newIndex = 1;
   optional string error = 2;
 }
+
+message DiscoveryResponsePb {
+  required uint64 nodeId = 1;
+}

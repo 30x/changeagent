@@ -7,10 +7,10 @@ import (
 
 type Service struct {
   latch *sync.Mutex
-  nodes []Node
+  nodes []string
   spi discoverySpi
-  watcherChan chan chan int
-  changeChan chan []Node
+  watcherChan chan chan bool
+  changeChan chan []string
   stopChan chan chan bool
 }
 
@@ -21,14 +21,14 @@ type discoverySpi interface {
 /*
  * SPIs must call this to create the thing that they return from their "create" methods.
  */
-func createImpl(nodes []Node, spi discoverySpi) *Service {
+func createImpl(nodes []string, spi discoverySpi) *Service {
   disco := &Service{
     latch: &sync.Mutex{},
     nodes: nodes,
     spi: spi,
     stopChan: make(chan chan bool, 1),
-    watcherChan: make(chan chan int),
-    changeChan: make(chan []Node, 1),
+    watcherChan: make(chan chan bool),
+    changeChan: make(chan []string, 1),
   }
   go disco.discoveryLoop()
   return disco
@@ -40,74 +40,54 @@ func (d *Service) GetCurrentConfig() *NodeConfig {
   return &NodeConfig{Current: &cur}
 }
 
-func (d *Service) CompareCurrentConfig(oldCfg *NodeConfig) int {
-  return getChangeType(d.getNodes(), oldCfg.Current.New)
-}
-
-func (d *Service) getNodes() []Node {
+func (d *Service) getNodes() []string {
   d.latch.Lock()
   defer d.latch.Unlock()
   return d.nodes
 }
 
-func (d *Service) setNodes(newNodes []Node) {
+func (d *Service) setNodes(newNodes []string) {
   d.latch.Lock()
   d.nodes = newNodes
   d.latch.Unlock()
 }
 
-func (d *Service) SetNode(newNode Node) {
+func (d *Service) AddNode(newNode string) {
   d.latch.Lock()
   defer d.latch.Unlock()
 
-  var newNodes []Node
-  added := false
+  found := false
   for _, n := range(d.nodes) {
-    if n.ID == newNode.ID {
-      newNodes = append(newNodes, newNode)
-      added = true
-    } else {
-      newNodes = append(newNodes, n)
+    if n == newNode {
+      found = true
     }
   }
-  if !added {
-    newNodes = append(newNodes, newNode)
+  if !found {
+    newNodes := append(d.nodes, newNode)
+    d.updateNodes(newNodes)
   }
-  d.updateNodes(newNodes)
 }
 
-func (d *Service) DeleteNode(id uint64) {
+func (d *Service) DeleteNode(oldNode string) {
   d.latch.Lock()
   defer d.latch.Unlock()
 
-  var newNodes []Node
+  var newNodes []string
   for i := range(d.nodes) {
-    if d.nodes[i].ID != id {
+    if d.nodes[i] != oldNode {
       newNodes = append(newNodes, d.nodes[i])
     }
   }
   d.updateNodes(newNodes)
 }
 
-func (d *Service) GetAddress(id uint64) string {
-  d.latch.Lock()
-  defer d.latch.Unlock()
-
-  for _, n := range(d.nodes) {
-    if n.ID == id {
-      return n.Address
-    }
-  }
-  return ""
-}
-
-func (d *Service) Watch() <-chan int {
-  watchChan := make(chan int, 1)
+func (d *Service) Watch() <-chan bool {
+  watchChan := make(chan bool, 1)
   d.watcherChan <- watchChan
   return watchChan
 }
 
-func (d *Service) updateNodes(newNodes []Node) {
+func (d *Service) updateNodes(newNodes []string) {
   d.changeChan <- newNodes
 }
 
@@ -123,7 +103,7 @@ func (d *Service) Close() {
 
 func (d *Service) discoveryLoop() {
   running := true
-  var watchers [](chan int)
+  var watchers [](chan bool)
 
   for running {
     select {
@@ -132,17 +112,14 @@ func (d *Service) discoveryLoop() {
        watchers = append(watchers, w)
 
     case c := <- d.changeChan:
-      changeType := getChangeType(d.getNodes(), c)
-      glog.V(2).Infof("Got a new change of type %d", changeType)
       if (glog.V(3)) {
         glog.Infof("Old node list: %s", d.getNodes())
         glog.Infof("New node list: %s", c)
       }
-      if changeType != 0 {
-        d.setNodes(c)
-        for _, w := range (watchers) {
-          w <- changeType
-        }
+
+      d.setNodes(c)
+      for _, w := range (watchers) {
+        w <- true
       }
 
     case stopper := <- d.stopChan:

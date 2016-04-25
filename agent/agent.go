@@ -36,8 +36,7 @@ const (
   DBCacheSize = 10 * 1024 * 1024
 )
 
-func StartChangeAgent(nodeID uint64,
-                      disco discovery.Discovery,
+func StartChangeAgent(disco discovery.Discovery,
                       dbFile string,
                       httpMux *http.ServeMux) (*ChangeAgent, error) {
   comm, err := communication.StartHTTPCommunication(httpMux)
@@ -50,7 +49,7 @@ func StartChangeAgent(nodeID uint64,
     router: mux.NewRouter(),
   }
 
-  raft, err := raft.StartRaft(nodeID, comm, disco, stor, agent)
+  raft, err := raft.StartRaft(comm, disco, stor, agent)
   if err != nil { return nil, err }
   agent.raft = raft
   comm.SetRaft(raft)

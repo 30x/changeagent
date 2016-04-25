@@ -6,33 +6,13 @@ import (
   "github.com/golang/protobuf/proto"
 )
 
+//go:generate protoc --go_out=. discovery.proto
+
 /*
  * This module contains a set of discovery services that make it easier to
  * learn which servers are configured as part of a cluster, and make it easier
  * to know when that configuration changes.
  */
-
-const (
-  StateNew = iota
-  StateCatchup = iota
-  StateMember = iota
-  StateDeleting = iota
-
-  // Indicate that the node list has changed
-  NodesChanged = iota
-  // Indicate that the addresses of certain nodes have changed but not the nodes
-  AddressesChanged = iota
-)
-
-/*
- * A single node in the system. Nodes have unique IDs, and an address which is currently a host:port
- * string, followed by a state that helps us track whether they are done initializing.
- */
-type Node struct {
-  ID uint64
-  Address string
-  State int
-}
 
 /*
  * A NodeList is a list of nodes that represents the current config state. It has a "new" and "old"
@@ -40,8 +20,8 @@ type Node struct {
  * change, both lists are set and we are in a mode of joint consensus.
  */
 type NodeList struct {
-  New []Node
-  Old []Node
+  New []string
+  Old []string
 }
 
 /*
@@ -62,18 +42,9 @@ type Discovery interface {
   GetCurrentConfig() *NodeConfig
 
   /*
-   * Compare the current configuration to the supplied configuration and return the same
-   * "change type" that we'd return to the "watch" channel. We use this in case we
-   * missed some notifications.
+   * Return a channel that will be notified whenever the configuration changes.
    */
-  CompareCurrentConfig(oldCfg *NodeConfig) int
-
-  /*
-   * Return a channel that will be notified whenever the configuration changes. If the
-   * list of nodes changed, then it will receive the value "NodesChanged." Otherwise it
-   * will receive the value "AddressesChanged"
-   */
-  Watch() <-chan int
+  Watch() <-chan bool
 
   /*
    * Stop any resources created by the service.
@@ -83,12 +54,12 @@ type Discovery interface {
   /*
    * For testing only: Add a new node to the config, or update an existing node.
    */
-  SetNode(n Node)
+  AddNode(a string)
 
   /*
    * For testing only: Delete a node.
    */
-  DeleteNode(id uint64)
+  DeleteNode(a string)
 }
 
 /*
@@ -128,41 +99,20 @@ func DecodeConfig(msg []byte) (*NodeConfig, error) {
  * Return a deduped list of all the nodes in the current config.
  * This will return the latest node list if we are in joint consensus mode.
  */
-func (c *NodeConfig) GetUniqueNodes() []Node {
-  nl := make(map[uint64]Node)
+func (c *NodeConfig) GetUniqueNodes() []string {
+  nl := make(map[string]string)
   if c.Current != nil {
     for _, n := range(c.Current.Old) {
-      nl[n.ID] = n
+      nl[n] = n
     }
     for _, n := range(c.Current.New) {
-      nl[n.ID] = n
+      nl[n] = n
     }
   }
 
-  var ret []Node
+  var ret []string
   for _, n := range(nl) {
     ret = append(ret, n)
-  }
-  return ret
-}
-
-/*
- * Find the address of a node in the specific config, or return an empty string.
- * Check both old and new configurations so that we get the newest address first.
- */
-func (c *NodeConfig) GetAddress(id uint64) string {
-  ret := ""
-  if c.Current != nil {
-    for i := range(c.Current.Old) {
-      if c.Current.Old[i].ID == id {
-        ret = c.Current.Old[i].Address
-      }
-    }
-    for i := range(c.Current.New) {
-      if c.Current.New[i].ID == id {
-        ret = c.Current.New[i].Address
-      }
-    }
   }
   return ret
 }
@@ -170,10 +120,10 @@ func (c *NodeConfig) GetAddress(id uint64) string {
 func marshalNodeList(nl *NodeList) *NodeListPb {
   listPb := NodeListPb{}
   if len(nl.New) > 0 {
-    listPb.New = marshalNodes(nl.New)
+    listPb.New = nl.New
   }
   if len(nl.Old) > 0 {
-    listPb.Old = marshalNodes(nl.Old)
+    listPb.Old = nl.Old
   }
   return &listPb
 }
@@ -181,66 +131,23 @@ func marshalNodeList(nl *NodeList) *NodeListPb {
 func unmarshalNodeList(nl *NodeListPb) *NodeList {
   ret := NodeList{}
   if nl.New != nil {
-    ret.New = unmarshalNodes(nl.New)
+    ret.New = nl.GetNew()
   }
   if nl.Old != nil {
-    ret.Old = unmarshalNodes(nl.Old)
+    ret.Old = nl.GetOld()
   }
   return &ret
-}
-
-func marshalNodes(nodes []Node) []*NodePb {
-  var nl []*NodePb
-  for _, n := range(nodes) {
-    curNode := marshalNode(n)
-    nl = append(nl, curNode)
-  }
-  return nl
-}
-
-func marshalNode(n Node) *NodePb {
-  state := int32(n.State)
-  curNode := NodePb{
-    Id: &n.ID,
-    Address: &n.Address,
-    State: &state,
-  }
-  return &curNode
-}
-
-func unmarshalNodes(nl []*NodePb) []Node {
-  var nodes []Node
-  for _, n := range(nl) {
-    nn := Node{
-      ID: n.GetId(),
-      Address: n.GetAddress(),
-      State: int(n.GetState()),
-    }
-    nodes = append(nodes, nn)
-  }
-  return nodes
-}
-
-func (n Node) String() string {
-  return fmt.Sprintf("{ Id: %d State: %d Address: %s }", n.ID, n.State, n.Address)
-}
-
-func (n Node) Equal(o Node) bool {
-  if n.ID != o.ID { return false }
-  if n.State != o.State { return false }
-  if n.Address != o.Address { return false }
-  return true
 }
 
 func (n *NodeList) String() string {
   buf := &bytes.Buffer{}
   fmt.Fprintf(buf, "New: [")
   for _, cn := range(n.New) {
-    fmt.Fprintf(buf, cn.String())
+    fmt.Fprintf(buf, cn)
   }
   fmt.Fprintf(buf, "], Old: [")
   for _, cn := range(n.Old) {
-    fmt.Fprintf(buf, cn.String())
+    fmt.Fprintf(buf, cn)
   }
   fmt.Fprintf(buf, "]")
   return buf.String()
@@ -250,10 +157,10 @@ func (n *NodeList) Equal(o *NodeList) bool {
   if len(n.New) != len(o.New) { return false }
   if len(n.Old) != len(o.Old) { return false }
   for i := range (n.New) {
-    if !n.New[i].Equal(o.New[i]) { return false }
+    if n.New[i] != o.New[i] { return false }
   }
   for i := range(n.Old) {
-    if !n.Old[i].Equal(o.Old[i]) { return false }
+    if n.Old[i] != o.Old[i] { return false }
   }
   return true
 }

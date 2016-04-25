@@ -91,19 +91,24 @@ func (r *Service) sendVotes(state *raftState, index uint64, rc chan<- voteResult
 
   // Send off all the votes. Each will run in a goroutine and send us the result in a channel
   for _, node := range(allNodes) {
-    if node.ID == r.id {
+    // We won't always know our own address but if we do, skip
+    if r.getNodeID(node) == r.id {
       votes++
       continue
     }
     rc := make(chan communication.VoteResponse)
     responseChannels = append(responseChannels, rc)
-    r.comm.RequestVote(node.Address, vr, rc)
+    r.comm.RequestVote(node, vr, rc)
   }
 
   // Pick up all the response channels. This will block until we get all responses.
   for _, respChan := range(responseChannels) {
     vresp := <-respChan
-    responses = append(responses, vresp)
+    // Record node id <-> address mapping in case we don't know
+    r.addDiscoveredNode(vresp.NodeID, vresp.NodeAddress)
+    if vresp.NodeID != r.id {
+      responses = append(responses, vresp)
+    }
   }
 
   // Calculate whether we have enough votes. Take leader changes (joint consensus) into account.
@@ -119,24 +124,24 @@ func (r *Service) sendVotes(state *raftState, index uint64, rc chan<- voteResult
 
 func (r *Service) countVotes(responses []communication.VoteResponse, cfg *discovery.NodeConfig) bool {
   // Sort votes into a map so that we can process the rest.
-  voteMap := make(map[uint64]bool)
+  voteMap := make(map[string]bool)
 
   // Map votes from peers
   for _, resp := range(responses) {
     if resp.Error != nil {
       glog.V(2).Infof("Node %d: Error: %s", resp.NodeID, resp.Error)
-      voteMap[resp.NodeID] = false
+      voteMap[resp.NodeAddress] = false
     } else if resp.VoteGranted {
       glog.V(2).Infof("Node %d: Voted yes", resp.NodeID)
-      voteMap[resp.NodeID] = true
+      voteMap[resp.NodeAddress] = true
     } else {
       glog.V(2).Infof("Node %d: Voted no", resp.NodeID)
-      voteMap[resp.NodeID] = false
+      voteMap[resp.NodeAddress] = false
     }
   }
 
   // Don't forget to vote for ourself!
-  voteMap[r.id] = true
+  voteMap[r.getLocalAddress()] = true
 
   if len(cfg.Current.Old) > 0 {
     // Joint consensus mode. Need both sets of nodes to vote yes.
@@ -148,11 +153,11 @@ func (r *Service) countVotes(responses []communication.VoteResponse, cfg *discov
   return countNodeListVotes(voteMap, cfg.Current.New)
 }
 
-func countNodeListVotes(voteMap map[uint64]bool, nodes []discovery.Node) bool {
+func countNodeListVotes(voteMap map[string]bool, nodes []string) bool {
   votes := 0
 
   for _, node := range(nodes) {
-    if voteMap[node.ID] {
+    if voteMap[node] {
       votes++
     }
   }

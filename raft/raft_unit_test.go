@@ -24,24 +24,6 @@ import (
  */
 
 var _ = Describe("Raft Unit Tests", func() {
-  nodeSelf := discovery.Node{
-    ID: 1,
-  }
-  node1 := discovery.Node{
-    ID: 10,
-  }
-  node2 := discovery.Node{
-    ID: 20,
-  }
-  node3 := discovery.Node{
-    ID: 30,
-  }
-  node4 := discovery.Node{
-    ID: 40,
-  }
-  node5 := discovery.Node{
-    ID: 50,
-  }
 
   initialized := false
   var lastIndex uint64 = 3
@@ -332,16 +314,16 @@ var _ = Describe("Raft Unit Tests", func() {
 
   It("No Commit Too Old", func() {
     cur := discovery.NodeList{
-      New: []discovery.Node{nodeSelf, node1, node2, node3, node4},
+      New: []string{"nodeSelf", "node1", "node2", "node3", "node4"},
     }
     cfg := &discovery.NodeConfig{
       Current: &cur,
     }
-    matches := map[uint64]uint64{
-      10: 0,
-      20: 0,
-      30: 0,
-      40: 0,
+    matches := map[string]uint64{
+      "node1": 0,
+      "node2": 0,
+      "node3": 0,
+      "node4": 0,
     }
     state := &raftState{
       peerMatches: matches,
@@ -352,16 +334,16 @@ var _ = Describe("Raft Unit Tests", func() {
 
   It("No commit No Consensus", func() {
     cur := discovery.NodeList{
-      New: []discovery.Node{nodeSelf, node1, node2, node3, node4},
+      New: []string{"nodeSelf", "node1", "node2", "node3", "node4"},
     }
     cfg := &discovery.NodeConfig{
       Current: &cur,
     }
-    matches := map[uint64]uint64{
-      10: lastIndex,
-      20: 1,
-      30: 1,
-      40: 1,
+    matches := map[string]uint64{
+      "node1": lastIndex,
+      "node2": 1,
+      "node3": 1,
+      "node4": 1,
     }
     state := &raftState{
       peerMatches: matches,
@@ -376,16 +358,16 @@ var _ = Describe("Raft Unit Tests", func() {
     unitTestRaft.setCommitIndex(lastIndex - 2)
 
     cur := discovery.NodeList{
-      New: []discovery.Node{nodeSelf, node1, node2, node3, node4},
+      New: []string{"nodeSelf", "node1", "node2", "node3", "node4"},
     }
     cfg := &discovery.NodeConfig{
       Current: &cur,
     }
-    matches := map[uint64]uint64{
-      10: lastIndex,
-      20: lastIndex,
-      30: lastIndex,
-      40: 1,
+    matches := map[string]uint64{
+      "node1": lastIndex,
+      "node2": lastIndex,
+      "node3": lastIndex,
+      "node4": 1,
     }
     state := &raftState{
       peerMatches: matches,
@@ -400,15 +382,15 @@ var _ = Describe("Raft Unit Tests", func() {
     unitTestRaft.setCommitIndex(lastIndex - 2)
 
     cur := discovery.NodeList{
-      New: []discovery.Node{nodeSelf, node1, node2, node3},
+      New: []string{"nodeSelf", "node1", "node2", "node3"},
     }
     cfg := &discovery.NodeConfig{
       Current: &cur,
     }
-    matches := map[uint64]uint64{
-      10: lastIndex - 2,
-      20: lastIndex - 1,
-      30: lastIndex,
+    matches := map[string]uint64{
+      "node1": lastIndex - 2,
+      "node2": lastIndex - 1,
+      "node3": lastIndex,
     }
     state := &raftState{
       peerMatches: matches,
@@ -423,16 +405,16 @@ var _ = Describe("Raft Unit Tests", func() {
     unitTestRaft.setCommitIndex(lastIndex - 2)
 
     cur := discovery.NodeList{
-      New: []discovery.Node{nodeSelf, node1, node2, node3, node4},
+      New: []string{"nodeSelf", "node1", "node2", "node3", "node4"},
     }
     cfg := &discovery.NodeConfig{
       Current: &cur,
     }
-    matches := map[uint64]uint64{
-      10: 1,
-      20: lastIndex,
-      30: lastIndex - 1,
-      40: lastIndex - 1,
+    matches := map[string]uint64{
+      "node1": 1,
+      "node2": lastIndex,
+      "node3": lastIndex -1,
+      "node4": lastIndex - 1,
     }
     state := &raftState{
       peerMatches: matches,
@@ -447,8 +429,8 @@ var _ = Describe("Raft Unit Tests", func() {
     unitTestRaft.setCommitIndex(lastIndex - 2)
 
     cur := discovery.NodeList{
-      New: []discovery.Node{nodeSelf, node1, node2, node3, node4, node5},
-      Old: []discovery.Node{nodeSelf, node1, node2},
+      New: []string{"nodeSelf", "node1", "node2", "node3", "node4", "node5"},
+      Old: []string{"nodeSelf", "node1", "node2"},
     }
     cfg := &discovery.NodeConfig{
       Current: &cur,
@@ -457,12 +439,12 @@ var _ = Describe("Raft Unit Tests", func() {
     li, _ := unitTestRaft.GetLastIndex()
     fmt.Fprintf(GinkgoWriter, "Joint consensus. lastIndex = %d last applied = %d\n",
       lastIndex,li)
-    matches := map[uint64]uint64{
-      10: lastIndex - 2,
-      20: lastIndex,
-      30: lastIndex - 1,
-      40: lastIndex - 1,
-      50: lastIndex - 1,
+    matches := map[string]uint64{
+      "node1": lastIndex - 2,
+      "node2": lastIndex,
+      "node3": lastIndex - 1,
+      "node4": lastIndex - 1,
+      "node5": lastIndex - 1,
     }
     state := &raftState{
       peerMatches: matches,
@@ -478,19 +460,18 @@ var _ = Describe("Raft Unit Tests", func() {
     unitTestRaft.setCommitIndex(lastIndex - 2)
 
     cur := discovery.NodeList{
-      New: []discovery.Node{nodeSelf, node1, node2, node3, node4, node5},
-      Old: []discovery.Node{nodeSelf, node1, node2},
+      New: []string{"nodeSelf", "node1", "node2", "node3", "node4", "node5"},
+      Old: []string{"nodeSelf", "node1", "node2"},
     }
     cfg := &discovery.NodeConfig{
       Current: &cur,
     }
-
-    matches := map[uint64]uint64{
-      10: 1,
-      20: lastIndex,
-      30: lastIndex,
-      40: lastIndex,
-      50: lastIndex - 1,
+    matches := map[string]uint64{
+      "node1": 1,
+      "node2": lastIndex,
+      "node3": lastIndex,
+      "node4": lastIndex,
+      "node5": lastIndex - 1,
     }
     state := &raftState{
       peerMatches: matches,
@@ -505,7 +486,7 @@ var _ = Describe("Raft Unit Tests", func() {
 
   It("Vote several nodes", func() {
     cur := discovery.NodeList{
-      New: []discovery.Node{nodeSelf, node1, node2},
+      New: []string{"nodeSelf", "node1", "node2"},
     }
     cfg := &discovery.NodeConfig{
       Current: &cur,
@@ -543,7 +524,7 @@ var _ = Describe("Raft Unit Tests", func() {
 
   It("Vote one node", func() {
     cur := discovery.NodeList{
-      New: []discovery.Node{nodeSelf},
+      New: []string{unitTestAddr},
     }
     cfg := &discovery.NodeConfig{
       Current: &cur,
@@ -556,7 +537,7 @@ var _ = Describe("Raft Unit Tests", func() {
 
   It("Vote even nodes", func() {
     cur := discovery.NodeList{
-      New: []discovery.Node{nodeSelf, node1, node2, node3},
+      New: []string{unitTestAddr, "node1", "node2", "node3"},
     }
     cfg := &discovery.NodeConfig{
       Current: &cur,
@@ -589,8 +570,8 @@ var _ = Describe("Raft Unit Tests", func() {
 
   It("Vote joint consensus", func() {
     cur := discovery.NodeList{
-      New: []discovery.Node{nodeSelf, node1, node2, node3, node4, node5},
-      Old: []discovery.Node{nodeSelf, node1, node2},
+      New: []string{unitTestAddr, "node1", "node2", "node3", "node4", "node5"},
+      Old: []string{unitTestAddr, "node1", "node2"},
     }
     cfg := &discovery.NodeConfig{
       Current: &cur,
@@ -622,8 +603,8 @@ var _ = Describe("Raft Unit Tests", func() {
   It("Vote joint consensus no leader", func() {
     // Simulate a situation where we're the leader and we're leaving
     cur := discovery.NodeList{
-      Old: []discovery.Node{nodeSelf, node1, node2, node3, node4},
-      New: []discovery.Node{node1, node2, node3},
+      Old: []string{unitTestAddr, "node1", "node2", "node3", "node4"},
+      New: []string{"node1", "node2", "node3"},
     }
     cfg := &discovery.NodeConfig{
       Current: &cur,
