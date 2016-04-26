@@ -10,7 +10,6 @@ It is generated from these files:
 
 It has these top-level messages:
 	EntryPb
-	CollectionStartPb
 */
 package storage
 
@@ -24,15 +23,12 @@ var _ = fmt.Errorf
 var _ = math.Inf
 
 type EntryPb struct {
-	Index            *uint64 `protobuf:"varint,1,req,name=index" json:"index,omitempty"`
-	Type             *int32  `protobuf:"varint,2,opt,name=type" json:"type,omitempty"`
-	Term             *uint64 `protobuf:"varint,3,opt,name=term" json:"term,omitempty"`
-	Timestamp        *int64  `protobuf:"varint,4,opt,name=timestamp" json:"timestamp,omitempty"`
-	Tenant           []byte  `protobuf:"bytes,5,opt,name=tenant" json:"tenant,omitempty"`
-	Collection       []byte  `protobuf:"bytes,6,opt,name=collection" json:"collection,omitempty"`
-	Key              *string `protobuf:"bytes,7,opt,name=key" json:"key,omitempty"`
-	Data             []byte  `protobuf:"bytes,8,opt,name=data" json:"data,omitempty"`
-	XXX_unrecognized []byte  `json:"-"`
+	Index            *uint64  `protobuf:"varint,1,req,name=index" json:"index,omitempty"`
+	Type             *int32   `protobuf:"varint,2,req,name=type" json:"type,omitempty"`
+	Term             *uint64  `protobuf:"varint,3,opt,name=term" json:"term,omitempty"`
+	Timestamp        *int64   `protobuf:"varint,4,opt,name=timestamp" json:"timestamp,omitempty"`
+	Tags             []string `protobuf:"bytes,5,rep,name=tags" json:"tags,omitempty"`
+	XXX_unrecognized []byte   `json:"-"`
 }
 
 func (m *EntryPb) Reset()         { *m = EntryPb{} }
@@ -67,62 +63,9 @@ func (m *EntryPb) GetTimestamp() int64 {
 	return 0
 }
 
-func (m *EntryPb) GetTenant() []byte {
+func (m *EntryPb) GetTags() []string {
 	if m != nil {
-		return m.Tenant
-	}
-	return nil
-}
-
-func (m *EntryPb) GetCollection() []byte {
-	if m != nil {
-		return m.Collection
-	}
-	return nil
-}
-
-func (m *EntryPb) GetKey() string {
-	if m != nil && m.Key != nil {
-		return *m.Key
-	}
-	return ""
-}
-
-func (m *EntryPb) GetData() []byte {
-	if m != nil {
-		return m.Data
-	}
-	return nil
-}
-
-type CollectionStartPb struct {
-	CollectionId     []byte  `protobuf:"bytes,1,req,name=collectionId" json:"collectionId,omitempty"`
-	CollectionName   *string `protobuf:"bytes,2,req,name=collectionName" json:"collectionName,omitempty"`
-	TenantId         []byte  `protobuf:"bytes,3,opt,name=tenantId" json:"tenantId,omitempty"`
-	XXX_unrecognized []byte  `json:"-"`
-}
-
-func (m *CollectionStartPb) Reset()         { *m = CollectionStartPb{} }
-func (m *CollectionStartPb) String() string { return proto.CompactTextString(m) }
-func (*CollectionStartPb) ProtoMessage()    {}
-
-func (m *CollectionStartPb) GetCollectionId() []byte {
-	if m != nil {
-		return m.CollectionId
-	}
-	return nil
-}
-
-func (m *CollectionStartPb) GetCollectionName() string {
-	if m != nil && m.CollectionName != nil {
-		return *m.CollectionName
-	}
-	return ""
-}
-
-func (m *CollectionStartPb) GetTenantId() []byte {
-	if m != nil {
-		return m.TenantId
+		return m.Tags
 	}
 	return nil
 }

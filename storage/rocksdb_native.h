@@ -7,24 +7,17 @@
 /* These have to match constants in rocksdb_convert.go */
 #define KEY_VERSION 1
 #define METADATA_KEY 1
-#define INDEX_KEY 2
-#define TENANT_INDEX_KEY 3
 #define ENTRY_KEY 10
-#define START_RANGE  (0xffff - 1)
-#define END_RANGE    (0xffff)
 
-#define NUM_CFS 5
+#define NUM_CFS 3
 
 #define INT_COMPARATOR_NAME "CA-INT-V1"
-#define INDEX_COMPARATOR_NAME "CA-INDEX-V1"
-#define TENANT_INDEX_COMPARATOR_NAME "TEN-INDEX-V1"
+#define STRING_COMPARATOR_NAME "CA-STRING-V1"
 
 typedef struct {
   rocksdb_t* db;
   rocksdb_column_family_handle_t* dflt;
   rocksdb_column_family_handle_t* metadata;
-  rocksdb_column_family_handle_t* indices;
-  rocksdb_column_family_handle_t* tenantIndices;
   rocksdb_column_family_handle_t* entries;
   rocksdb_cache_t* cache;
 } GoRocksDb;

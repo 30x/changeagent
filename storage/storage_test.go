@@ -1,9 +1,7 @@
 package storage
 
 import (
-  "fmt"
   "time"
-  "github.com/satori/go.uuid"
   . "github.com/onsi/ginkgo"
   . "github.com/onsi/gomega"
 )
@@ -45,33 +43,35 @@ var _ = Describe("Storage Main Test", func() {
 })
 
 func metadataTest(stor Storage) {
-  err := stor.SetMetadata(1, 123)
+  err := stor.SetUintMetadata("one", 123)
   Expect(err).Should(Succeed())
-  val, err := stor.GetMetadata(1)
+  val, err := stor.GetUintMetadata("one")
   Expect(err).Should(Succeed())
   Expect(val).Should(BeEquivalentTo(123))
 
-  err = stor.SetMetadata(1, 234)
+  err = stor.SetUintMetadata("one", 234)
   Expect(err).Should(Succeed())
-  val, err = stor.GetMetadata(1)
+  val, err = stor.GetUintMetadata("one")
   Expect(err).Should(Succeed())
   Expect(val).Should(BeEquivalentTo(234))
 
   bval := []byte("Hello, Metadata World!")
-  err = stor.SetRawMetadata(2, bval)
+  err = stor.SetMetadata("two", bval)
   Expect(err).Should(Succeed())
-  bresult, err := stor.GetRawMetadata(2)
+  bresult, err := stor.GetMetadata("two")
   Expect(err).Should(Succeed())
   Expect(bresult).Should(Equal(bval))
 
-  val, err = stor.GetMetadata(999)
+  val, err = stor.GetUintMetadata("notfound")
   Expect(err).Should(Succeed())
   Expect(val).Should(BeEquivalentTo(0))
+
+  bval, err = stor.GetMetadata("notfound")
+  Expect(err).Should(Succeed())
+  Expect(bval).Should(BeNil())
 }
 
 func entriesTest(stor Storage) {
-  tenantId := uuid.NewV4()
-
   max, term, err := stor.GetLastIndex()
   Expect(err).Should(Succeed())
   Expect(max).Should(BeEquivalentTo(0))
@@ -88,7 +88,7 @@ func entriesTest(stor Storage) {
   hello := []byte("Hello!")
 
   // Put in some metadata to confuse the index a bit
-  err = stor.SetMetadata(1, 1)
+  err = stor.SetUintMetadata("one", 1)
   Expect(err).Should(Succeed())
 
   max, term, err = stor.GetLastIndex()
@@ -101,7 +101,6 @@ func entriesTest(stor Storage) {
     Term: 1,
     Timestamp: time.Now(),
   }
-  fmt.Fprintf(GinkgoWriter, "Collection 1 is %v", entry1.Collection)
 
   err = stor.AppendEntry(entry1)
   Expect(err).Should(Succeed())
@@ -117,7 +116,6 @@ func entriesTest(stor Storage) {
 
   re, err := stor.GetEntry(1)
   Expect(err).Should(Succeed())
-  fmt.Fprintf(GinkgoWriter, "Decoded collection 1 is %v", re.Collection)
   compareEntries(re, entry1)
 
   re, err = stor.GetEntry(2)
@@ -157,7 +155,6 @@ func entriesTest(stor Storage) {
   entry3 := &Entry{
     Index: 3,
     Term: 1,
-    Tenant: tenantId,
     Timestamp: time.Now(),
     Data: hello,
   }
@@ -173,9 +170,7 @@ func compareEntries(e1 *Entry, e2 *Entry) {
   Expect(e1.Index).Should(Equal(e2.Index))
   Expect(e1.Term).Should(Equal(e2.Term))
   Expect(e1.Timestamp).Should(Equal(e2.Timestamp))
-  Expect(uuid.Equal(e1.Tenant, e2.Tenant)).Should(BeTrue())
-  Expect(uuid.Equal(e1.Collection, e2.Collection)).Should(BeTrue())
-  Expect(e1.Key).Should(Equal(e2.Key))
+  Expect(e1.Tags).Should(Equal(e2.Tags))
   Expect(e1.Data).Should(Equal(e2.Data))
 }
 

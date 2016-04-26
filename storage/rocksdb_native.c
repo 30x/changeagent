@@ -4,8 +4,12 @@
 #include "rocksdb_native.h"
 
 static rocksdb_comparator_t* intComparator;
-static rocksdb_comparator_t* indexComparator;
-static rocksdb_comparator_t* tenantIndexComparator;
+static rocksdb_comparator_t* stringComparator;
+
+static size_t minsize(size_t a, size_t b)
+{
+  return (a < b) ? a : b;
+}
 
 char* go_rocksdb_get(
     rocksdb_t* db,
@@ -61,84 +65,30 @@ static int compare_int_key(
   }
 }
 
-static unsigned short maxs(unsigned short a, unsigned short b)
-{
-  return (a > b) ? a : b;
-}
-
-static int keycmp(const char* a, unsigned short alen, const char* b, unsigned short blen)
-{
-  // Strings are null-terminated, but use strncmp so we don't overflow
-  return strncmp(a, b, maxs(alen, blen));
-}
-
-static int compare_index_key(
+static int compare_string_key(
   void* c,
   const char* a, size_t alen,
   const char* b, size_t blen)
 {
-  unsigned short keylena = *((unsigned short*)(a + 17));
-  unsigned short keylenb = *((unsigned short*)(b + 17));
+  if ((alen < 1) || (blen < 1)) { return 0; }
 
-  size_t apos = 1;
-  size_t bpos = 1;
-
-  // First compare the uuid (always)
-  int cmp = memcmp(a + apos, b + bpos, 16);
-  if (cmp != 0) {
-    return cmp;
-  }
-
-  // Check for special "range" flags
-  if (keylena == START_RANGE) {
-    return (keylenb == START_RANGE ? 0 : -1);
-  }
-  if (keylenb == START_RANGE) {
-    return 1;
-  }
-  if (keylena == END_RANGE) {
-    return (keylenb == END_RANGE ? 0 : 1);
-  }
-  if (keylenb == END_RANGE) {
+  if ((alen == 1) && (blen > 1)) {
     return -1;
   }
+  if ((alen > 1) && (blen == 1)) {
+    return 1;
+  }
 
-  // Move into position and compare the collection name
-  apos += 18;
-  bpos += 18;
-  cmp = keycmp(a + apos, keylena, b + bpos, keylenb);
+  size_t cmpsize = minsize(alen, blen);
+  int cmp = strncmp(a + 1, b + 1, cmpsize - 1);
+  if (cmp == 0) {
+    if (alen < blen) {
+      return -1;
+    } else if (blen > alen) {
+      return 1;
+    }
+  }
   return cmp;
-}
-
-static int compare_tenant_index_key(
-  void* c,
-  const char* a, size_t alen,
-  const char* b, size_t blen)
-{
-  if ((alen != 25) || (blen != 25)) {
-    return 0;
-  }
-
-  size_t pos = 1;
-
-  // First compare the uuid (always)
-  int cmp = memcmp(a + pos, b + pos, 16);
-  if (cmp != 0) {
-    return cmp;
-  }
-
-  pos += 16;
-
-  unsigned long long* av = (unsigned long long*)(a + pos);
-  unsigned long long* bv = (unsigned long long*)(b + pos);
-
-  if (*av > *bv) {
-    return 1;
-  } else if (*av < *bv) {
-    return -1;
-  } else {
-    return 0;
-  }
 }
 
 static int go_compare_bytes_impl(
@@ -164,12 +114,9 @@ static int go_compare_bytes_impl(
 
   switch (type1) {
   case METADATA_KEY:
+    return compare_string_key(state, a, alen, b, blen);
   case ENTRY_KEY:
     return compare_int_key(state, a, alen, b, blen);
-  case INDEX_KEY:
-    return compare_index_key(state, a, alen, b, blen);
-  case TENANT_INDEX_KEY:
-    return compare_tenant_index_key(state, a, alen, b, blen);
   default:
     return 999;
   }
@@ -186,21 +133,15 @@ static const char* int_comparator_name(void* v) {
   return INT_COMPARATOR_NAME;
 }
 
-static const char* index_comparator_name(void* v) {
-  return INDEX_COMPARATOR_NAME;
-}
-
-static const char* tenant_index_comparator_name(void* v) {
-  return TENANT_INDEX_COMPARATOR_NAME;
+static const char* string_comparator_name(void* v) {
+  return STRING_COMPARATOR_NAME;
 }
 
 void go_rocksdb_init() {
   intComparator = rocksdb_comparator_create(
     NULL, NULL, compare_int_key, int_comparator_name);
-  indexComparator = rocksdb_comparator_create(
-    NULL, NULL, compare_index_key, index_comparator_name);
-  tenantIndexComparator = rocksdb_comparator_create(
-    NULL, NULL, compare_tenant_index_key, tenant_index_comparator_name);
+  stringComparator = rocksdb_comparator_create(
+    NULL, NULL, compare_string_key, string_comparator_name);
 }
 
 char* go_rocksdb_open(
@@ -220,9 +161,7 @@ char* go_rocksdb_open(
 
   cfNames[0] = "default";
   cfNames[1] = "metadata";
-  cfNames[2] = "indices";
-  cfNames[3] = "tenantIndices";
-  cfNames[4] = "entries";
+  cfNames[2] = "entries";
 
   cache = rocksdb_cache_create_lru(cacheSize);
 
@@ -236,13 +175,9 @@ char* go_rocksdb_open(
 
   cfOpts[0] = rocksdb_options_create();
   cfOpts[1] = rocksdb_options_create();
-  rocksdb_options_set_comparator(cfOpts[1], intComparator);
+  rocksdb_options_set_comparator(cfOpts[1], stringComparator);
   cfOpts[2] = rocksdb_options_create();
-  rocksdb_options_set_comparator(cfOpts[2], indexComparator);
-  cfOpts[3] = rocksdb_options_create();
-  rocksdb_options_set_comparator(cfOpts[3], tenantIndexComparator);
-  cfOpts[4] = rocksdb_options_create();
-  rocksdb_options_set_comparator(cfOpts[4], intComparator);
+  rocksdb_options_set_comparator(cfOpts[2], intComparator);
 
   db = rocksdb_open_column_families(
     mainOptions, directory, NUM_CFS, (const char**)cfNames,
@@ -261,9 +196,7 @@ char* go_rocksdb_open(
     h->db = db;
     h->dflt = cfHandles[0];
     h->metadata = cfHandles[1];
-    h->indices = cfHandles[2];
-    h->tenantIndices = cfHandles[3];
-    h->entries = cfHandles[4];
+    h->entries = cfHandles[2];
     h->cache = cache;
     *ret = h;
   }
@@ -276,8 +209,6 @@ void go_rocksdb_close(GoRocksDb* h)
   rocksdb_column_family_handle_destroy(h->dflt);
   rocksdb_column_family_handle_destroy(h->metadata);
   rocksdb_column_family_handle_destroy(h->entries);
-  rocksdb_column_family_handle_destroy(h->tenantIndices);
-  rocksdb_column_family_handle_destroy(h->indices);
   rocksdb_close(h->db);
   rocksdb_cache_destroy(h->cache);
 }

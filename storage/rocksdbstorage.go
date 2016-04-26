@@ -11,29 +11,20 @@ import "C"
 import (
   "fmt"
   "io"
-  "math"
   "unsafe"
   "sync"
   "github.com/golang/glog"
-  "github.com/satori/go.uuid"
 )
 
-const (
-  TenantsCollectionId = "B7404AD3-1268-4823-B7D4-E9C66F592E37"
-)
-
-var defaultWriteOptions *C.rocksdb_writeoptions_t = C.rocksdb_writeoptions_create();
-var defaultReadOptions *C.rocksdb_readoptions_t = C.rocksdb_readoptions_create();
+var defaultWriteOptions = C.rocksdb_writeoptions_create();
+var defaultReadOptions = C.rocksdb_readoptions_create();
 var rocksInitOnce sync.Once
-var tenantsCollection uuid.UUID = uuid.FromStringOrNil(TenantsCollectionId)
 
 type LevelDBStorage struct {
   baseFile string
   dbHandle *C.GoRocksDb
   db *C.rocksdb_t
   metadata *C.rocksdb_column_family_handle_t
-  indices *C.rocksdb_column_family_handle_t
-  tenantIndices *C.rocksdb_column_family_handle_t
   entries *C.rocksdb_column_family_handle_t
 }
 
@@ -65,26 +56,7 @@ func CreateRocksDBStorage(baseFile string, cacheSize uint) (*LevelDBStorage, err
   stor.db = dbh.db
   stor.metadata = dbh.metadata
   stor.entries = dbh.entries
-  stor.tenantIndices = dbh.tenantIndices
-  stor.indices = dbh.indices
 
-  success := false
-  defer func() {
-    if !success {
-      stor.Close()
-    }
-  }()
-
-  // Lay down the records for a special collection that will hold names and IDs of each tenant
-  collName, _, err := stor.readCollectionStart(tenantsCollection)
-  if err != nil { return nil, err }
-  if collName == "" {
-    glog.V(2).Infof("Creating tenants collection %s", TenantsCollectionId)
-    err = stor.writeCollectionDelimiters(tenantsCollection, "_tenants", uuid.Nil)
-    if err != nil { return nil, err }
-  }
-
-  success = true
   return stor, nil
 }
 
@@ -136,6 +108,7 @@ func (s *LevelDBStorage) Dump(out io.Writer, max int) {
     C.rocksdb_iter_next(mit)
   }
 
+  /*
   iit := C.rocksdb_create_iterator_cf(s.db, defaultReadOptions, s.indices)
   defer C.rocksdb_iter_destroy(iit)
 
@@ -149,7 +122,6 @@ func (s *LevelDBStorage) Dump(out io.Writer, max int) {
     //keyPtr := unsafe.Pointer(C.rocksdb_iter_key(iit, &keyLen))
     C.rocksdb_iter_value(iit, &valLen)
 
-    /*
     tenName, colName, ixLen, _ := ptrToIndexType(keyPtr, keyLen)
 
     if colName == "" {
@@ -171,10 +143,10 @@ func (s *LevelDBStorage) Dump(out io.Writer, max int) {
         fmt.Fprintf(out, "Collection (%s) %d bytes\n", colName, valLen)
       }
     }
-    */
 
     C.rocksdb_iter_next(iit)
   }
+  */
 
   eit := C.rocksdb_create_iterator_cf(s.db, defaultReadOptions, s.entries)
   defer C.rocksdb_iter_destroy(eit)
@@ -197,8 +169,8 @@ func (s *LevelDBStorage) Dump(out io.Writer, max int) {
   }
 }
 
-func (s *LevelDBStorage) GetMetadata(key uint) (uint64, error) {
-  keyBuf, keyLen := uintToKey(MetadataKey, uint64(key))
+func (s *LevelDBStorage) GetUintMetadata(key string) (uint64, error) {
+  keyBuf, keyLen := stringToKey(MetadataKey, key)
   defer freePtr(keyBuf)
 
   val, valLen, err := s.readEntry(s.metadata, keyBuf, keyLen)
@@ -209,8 +181,8 @@ func (s *LevelDBStorage) GetMetadata(key uint) (uint64, error) {
   return ptrToUint(val, valLen), nil
 }
 
-func (s *LevelDBStorage) GetRawMetadata(key uint) ([]byte, error) {
-  keyBuf, keyLen := uintToKey(MetadataKey, uint64(key))
+func (s *LevelDBStorage) GetMetadata(key string) ([]byte, error) {
+  keyBuf, keyLen := stringToKey(MetadataKey, key)
   defer freePtr(keyBuf)
 
   val, valLen, err := s.readEntry(s.metadata, keyBuf, keyLen)
@@ -221,8 +193,8 @@ func (s *LevelDBStorage) GetRawMetadata(key uint) ([]byte, error) {
   return ptrToBytes(val, valLen), nil
 }
 
-func (s *LevelDBStorage) SetMetadata(key uint, val uint64) error {
-  keyBuf, keyLen := uintToKey(MetadataKey, uint64(key))
+func (s *LevelDBStorage) SetUintMetadata(key string, val uint64) error {
+  keyBuf, keyLen := stringToKey(MetadataKey, key)
   defer freePtr(keyBuf)
   valBuf, valLen := uintToPtr(val)
   defer freePtr(valBuf)
@@ -230,8 +202,8 @@ func (s *LevelDBStorage) SetMetadata(key uint, val uint64) error {
   return s.putEntry(s.metadata, keyBuf, keyLen, valBuf, valLen)
 }
 
-func (s *LevelDBStorage) SetRawMetadata(key uint, val []byte) error {
-  keyBuf, keyLen := uintToKey(MetadataKey, uint64(key))
+func (s *LevelDBStorage) SetMetadata(key string, val []byte) error {
+  keyBuf, keyLen := stringToKey(MetadataKey, key)
   defer freePtr(keyBuf)
   valBuf, valLen := bytesToPtr(val)
   defer freePtr(valBuf)
@@ -270,7 +242,7 @@ func (s *LevelDBStorage) GetEntries(since uint64, max uint, filter func(*Entry) 
   defer C.rocksdb_iter_destroy(it)
 
   var entries []Entry
-  var count uint = 0
+  var count uint
 
   firstKeyPtr, firstKeyLen := uintToKey(EntryKey, since + 1)
   defer freePtr(firstKeyPtr)
@@ -399,302 +371,6 @@ func (s *LevelDBStorage) DeleteEntries(first uint64) error {
   return nil
 }
 
-// Methods for secondary indices
-
-func (s *LevelDBStorage) CreateTenant(tenantName string, id uuid.UUID) error {
-  // This record delimits the collection for when we are iterating on it
-  // It also lets us read the name later given the ID
-  err := s.writeCollectionDelimiters(id, tenantName, uuid.Nil)
-  if err != nil { return err }
-
-  // Put an entry in the special tenants collection that contains the new tenant ID
-  valPtr, valLen := uuidToPtr(id)
-  defer freePtr(valPtr)
-  err = s.writeCollectionEntry(tenantsCollection, tenantName, valPtr, valLen)
-  if err != nil { return err }
-
-  return nil
-}
-
-func (s *LevelDBStorage) GetTenantByName(tenantName string) (uuid.UUID, error) {
-  // Read the entry from the special "tenants" collection
-  ptr, len, err := s.readCollectionEntry(tenantsCollection, tenantName)
-  if err != nil { return uuid.Nil, err }
-  if ptr == nil { return uuid.Nil, nil }
-  defer freePtr(ptr)
-  id, err := ptrToUuid(ptr, len)
-  if err != nil { return uuid.Nil, err }
-
-  return id, nil
-}
-
-func (s *LevelDBStorage) GetTenantByID(tenantID uuid.UUID) (string, error) {
-  // Read the special start of tenant record which happens to include the name
-  name, _, err := s.readCollectionStart(tenantID)
-  if err != nil { return "", err }
-  return name, nil
-}
-
-func (s *LevelDBStorage) GetTenants() ([]Collection, error) {
-  // Start from the start and read until the end!
-  startPtr, startLen, err := startIndexToPtr(tenantsCollection)
-  if err != nil { return nil, err }
-  defer freePtr(startPtr)
-  endPtr, endLen, err := endIndexToPtr(tenantsCollection)
-  if err != nil { return nil, err }
-  defer freePtr(endPtr)
-
-  var ret []Collection
-
-  err = s.readCollectionIndex(startPtr, startLen, endPtr, endLen, math.MaxUint32,
-    func(keyPtr unsafe.Pointer, keyLen C.size_t, valPtr unsafe.Pointer, valLen C.size_t) error {
-      _, _, name, err := ptrToIndexKey(keyPtr, keyLen)
-      if err != nil { return err }
-
-      id, err := ptrToUuid(valPtr, valLen)
-      if err != nil { return err }
-
-      coll := Collection{
-        Id: id,
-        Name: name,
-      }
-      ret = append(ret, coll)
-      return nil
-    })
-
-  return ret, err
-}
-
-func (s *LevelDBStorage) ensureTenant(tenantID uuid.UUID) error {
-  tenantName, _, err := s.readCollectionStart(tenantID)
-  if err != nil { return err }
-  if tenantName == "" {
-    return fmt.Errorf("Unknown tenant \"%s\"", tenantID)
-  }
-  return nil
-}
-
-func (s *LevelDBStorage) CreateCollection(tenantID uuid.UUID, collectionName string, id uuid.UUID) error {
-  err := s.ensureTenant(tenantID)
-  if err != nil { return err }
-
-  // This record delimits the collection for when we are iterating on it
-  // It also lets us read the name later given the ID
-  err = s.writeCollectionDelimiters(id, collectionName, tenantID)
-  if err != nil { return err }
-
-  // Put an entry in the tenants' own collection that contains the new tenant ID
-  valPtr, valLen := uuidToPtr(id)
-  defer freePtr(valPtr)
-  err = s.writeCollectionEntry(tenantID, collectionName, valPtr, valLen)
-  if err != nil { return err }
-
-  return nil
-}
-
-func (s *LevelDBStorage) GetCollectionByName(tenantID uuid.UUID, collectionName string) (uuid.UUID, error) {
-  // Read the entry from the tenants' collection
-  ptr, len, err := s.readCollectionEntry(tenantID, collectionName)
-  if err != nil { return uuid.Nil, err }
-  if ptr == nil { return uuid.Nil, nil }
-  defer freePtr(ptr)
-
-  id, err := ptrToUuid(ptr, len)
-  if err != nil { return uuid.Nil, err }
-
-  return id, nil
-}
-
-func (s *LevelDBStorage) GetCollectionByID(collectionID uuid.UUID) (string, uuid.UUID, error) {
-  // Read the special start of tenant record which happens to include the name
-  name, id, err := s.readCollectionStart(collectionID)
-  if err != nil { return "", uuid.Nil, err }
-  return name, id, nil
-}
-
-func (s *LevelDBStorage) GetTenantCollections(tenantID uuid.UUID) ([]Collection, error) {
-  err := s.ensureTenant(tenantID)
-  if err != nil { return nil, err }
-
-  // Start from the start and read until the end!
-  startPtr, startLen, err := startIndexToPtr(tenantID)
-  if err != nil { return nil, err }
-  defer freePtr(startPtr)
-  endPtr, endLen, err := endIndexToPtr(tenantID)
-  if err != nil { return nil, err }
-  defer freePtr(endPtr)
-
-  var ret []Collection
-
-  err = s.readCollectionIndex(startPtr, startLen, endPtr, endLen, math.MaxUint32,
-    func(keyPtr unsafe.Pointer, keyLen C.size_t, valPtr unsafe.Pointer, valLen C.size_t) error {
-      _, _, name, err := ptrToIndexKey(keyPtr, keyLen)
-      if err != nil { return err }
-
-      id, err := ptrToUuid(valPtr, valLen)
-      if err != nil { return err }
-
-      coll := Collection{
-        Id: id,
-        Name: name,
-      }
-      ret = append(ret, coll)
-      return nil
-    })
-
-  return ret, err
-}
-
-func (s *LevelDBStorage) ensureCollection(collectionID uuid.UUID) error {
-  tenantName, _, err := s.readCollectionStart(collectionID)
-  if err != nil { return err }
-  if tenantName == "" {
-    return fmt.Errorf("Unknown collection \"%s\"", collectionID)
-  }
-  return nil
-}
-
-func (s *LevelDBStorage) SetIndexEntry(collectionID uuid.UUID, key string, index uint64) error {
-  err := s.ensureCollection(collectionID)
-  if err != nil { return err }
-
-  valPtr, valLen := uintToPtr(index)
-  defer freePtr(valPtr)
-
-  return s.writeCollectionEntry(collectionID, key, valPtr, valLen)
-}
-
-func (s *LevelDBStorage) DeleteIndexEntry(collectionID uuid.UUID, key string) error {
-  err := s.ensureCollection(collectionID)
-  if err != nil { return err }
-
-  return s.deleteCollectionEntry(collectionID, key)
-}
-
-func (s *LevelDBStorage) GetIndexEntry(collectionID uuid.UUID, key string) (uint64, error) {
-  err := s.ensureCollection(collectionID)
-  if err != nil { return 0, err }
-
-  ptr, len, err := s.readCollectionEntry(collectionID, key)
-  if err != nil { return 0, err }
-  if ptr == nil { return 0, nil }
-
-  defer freePtr(ptr)
-
-  ix := ptrToUint(ptr, len)
-  return ix, nil
-}
-
-func (s *LevelDBStorage) GetCollectionIndices(collectionID uuid.UUID, lastKey string, max uint) ([]uint64, error) {
-  err := s.ensureCollection(collectionID)
-  if err != nil { return nil, err }
-
-  var startPtr unsafe.Pointer
-  var startLen C.size_t
-  if lastKey == "" {
-    startPtr, startLen, err = startIndexToPtr(collectionID)
-  } else {
-    startPtr, startLen, err = indexKeyToPtr(collectionID, lastKey)
-  }
-  if err != nil { return nil, err }
-  defer freePtr(startPtr)
-
-  endPtr, endLen, err := endIndexToPtr(collectionID)
-  if err != nil { return nil, err }
-  defer freePtr(endPtr)
-
-  var ret []uint64
-
-  err = s.readCollectionIndex(startPtr, startLen, endPtr, endLen, max,
-    func(keyPtr unsafe.Pointer, keyLen C.size_t, valPtr unsafe.Pointer, valLen C.size_t) error {
-      index := ptrToUint(valPtr, valLen)
-      ret = append(ret, index)
-      return nil
-    })
-
-  return ret, err
-}
-
-func (s *LevelDBStorage) CreateTenantEntry(entry *Entry) error {
-  keyPtr, keyLen := tenantIndexToPtr(entry.Tenant, entry.Index)
-  defer freePtr(keyPtr)
-
-  valPtr, valLen := entryToPtr(entry)
-  defer freePtr(valPtr)
-
-  glog.V(2).Infof("Appending entry: %s", entry)
-  return s.putEntry(s.tenantIndices, keyPtr, keyLen, valPtr, valLen)
-}
-
-func (s *LevelDBStorage) GetTenantEntry(tenant uuid.UUID, ix uint64) (*Entry, error) {
-  keyPtr, keyLen := tenantIndexToPtr(tenant, ix)
-  defer freePtr(keyPtr)
-
-  valPtr, valLen, err := s.readEntry(s.tenantIndices, keyPtr, keyLen)
-  if err != nil { return nil, err }
-  if valPtr == nil { return nil, nil }
-
-  defer freePtr(valPtr)
-  return ptrToEntry(valPtr, valLen)
-}
-
-func (s *LevelDBStorage) DeleteTenantEntry(tenant uuid.UUID, ix uint64) error {
-  ixPtr, ixLen := tenantIndexToPtr(tenant, ix)
-  defer freePtr(ixPtr)
-
-  var e *C.char
-
-  C.go_rocksdb_delete(
-    s.db, defaultWriteOptions, s.tenantIndices,
-    ixPtr, ixLen, &e)
-  if e == nil {
-    return nil
-  }
-  defer freeString(e)
-  return stringToError(e)
-}
-
-func (s *LevelDBStorage) GetTenantEntries(
-    tenant uuid.UUID, last uint64,
-    max uint, filter func(*Entry) bool) ([]Entry, error) {
-  it := C.rocksdb_create_iterator_cf(s.db, defaultReadOptions, s.tenantIndices)
-  defer C.rocksdb_iter_destroy(it)
-
-  var entries []Entry
-  var count uint = 0
-
-  firstKeyPtr, firstKeyLen := tenantIndexToPtr(tenant, last + 1)
-  defer freePtr(firstKeyPtr)
-
-  C.go_rocksdb_iter_seek(it, firstKeyPtr, firstKeyLen)
-
-  for (count < max) && (C.rocksdb_iter_valid(it) != 0) {
-    var keyLen C.size_t
-    keyPtr := unsafe.Pointer(C.rocksdb_iter_key(it, &keyLen))
-
-    ixId, _, err := ptrToTenantIndex(keyPtr, keyLen)
-    if err != nil { return nil, err }
-
-    if !uuid.Equal(tenant, ixId) {
-      break
-    }
-
-    var valLen C.size_t
-    valPtr := unsafe.Pointer(C.rocksdb_iter_value(it, &valLen))
-
-    entry, err := ptrToEntry(valPtr, valLen)
-    if err != nil { return nil, err }
-
-    if filter(entry) {
-      entries = append(entries, *entry)
-      count++
-    }
-
-    C.rocksdb_iter_next(it)
-  }
-  return entries, nil
-}
-
 func (s *LevelDBStorage) putEntry(
   cf *C.rocksdb_column_family_handle_t,
   keyPtr unsafe.Pointer, keyLen C.size_t,
@@ -727,11 +403,10 @@ func (s *LevelDBStorage) readEntry(
   if val == nil {
     if e == nil {
       return nil, 0, nil
-    } else {
-      defer freeString(e)
-      return nil, 0, stringToError(e)
     }
-  } else {
-    return unsafe.Pointer(val), valLen, nil
+    defer freeString(e)
+    return nil, 0, stringToError(e)
   }
+
+  return unsafe.Pointer(val), valLen, nil
 }
