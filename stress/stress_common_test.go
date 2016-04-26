@@ -25,7 +25,7 @@ func launchAgent(port int, dataDir string) (*os.Process, error) {
   cmd := exec.Command("../agent/agent")
   args := []string{
     "../agent/agent",
-    "-s", "./disco",
+    "-s", "./tmpdisco",
     "-p", strconv.Itoa(port),
     "-d", dataDir,
     "-logtostderr",
@@ -130,4 +130,24 @@ func waitForLeader(ports []int, maxWait int) error {
   }
 
   return fmt.Errorf("No leader identified after %d seconds", maxWait)
+}
+
+func copyFile(src string, dst string) error {
+  dstFile, err := os.OpenFile(dst, os.O_RDWR | os.O_CREATE, 0666)
+  if err != nil { return err }
+  defer dstFile.Close()
+
+  srcFile, err := os.OpenFile(src, os.O_RDONLY, 0)
+  if err != nil { return err }
+  defer srcFile.Close()
+  stat, err := srcFile.Stat()
+  if err != nil { return err }
+
+  buf := make([]byte, stat.Size())
+  _, err = srcFile.Read(buf)
+  if err != nil { return err }
+  _, err = dstFile.Write(buf)
+  if err != nil { return err }
+  stat, _ = dstFile.Stat()
+  return nil
 }

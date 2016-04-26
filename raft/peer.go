@@ -13,6 +13,10 @@ import (
   "revision.aeip.apigee.net/greg/changeagent/storage"
 )
 
+const (
+  maxPeerBatchSize = 64
+)
+
 type rpcResponse struct {
   success bool
   heartbeat bool
@@ -79,7 +83,11 @@ func (p *raftPeer) peerLoop() {
     glog.V(2).Infof("Peer %s: next = %d desired = %d", p.address, nextIndex, desiredIndex)
 
     if !rpcRunning && !failureDelay && (desiredIndex > nextIndex) {
-      err := p.sendUpdates(desiredIndex, nextIndex, responseChan)
+      nextDesired := desiredIndex
+      if (desiredIndex - nextIndex) > maxPeerBatchSize {
+        nextDesired = nextIndex + maxPeerBatchSize
+      }
+      err := p.sendUpdates(nextDesired, nextIndex, responseChan)
       if err != nil {
         glog.V(2).Infof("Error sending updates to peer %s: %s", p.address, err)
       }

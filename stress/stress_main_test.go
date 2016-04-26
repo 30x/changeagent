@@ -31,4 +31,6 @@ var _ = AfterSuite(func() {
 
   err := os.RemoveAll(dataDir)
   Expect(err).Should(Succeed())
+
+  os.Remove("./tmpdisco")
 })

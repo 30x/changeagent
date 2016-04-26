@@ -30,6 +30,9 @@ var _ = Describe("Cluster Test", func() {
   var ports []int
 
   It("Cluster Test", func() {
+    err := copyFile("./disco", "./tmpdisco")
+    Expect(err).Should(Succeed())
+
     ports = make([]int, 3)
     ports[0] = BasePort
     ports[1] = BasePort + 1
@@ -56,9 +59,9 @@ var _ = Describe("Cluster Test", func() {
     verifyBatch(ports[2], ports, "Full Cluster 3")
 
     _, collectionId := populateCollection(ports[0], "Tenant1-1", "Collection1-1")
-    verifyCollection(ports[0], collectionId)
-    verifyCollection(ports[1], collectionId)
-    verifyCollection(ports[2], collectionId)
+    verifyCollection(ports[0], collectionId, DefaultWait)
+    verifyCollection(ports[1], collectionId, DefaultWait)
+    verifyCollection(ports[2], collectionId, DefaultWait)
 
     // Kill each server one at a time and repeat that test of sending stuff and seeing it replicated
     fmt.Fprintf(GinkgoWriter, "Killing server at port %d\n", ports[0])
@@ -146,6 +149,28 @@ var _ = Describe("Cluster Test", func() {
     verifyBatch(ports[0], ports, "Full Cluster 5, 1")
     verifyBatch(ports[1], ports, "Full Cluster 5, 2")
     verifyBatch(ports[2], ports, "Full Cluster 5, 3")
+
+    // Now start a fourth server and add it to the cluster
+
+    err = copyFile("./disco2", "./tmpdisco")
+    Expect(err).Should(Succeed())
+
+    morePorts := make([]int, 4)
+    morePorts[0] = ports[0]
+    morePorts[1] = ports[1]
+    morePorts[2] = ports[2]
+    morePorts[3] = BasePort + 3
+
+    _, err = launchAgent(morePorts[3], path.Join(dataDir, "data4"))
+    Expect(err).Should(Succeed())
+
+    err = waitForLeader(morePorts, DefaultWait)
+    Expect(err).Should(Succeed())
+
+    verifyBatch(morePorts[0], morePorts, "New Server, 1")
+    verifyBatch(morePorts[1], morePorts, "New Server, 2")
+    verifyBatch(morePorts[2], morePorts, "New Server, 3")
+    verifyBatch(morePorts[3], morePorts, "New Server, 4")
   })
 })
 
@@ -270,18 +295,26 @@ func populateCollection(writePort int, tenantName, collectionName string) (strin
   return tenant.Id, collection.Id
 }
 
-func verifyCollection(readPort int, collectionId string) {
+func verifyCollection(readPort int, collectionId string, maxWait int) {
   uri := fmt.Sprintf("http://localhost:%d/collections/%s/keys", readPort, collectionId)
 
-  resp, err := http.Get(uri)
-  Expect(err).Should(Succeed())
-  body, err := ioutil.ReadAll(resp.Body)
-  Expect(err).Should(Succeed())
-  fmt.Fprintf(GinkgoWriter, "Collection entries: %s\n", string(body))
-  Expect(resp.StatusCode).Should(BeEquivalentTo(200))
+  for i := 0; i < maxWait; i++ {
+    resp, err := http.Get(uri)
+    Expect(err).Should(Succeed())
+    body, err := ioutil.ReadAll(resp.Body)
+    Expect(err).Should(Succeed())
+    fmt.Fprintf(GinkgoWriter, "Collection entries: %s\n", string(body))
+    Expect(resp.StatusCode).Should(BeEquivalentTo(200))
 
-  var entries []WriteResponse
-  err = json.Unmarshal(body, &entries)
-  Expect(err).Should(Succeed())
-  Expect(len(entries)).Should(Equal(BatchSize))
+    var entries []WriteResponse
+    err = json.Unmarshal(body, &entries)
+    Expect(err).Should(Succeed())
+    if len(entries) == BatchSize {
+      return
+    }
+    fmt.Fprintf(GinkgoWriter, "Got %d collection entries out of %d\n", len(entries), BatchSize)
+    time.Sleep(time.Second)
+  }
+
+  Expect(false).Should(BeTrue())
 }

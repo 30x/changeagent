@@ -140,8 +140,6 @@ func (h *HTTPCommunication) Append(addr string, req AppendRequest) (AppendRespon
     reqPb.Entries = append(reqPb.Entries, ebytes)
   }
 
-  glog.V(3).Infof("Send: %s", req)
-
   reqBody, err := proto.Marshal(&reqPb)
   if err != nil {
     return DefaultAppendResponse, err
@@ -174,8 +172,6 @@ func (h *HTTPCommunication) Append(addr string, req AppendRequest) (AppendRespon
     Success: respPb.GetSuccess(),
   }
 
-  glog.V(3).Infof("Received: %s", appResp)
-
   return appResp, nil
 }
 
@@ -186,8 +182,6 @@ func (h *HTTPCommunication) Propose(addr string, e storage.Entry) (ProposalRespo
   if err != nil {
     return DefaultProposalResponse, err
   }
-
-  glog.V(3).Infof("Proposal Request (%d): %v", e)
 
   resp, err := httpClient.Post(uri, ContentType, bytes.NewReader(reqBody))
   if err != nil {
@@ -217,7 +211,6 @@ func (h *HTTPCommunication) Propose(addr string, e storage.Entry) (ProposalRespo
   if respPb.GetError() != "" {
     appResp.Error = errors.New(respPb.GetError())
   }
-  glog.V(3).Infof("Proposal Response: %v", appResp)
 
   return appResp, nil
 }
@@ -319,8 +312,6 @@ func (h *HTTPCommunication) handleAppend(resp http.ResponseWriter, req *http.Req
     apReq.Entries = append(apReq.Entries, *newEntry)
   }
 
-  glog.V(3).Infof("Received %s", &apReq)
-
   appResp, err := h.raft.Append(apReq)
   if err != nil {
     resp.WriteHeader(http.StatusInternalServerError)
@@ -365,8 +356,6 @@ func (h *HTTPCommunication) handlePropose(resp http.ResponseWriter, req *http.Re
     resp.WriteHeader(http.StatusBadRequest)
     return
   }
-
-  glog.V(3).Infof("Received proposal: %v", newEntry)
 
   newIndex, err := h.raft.Propose(*newEntry)
   if err != nil {

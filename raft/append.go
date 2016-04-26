@@ -144,7 +144,7 @@ func (r *Service) appendEntries(entries []storage.Entry) error {
 
   var configChange *storage.Entry
 
-  for _, e := range(entries) {
+  for i, e := range(entries) {
     // Append any new entries not already in the log
     if terms[e.Index] == 0 {
       err = r.stor.AppendEntry(&e)
@@ -152,7 +152,7 @@ func (r *Service) appendEntries(entries []storage.Entry) error {
     }
     // Check to see if it's a membership change
     if e.Type == MembershipChange {
-      configChange = &e
+      configChange = &(entries[i])
     }
   }
 
@@ -165,7 +165,8 @@ func (r *Service) appendEntries(entries []storage.Entry) error {
   if configChange != nil {
     newCfg, err := discovery.DecodeConfig(configChange.Data)
     if err != nil {
-      glog.Errorf("Invalid configuration change record received: %v", err)
+      glog.Errorf("Invalid configuration change record received (%d bytes): %v: %s",
+        len(configChange.Data), err, string(configChange.Data))
       return err
     }
     glog.V(2).Infof("Applying a new configuration %s", newCfg)

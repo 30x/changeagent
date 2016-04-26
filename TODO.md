@@ -63,6 +63,8 @@ Test and understand ramifications of current cluster configuration changes.
 
 Come up with a graceful shutdown procedure for the leader.
 
+When catching up, don't send a huge number of requests all at once.
+
 ## Lower Priority
 
 Prune old data from the database.
