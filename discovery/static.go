@@ -15,6 +15,10 @@ func CreateStaticDiscovery(nodes []string) *Service {
 }
 
 func ReadDiscoveryFile(fileName string, updateInterval time.Duration) (*Service, error) {
+  info, err := os.Stat(fileName)
+  if err != nil { return nil, err }
+
+
   nodes, err := readFile(fileName)
   if err != nil { return nil, err }
 
@@ -27,7 +31,7 @@ func ReadDiscoveryFile(fileName string, updateInterval time.Duration) (*Service,
   ret := createImpl(nodes, &rdr)
   rdr.d = ret
 
-  rdr.start()
+  rdr.start(info.ModTime())
   return ret, nil
 }
 
@@ -38,32 +42,41 @@ type fileReader struct {
   stopChan chan bool
 }
 
-func (r *fileReader) start() {
+func (r *fileReader) start(modTime time.Time) {
   if r.interval == 0 {
     return
   }
-  go r.readLoop()
+  go r.readLoop(modTime)
 }
 
 func (r *fileReader) stop() {
   r.stopChan <- true
 }
 
-func (r *fileReader) readLoop() {
+func (r *fileReader) readLoop(startModTime time.Time) {
   ticker := time.NewTicker(r.interval)
   sentError := false
+  lastMod := startModTime
 
   for {
     select {
     case <-ticker.C:
-      newNodes, err := readFile(r.fileName)
+      info, err := os.Stat(r.fileName)
       if err == nil {
-        r.d.updateNodes(newNodes)
+        if info.ModTime() != lastMod {
+          newNodes, err := readFile(r.fileName)
+          if err == nil {
+            r.d.updateNodes(newNodes)
+          } else if !sentError {
+            glog.Errorf("Error reading discovery file for changes: %v", err)
+            sentError = true
+          }
+          lastMod = info.ModTime()
+        }
       } else if !sentError {
-        glog.Errorf("Error reading discovery file for changes: %v", err)
+        glog.Errorf("Error statting discovery file for changes: %v", err)
         sentError = true
       }
-
     case <-r.stopChan:
       ticker.Stop()
       return

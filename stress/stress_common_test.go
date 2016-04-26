@@ -21,12 +21,11 @@ type RaftState struct {
   Leader uint64 `json:"leader"`
 }
 
-func launchAgent(id int, port int, dataDir string) (*os.Process, error) {
+func launchAgent(port int, dataDir string) (*os.Process, error) {
   cmd := exec.Command("../agent/agent")
   args := []string{
     "../agent/agent",
     "-s", "./disco",
-    "-id", strconv.Itoa(id),
     "-p", strconv.Itoa(port),
     "-d", dataDir,
     "-logtostderr",

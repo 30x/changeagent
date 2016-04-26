@@ -36,12 +36,16 @@ var _ = Describe("Cluster Test", func() {
     ports[2] = BasePort + 2
 
     // Launch three server processes and make sure that there is only one leader between them
-    server1, err := launchAgent(1, ports[0], path.Join(dataDir, "data1"))
+    server1, err := launchAgent(ports[0], path.Join(dataDir, "data1"))
     Expect(err).Should(Succeed())
-    server2, err := launchAgent(2, ports[1], path.Join(dataDir, "data2"))
+    server2, err := launchAgent(ports[1], path.Join(dataDir, "data2"))
     Expect(err).Should(Succeed())
-    server3, err := launchAgent(3, ports[2], path.Join(dataDir, "data3"))
+    server3, err := launchAgent(ports[2], path.Join(dataDir, "data3"))
     Expect(err).Should(Succeed())
+
+    var _ = server1
+    var _ = server2
+    var _ = server3
 
     err = waitForLeader(ports, DefaultWait)
     Expect(err).Should(Succeed())
@@ -70,7 +74,7 @@ var _ = Describe("Cluster Test", func() {
     verifyBatch(newPorts[1], newPorts, "Partial Cluster 2")
 
     // Restart the server and test again
-    server1, err = launchAgent(1, ports[0], path.Join(dataDir, "data1"))
+    server1, err = launchAgent(ports[0], path.Join(dataDir, "data1"))
     Expect(err).Should(Succeed())
     err = waitForLeader(ports, DefaultWait)
     Expect(err).Should(Succeed())
@@ -91,7 +95,7 @@ var _ = Describe("Cluster Test", func() {
     verifyBatch(newPorts[0], newPorts, "Partial Cluster 2, 1")
     verifyBatch(newPorts[1], newPorts, "Partial Cluster 2, 2")
 
-    server2, err = launchAgent(2, ports[1], path.Join(dataDir, "data2"))
+    server2, err = launchAgent(ports[1], path.Join(dataDir, "data2"))
     Expect(err).Should(Succeed())
     err = waitForLeader(ports, DefaultWait)
     Expect(err).Should(Succeed())
@@ -112,7 +116,7 @@ var _ = Describe("Cluster Test", func() {
     verifyBatch(newPorts[0], newPorts, "Partial Cluster 3, 1")
     verifyBatch(newPorts[1], newPorts, "Partial Cluster 3, 2")
 
-    server3, err = launchAgent(3, ports[2], path.Join(dataDir, "data3"))
+    server3, err = launchAgent(ports[2], path.Join(dataDir, "data3"))
     Expect(err).Should(Succeed())
     err = waitForLeader(ports, DefaultWait)
     Expect(err).Should(Succeed())
@@ -129,11 +133,11 @@ var _ = Describe("Cluster Test", func() {
 
     time.Sleep(time.Second)
 
-    server1, err = launchAgent(1, ports[0], path.Join(dataDir, "data1"))
+    server1, err = launchAgent(ports[0], path.Join(dataDir, "data1"))
     Expect(err).Should(Succeed())
-    server2, err = launchAgent(2, ports[1], path.Join(dataDir, "data2"))
+    server2, err = launchAgent(ports[1], path.Join(dataDir, "data2"))
     Expect(err).Should(Succeed())
-    server3, err = launchAgent(3, ports[2], path.Join(dataDir, "data3"))
+    server3, err = launchAgent(ports[2], path.Join(dataDir, "data3"))
     Expect(err).Should(Succeed())
 
     err = waitForLeader(ports, DefaultWait)

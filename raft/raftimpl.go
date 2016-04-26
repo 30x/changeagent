@@ -351,10 +351,13 @@ func (r *Service) setLastApplied(t uint64) {
     return
   }
 
-  err = r.stateMachine.Commit(entry)
-  if err != nil {
-    glog.Errorf("Error committing change %d: %s", t, err)
-    return
+  if entry.Type >= 0 {
+    // Only pass positive (or zero) entry types to the state machine.
+    err = r.stateMachine.Commit(entry)
+    if err != nil {
+      glog.Errorf("Error committing change %d: %s", t, err)
+      return
+    }
   }
 
   err = r.stor.SetMetadata(LastAppliedKey, t)

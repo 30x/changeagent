@@ -396,7 +396,7 @@ var _ = Describe("Raft Unit Tests", func() {
       peerMatches: matches,
     }
     newIndex := unitTestRaft.calculateCommitIndex(state, cfg)
-    Expect(newIndex).Should(BeEquivalentTo(lastIndex - 1))
+    Expect(newIndex).Should(BeEquivalentTo(lastIndex - 2))
   })
 
   It("Commit Consensus 2", func() {
@@ -451,7 +451,7 @@ var _ = Describe("Raft Unit Tests", func() {
     }
     newIndex := unitTestRaft.calculateCommitIndex(state, cfg)
     fmt.Fprintf(GinkgoWriter, "Joint consensus. result = %d\n", newIndex)
-    Expect(newIndex).Should(BeEquivalentTo(lastIndex - 1))
+    Expect(newIndex).Should(BeEquivalentTo(lastIndex - 2))
   })
 
   It("Commit Joint Consensus 2", func() {
@@ -477,7 +477,7 @@ var _ = Describe("Raft Unit Tests", func() {
       peerMatches: matches,
     }
     newIndex := unitTestRaft.calculateCommitIndex(state, cfg)
-    Expect(newIndex).Should(BeEquivalentTo(lastIndex))
+    Expect(newIndex).Should(BeEquivalentTo(lastIndex - 2))
   })
 
   /*
@@ -486,7 +486,7 @@ var _ = Describe("Raft Unit Tests", func() {
 
   It("Vote several nodes", func() {
     cur := discovery.NodeList{
-      New: []string{"nodeSelf", "node1", "node2"},
+      New: []string{unitTestAddr, "node1", "node2"},
     }
     cfg := &discovery.NodeConfig{
       Current: &cur,
@@ -494,29 +494,29 @@ var _ = Describe("Raft Unit Tests", func() {
 
     // Majority of nodes, plus ourselves, voted yes.
     responses := []communication.VoteResponse{
-      {NodeID: 10, VoteGranted: true},
-      {NodeID: 20, VoteGranted: true},
+      {NodeAddress: "node1", VoteGranted: true},
+      {NodeAddress: "node2", VoteGranted: true},
     }
     granted := unitTestRaft.countVotes(responses, cfg)
     Expect(granted).Should(BeTrue())
 
     responses = []communication.VoteResponse{
-      {NodeID: 10, VoteGranted: true},
-      {NodeID: 20, VoteGranted: true},
+      {NodeAddress: "node1", VoteGranted: true},
+      {NodeAddress: "node2", VoteGranted: false},
     }
     granted = unitTestRaft.countVotes(responses, cfg)
     Expect(granted).Should(BeTrue())
 
     responses = []communication.VoteResponse{
-      {NodeID: 10, VoteGranted: false},
-      {NodeID: 20, VoteGranted: false},
+      {NodeAddress: "node1", VoteGranted: false},
+      {NodeAddress: "node2", VoteGranted: false},
     }
     granted = unitTestRaft.countVotes(responses, cfg)
     Expect(granted).Should(BeFalse())
 
     responses = []communication.VoteResponse{
-      {NodeID: 10, Error: errors.New("Pow")},
-      {NodeID: 20, VoteGranted: false},
+      {NodeAddress: "node1", Error: errors.New("Pow")},
+      {NodeAddress: "node2", VoteGranted: false},
     }
     granted = unitTestRaft.countVotes(responses, cfg)
     Expect(granted).Should(BeFalse())
@@ -544,25 +544,25 @@ var _ = Describe("Raft Unit Tests", func() {
     }
 
     responses := []communication.VoteResponse{
-      {NodeID: 10, VoteGranted: true},
-      {NodeID: 20, VoteGranted: true},
-      {NodeID: 30, VoteGranted: true},
+      {NodeAddress: "node1", VoteGranted: true},
+      {NodeAddress: "node2", VoteGranted: true},
+      {NodeAddress: "node3", VoteGranted: true},
     }
     granted := unitTestRaft.countVotes(responses, cfg)
     Expect(granted).Should(BeTrue())
 
     responses = []communication.VoteResponse{
-      {NodeID: 10, VoteGranted: true},
-      {NodeID: 20, VoteGranted: false},
-      {NodeID: 30, VoteGranted: true},
+      {NodeAddress: "node1", VoteGranted: true},
+      {NodeAddress: "node2", VoteGranted: false},
+      {NodeAddress: "node3", VoteGranted: true},
     }
     granted = unitTestRaft.countVotes(responses, cfg)
     Expect(granted).Should(BeTrue())
 
     responses = []communication.VoteResponse{
-      {NodeID: 10, VoteGranted: true},
-      {NodeID: 20, VoteGranted: false},
-      {NodeID: 30, VoteGranted: false},
+      {NodeAddress: "node1", VoteGranted: true},
+      {NodeAddress: "node2", VoteGranted: false},
+      {NodeAddress: "node3", VoteGranted: false},
     }
     granted = unitTestRaft.countVotes(responses, cfg)
     Expect(granted).Should(BeFalse())
@@ -579,22 +579,22 @@ var _ = Describe("Raft Unit Tests", func() {
 
     // Consensus from both clusters
     responses := []communication.VoteResponse{
-      {NodeID: 10, VoteGranted: true},
-      {NodeID: 20, VoteGranted: true},
-      {NodeID: 30, VoteGranted: true},
-      {NodeID: 40, VoteGranted: true},
-      {NodeID: 50, VoteGranted: true},
+      {NodeAddress: "node1", VoteGranted: true},
+      {NodeAddress: "node2", VoteGranted: true},
+      {NodeAddress: "node3", VoteGranted: true},
+      {NodeAddress: "node4", VoteGranted: true},
+      {NodeAddress: "node5", VoteGranted: true},
     }
     granted := unitTestRaft.countVotes(responses, cfg)
     Expect(granted).Should(BeTrue())
 
     // Consensus from old but not new
     responses = []communication.VoteResponse{
-      {NodeID: 10, VoteGranted: true},
-      {NodeID: 20, VoteGranted: true},
-      {NodeID: 30, VoteGranted: false},
-      {NodeID: 40, VoteGranted: false},
-      {NodeID: 50, VoteGranted: false},
+      {NodeAddress: "node1", VoteGranted: true},
+      {NodeAddress: "node2", VoteGranted: true},
+      {NodeAddress: "node3", VoteGranted: false},
+      {NodeAddress: "node4", VoteGranted: false},
+      {NodeAddress: "node5", VoteGranted: false},
     }
     granted = unitTestRaft.countVotes(responses, cfg)
     Expect(granted).Should(BeFalse())
@@ -612,20 +612,20 @@ var _ = Describe("Raft Unit Tests", func() {
 
     // Consensus from both clusters
     responses := []communication.VoteResponse{
-      {NodeID: 10, VoteGranted: true},
-      {NodeID: 20, VoteGranted: true},
-      {NodeID: 30, VoteGranted: true},
-      {NodeID: 40, VoteGranted: true},
+      {NodeAddress: "node1", VoteGranted: true},
+      {NodeAddress: "node2", VoteGranted: true},
+      {NodeAddress: "node3", VoteGranted: true},
+      {NodeAddress: "node4", VoteGranted: true},
     }
     granted := unitTestRaft.countVotes(responses, cfg)
     Expect(granted).Should(BeTrue())
 
     // Old config had consensus but not new config
     responses = []communication.VoteResponse{
-      {NodeID: 10, VoteGranted: false},
-      {NodeID: 20, VoteGranted: false},
-      {NodeID: 30, VoteGranted: true},
-      {NodeID: 40, VoteGranted: true},
+      {NodeAddress: "node1", VoteGranted: false},
+      {NodeAddress: "node2", VoteGranted: false},
+      {NodeAddress: "node3", VoteGranted: true},
+      {NodeAddress: "node4", VoteGranted: true},
     }
     granted = unitTestRaft.countVotes(responses, cfg)
     Expect(granted).Should(BeFalse())

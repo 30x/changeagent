@@ -192,7 +192,7 @@ var _ = Describe("Static Discovery", func() {
     Expect(err).Should(Succeed())
     defer os.Remove("./testfiles/tmp")
 
-    d, err := ReadDiscoveryFile("./testfiles/tmp", 250 * time.Millisecond)
+    d, err := ReadDiscoveryFile("./testfiles/tmp", 10 * time.Millisecond)
     Expect(err).Should(Succeed())
     defer d.Close()
 
@@ -209,6 +209,7 @@ var _ = Describe("Static Discovery", func() {
       }
 
       changeWatcher := d.Watch()
+      time.Sleep(time.Second)
       syncChanges <- true
       change := <- changeWatcher
 
@@ -223,6 +224,48 @@ var _ = Describe("Static Discovery", func() {
     Expect(err).Should(Succeed())
     Eventually(syncChanges).Should(Receive(BeTrue()))
   })
+
+
+  It("Discovery file no change no update", func() {
+    d, err := ReadDiscoveryFile("./testfiles/testdisco", 10 * time.Millisecond)
+    Expect(err).Should(Succeed())
+    defer d.Close()
+    syncChanges := make(chan bool, 1)
+    go func() {
+      changeWatcher := d.Watch()
+      syncChanges <- true
+      <- changeWatcher
+      syncChanges <- true
+    }()
+
+    <- syncChanges
+    Consistently(syncChanges).ShouldNot(Receive())
+  })
+
+  It("Discovery file change without changing contents no update", func() {
+    err := copyFile("./testfiles/testdisco", "./testfiles/tmp")
+    Expect(err).Should(Succeed())
+    defer os.Remove("./testfiles/tmp")
+
+    d, err := ReadDiscoveryFile("./testfiles/tmp", 10 * time.Millisecond)
+    Expect(err).Should(Succeed())
+    defer d.Close()
+
+    syncChanges := make(chan bool, 1)
+    go func() {
+      changeWatcher := d.Watch()
+      syncChanges <- true
+      <- changeWatcher
+      syncChanges <- true
+    }()
+
+    <- syncChanges
+    // Re-copy the file, which will change mtime but not change contents
+    err = copyFile("./testfiles/testdisco", "./testfiles/tmp")
+    Expect(err).Should(Succeed())
+    Consistently(syncChanges).ShouldNot(Receive())
+  })
+
 })
 
 func copyFile(src string, dst string) error {
@@ -241,5 +284,6 @@ func copyFile(src string, dst string) error {
   if err != nil { return err }
   _, err = dstFile.Write(buf)
   if err != nil { return err }
+  stat, _ = dstFile.Stat()
   return nil
 }

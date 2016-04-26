@@ -261,6 +261,7 @@ func (r *Service) leaderLoop(state *raftState) chan bool {
       }
 
     case <- r.configChanges:
+      glog.Info("Config change from discovery service")
       err = r.processConfigChange(state)
       if err != nil {
         glog.Errorf("Error processing configuration change: %v", err)

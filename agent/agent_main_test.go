@@ -63,7 +63,7 @@ var _ = AfterSuite(func() {
 func startAgent(id uint64, disco discovery.Discovery, dir string, listener *net.TCPListener) (*ChangeAgent, error) {
   mux := http.NewServeMux()
 
-  agent, err := StartChangeAgent(id, disco, dir, mux)
+  agent, err := StartChangeAgent(disco, dir, mux)
   if err != nil { return nil, err }
   go func() {
     err = http.Serve(listener, mux)
