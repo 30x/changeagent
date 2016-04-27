@@ -58,11 +58,6 @@ var _ = Describe("Cluster Test", func() {
     verifyBatch(ports[1], ports, "Full Cluster 2")
     verifyBatch(ports[2], ports, "Full Cluster 3")
 
-    _, collectionId := populateCollection(ports[0], "Tenant1-1", "Collection1-1")
-    verifyCollection(ports[0], collectionId, DefaultWait)
-    verifyCollection(ports[1], collectionId, DefaultWait)
-    verifyCollection(ports[2], collectionId, DefaultWait)
-
     // Kill each server one at a time and repeat that test of sending stuff and seeing it replicated
     fmt.Fprintf(GinkgoWriter, "Killing server at port %d\n", ports[0])
     killAgent(server1)
@@ -250,71 +245,4 @@ func checkChanges(readPort int, firstChange, lastChange uint64, maxWait int) {
   }
 
   Expect(true).Should(BeFalse())
-}
-
-func populateCollection(writePort int, tenantName, collectionName string) (string, string) {
-  uri := fmt.Sprintf("http://localhost:%d/tenants", writePort)
-  msg := fmt.Sprintf("name=%s", tenantName)
-
-  resp, err := http.Post(uri, "application/x-www-form-urlencoded", strings.NewReader(msg))
-  Expect(err).Should(Succeed())
-  Expect(resp.StatusCode).Should(BeEquivalentTo(200))
-  body, err := ioutil.ReadAll(resp.Body)
-  Expect(err).Should(Succeed())
-
-  var tenant CollectionResponse
-  err = json.Unmarshal(body, &tenant)
-  Expect(err).Should(Succeed())
-  fmt.Fprintf(GinkgoWriter, "Created tenant %s\n", tenant.Id)
-
-  uri = fmt.Sprintf("http://localhost:%d/tenants/%s/collections", writePort, tenantName)
-  msg = fmt.Sprintf("name=%s", collectionName)
-
-  resp, err = http.Post(uri, "application/x-www-form-urlencoded", strings.NewReader(msg))
-  Expect(err).Should(Succeed())
-  Expect(resp.StatusCode).Should(BeEquivalentTo(200))
-  body, err = ioutil.ReadAll(resp.Body)
-  Expect(err).Should(Succeed())
-
-  var collection CollectionResponse
-  err = json.Unmarshal(body, &collection)
-  Expect(err).Should(Succeed())
-  fmt.Fprintf(GinkgoWriter, "Created collection %s\n", collection.Id)
-
-  uri = fmt.Sprintf("http://localhost:%d/collections/%s/keys", writePort, collection.Id)
-  for i := 0; i < BatchSize; i++ {
-    msg = fmt.Sprintf("{\"key\":\"%d\",\"data\":{\"collection\":\"%s\",\"sequence\":%d}}",
-      i, collectionName, i)
-    resp, err = http.Post(uri, "application/json", strings.NewReader(msg))
-    Expect(err).Should(Succeed())
-    Expect(resp.StatusCode).Should(BeEquivalentTo(200))
-    body, err = ioutil.ReadAll(resp.Body)
-    Expect(err).Should(Succeed())
-  }
-
-  return tenant.Id, collection.Id
-}
-
-func verifyCollection(readPort int, collectionId string, maxWait int) {
-  uri := fmt.Sprintf("http://localhost:%d/collections/%s/keys", readPort, collectionId)
-
-  for i := 0; i < maxWait; i++ {
-    resp, err := http.Get(uri)
-    Expect(err).Should(Succeed())
-    body, err := ioutil.ReadAll(resp.Body)
-    Expect(err).Should(Succeed())
-    fmt.Fprintf(GinkgoWriter, "Collection entries: %s\n", string(body))
-    Expect(resp.StatusCode).Should(BeEquivalentTo(200))
-
-    var entries []WriteResponse
-    err = json.Unmarshal(body, &entries)
-    Expect(err).Should(Succeed())
-    if len(entries) == BatchSize {
-      return
-    }
-    fmt.Fprintf(GinkgoWriter, "Got %d collection entries out of %d\n", len(entries), BatchSize)
-    time.Sleep(time.Second)
-  }
-
-  Expect(false).Should(BeTrue())
 }

@@ -8,9 +8,9 @@ import (
   "testing"
   "net"
   "net/http"
+  "reflect"
   "sync"
   "time"
-  "github.com/satori/go.uuid"
   "revision.aeip.apigee.net/greg/changeagent/storage"
   . "github.com/onsi/ginkgo"
   . "github.com/onsi/gomega"
@@ -22,9 +22,6 @@ const (
 
 var expectedEntries []storage.Entry
 var expectedLock = sync.Mutex{}
-
-var tenant = uuid.NewV4()
-var collection = uuid.NewV4()
 
 var testListener *net.TCPListener
 var testRaft Raft
@@ -113,9 +110,7 @@ var _ = Describe("Communication", func() {
       Index: 1,
       Term: 2,
       Timestamp: time.Now(),
-      Tenant: tenant,
-      Collection: collection,
-      Key: "baz",
+      Tags: []string{"foo"},
       Data: []byte("Hello!"),
     }
     ar.Entries = append(ar.Entries, e)
@@ -123,9 +118,7 @@ var _ = Describe("Communication", func() {
       Index: 2,
       Term: 3,
       Timestamp: time.Now(),
-      Tenant: tenant,
-      Collection: collection,
-      Key: "baz",
+      Tags: []string{"bar", "baz"},
       Data: []byte("Goodbye!"),
     }
     ar.Entries = append(ar.Entries, e2)
@@ -146,9 +139,6 @@ var _ = Describe("Communication", func() {
       Timestamp: time.Now(),
       Index: 3,
       Term: 3,
-      Tenant: tenant,
-      Collection: collection,
-      Key: "baz",
       Data: []byte("Hello, World!"),
     }
 
@@ -203,17 +193,11 @@ func (r *testImpl) Append(req AppendRequest) (AppendResponse, error) {
     if e.Timestamp != ee.Timestamp {
       vr.Error = fmt.Errorf("Timestamps do not match")
     }
-    if !uuid.Equal(e.Tenant, ee.Tenant) {
-      vr.Error = fmt.Errorf("Tenants do not match")
-    }
-    if !uuid.Equal(e.Collection, ee.Collection) {
-      vr.Error = fmt.Errorf("Collections do not match")
-    }
-    if e.Key != ee.Key {
-     vr.Error = fmt.Errorf("Keys do not match")
-    }
     if !bytes.Equal(e.Data, expectedEntries[i].Data) {
       vr.Error = fmt.Errorf("Bytes do not match")
+    }
+    if !reflect.DeepEqual(e.Tags, expectedEntries[i].Tags) {
+      vr.Error = fmt.Errorf("Tags do not match")
     }
   }
   return vr, nil
@@ -227,9 +211,6 @@ func (r *testImpl) Propose(e storage.Entry) (uint64, error) {
   if ee.Index != e.Index { return 0, errors.New("Incorrect index") }
   if ee.Term != e.Term { return 0, errors.New("Incorrect term") }
   if ee.Timestamp != e.Timestamp { return 0, errors.New("Incorrect timestamp") }
-  if !uuid.Equal(ee.Tenant, e.Tenant) { return 0, errors.New("Incorrect tenant") }
-  if !uuid.Equal(ee.Collection, e.Collection) { return 0, errors.New("Incorrect collection") }
-  if ee.Key != e.Key { return 0, errors.New("Incorrect key") }
   if !bytes.Equal(ee.Data, e.Data) { return 0, errors.New("Incorrect data") }
 
   return 123, nil

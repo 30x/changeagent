@@ -18,11 +18,11 @@ import (
  * Make these hard-coded rather than "iota" because they go in a database!
  */
 const (
-  CurrentTermKey = 1
-  VotedForKey = 2
-  LocalIDKey = 3
-  LastAppliedKey = 4
-  NodeConfig = 5
+  CurrentTermKey = "currentTerm"
+  VotedForKey = "votedFor"
+  LocalIDKey = "localID"
+  LastAppliedKey = "lastApplied"
+  NodeConfig = "nodeConfig"
 )
 
 const (
@@ -146,11 +146,11 @@ func StartRaft(comm communication.Communication,
     stateMachine: state,
   }
 
-  nodeID, err := stor.GetMetadata(LocalIDKey)
+  nodeID, err := stor.GetUintMetadata(LocalIDKey)
   if err != nil { return nil, err }
   if nodeID == 0 {
     nodeID = uint64(raftRand.Int63())
-    err = stor.SetMetadata(LocalIDKey, nodeID)
+    err = stor.SetUintMetadata(LocalIDKey, nodeID)
     if err != nil { return nil, err }
   }
   r.id = nodeID
@@ -181,7 +181,7 @@ func StartRaft(comm communication.Communication,
 }
 
 func (r *Service) loadCurrentConfig(disco discovery.Discovery, stor storage.Storage) error {
-  buf, err := stor.GetRawMetadata(NodeConfig)
+  buf, err := stor.GetMetadata(NodeConfig)
   if err != nil { return err }
 
   if buf == nil {
@@ -189,7 +189,7 @@ func (r *Service) loadCurrentConfig(disco discovery.Discovery, stor storage.Stor
     cfg := disco.GetCurrentConfig()
     storBuf, err := discovery.EncodeConfig(cfg)
     if err != nil { return err }
-    err = stor.SetRawMetadata(NodeConfig, storBuf)
+    err = stor.SetMetadata(NodeConfig, storBuf)
     if err != nil { return err }
     r.nodeConfig.Store(cfg)
     return nil
@@ -360,7 +360,7 @@ func (r *Service) setLastApplied(t uint64) {
     }
   }
 
-  err = r.stor.SetMetadata(LastAppliedKey, t)
+  err = r.stor.SetUintMetadata(LastAppliedKey, t)
   if err != nil {
     glog.Errorf("Error updating last applied key %d to the database: %s", t, err)
     return
@@ -369,10 +369,6 @@ func (r *Service) setLastApplied(t uint64) {
   atomic.StoreUint64(&r.lastApplied, t)
 
   r.appliedTracker.Update(uuid.Nil, t)
-
-  if !uuid.Equal(entry.Tenant, uuid.Nil) {
-    r.appliedTracker.Update(entry.Tenant, t)
-  }
 }
 
 func (r *Service) GetAppliedTracker() *ChangeTracker {
@@ -400,7 +396,7 @@ func (r *Service) getNodeConfig() *discovery.NodeConfig {
 func (r *Service) setNodeConfig(newCfg *discovery.NodeConfig) error {
   encoded, err := discovery.EncodeConfig(newCfg)
   if err != nil { return err }
-  err = r.stor.SetRawMetadata(NodeConfig, encoded)
+  err = r.stor.SetMetadata(NodeConfig, encoded)
   if err != nil { return err }
   r.nodeConfig.Store(newCfg)
   return nil
@@ -440,24 +436,24 @@ func (r *Service) setFollowerOnly(f bool) {
 }
 
 func (r *Service) readCurrentTerm() uint64 {
-  ct, err := r.stor.GetMetadata(CurrentTermKey)
+  ct, err := r.stor.GetUintMetadata(CurrentTermKey)
   if err != nil { panic("Fatal error reading state from database") }
   return ct
 }
 
 func (r *Service) writeCurrentTerm(ct uint64) {
-  err := r.stor.SetMetadata(CurrentTermKey, ct)
+  err := r.stor.SetUintMetadata(CurrentTermKey, ct)
   if err != nil { panic("Fatal error writing state to database") }
 }
 
 func (r *Service) readLastVote() uint64 {
-  ct, err := r.stor.GetMetadata(VotedForKey)
+  ct, err := r.stor.GetUintMetadata(VotedForKey)
   if err != nil { panic("Fatal error reading state from database") }
   return ct
 }
 
 func (r *Service) writeLastVote(ct uint64) {
-  err := r.stor.SetMetadata(VotedForKey, ct)
+  err := r.stor.SetUintMetadata(VotedForKey, ct)
   if err != nil { panic("Fatal error writing state to database") }
 }
 
@@ -468,7 +464,7 @@ func (r *Service) readLastCommit() uint64 {
 }
 
 func (r *Service) readLastApplied() uint64 {
-  la, err := r.stor.GetMetadata(LastAppliedKey)
+  la, err := r.stor.GetUintMetadata(LastAppliedKey)
   if err != nil { panic("Fatal error reading state from state machine") }
   return la
 }

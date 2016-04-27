@@ -2,11 +2,12 @@ package main
 
 import (
   "flag"
+  "encoding/json"
   "fmt"
   "os"
+  "io/ioutil"
   "net"
   "net/http"
-  "strings"
   "testing"
   "time"
   "revision.aeip.apigee.net/greg/changeagent/discovery"
@@ -83,64 +84,15 @@ func cleanAgent(agent *ChangeAgent, l *net.TCPListener) {
   l.Close()
 }
 
-func ensureTenant(name string) string {
-  fmt.Fprintf(GinkgoWriter, "Checking for tenant %s\n", name)
-  gr, err := http.Get(fmt.Sprintf("%s/tenants/%s", listenURI, name))
+func parseJSON(resp *http.Response) map[string]string {
+  defer resp.Body.Close()
+  bytes, err := ioutil.ReadAll(resp.Body)
   Expect(err).Should(Succeed())
 
-  if gr.StatusCode == 404 {
-    // Need to make that tenant the first time
-    uri := listenURI + "/tenants"
-    request := fmt.Sprintf("name=%s", name)
-
-    fmt.Fprintf(GinkgoWriter, "Creating tenant %s\n", name)
-    pr, err := http.Post(uri, FormContent, strings.NewReader(request))
-    Expect(err).Should(Succeed())
-    Expect(pr.StatusCode).Should(Equal(200))
-    lastNewChange++
-
-    resp := parseJSON(pr)
-    fmt.Fprintf(GinkgoWriter, "New tenant %s created\n", resp["_id"])
-    return resp["_id"]
-
-  } else if gr.StatusCode == 200 {
-    resp := parseJSON(gr)
-    fmt.Fprintf(GinkgoWriter, "Tenant %s exists\n", resp["_id"])
-    return resp["_id"]
-
-  } else {
-    Expect(gr.StatusCode).Should(Equal(200))
-    return ""
-  }
-}
-
-func ensureCollection(tenant, name string) string {
-  fmt.Fprintf(GinkgoWriter, "Checking for collection %s\n", name)
-  gr, err := http.Get(fmt.Sprintf("%s/tenants/%s/collections/%s", listenURI, tenant, name))
+  jsonBody := make(map[string]string)
+  err = json.Unmarshal(bytes, &jsonBody)
   Expect(err).Should(Succeed())
 
-  if gr.StatusCode == 404 {
-    // Need to make that tenant the first time
-    uri := fmt.Sprintf("%s/tenants/%s/collections", listenURI, tenant)
-    request := fmt.Sprintf("name=%s", name)
-
-    fmt.Fprintf(GinkgoWriter, "Creating collection %s for tenant %s\n", name, tenant)
-    pr, err := http.Post(uri, FormContent, strings.NewReader(request))
-    Expect(err).Should(Succeed())
-    Expect(pr.StatusCode).Should(Equal(200))
-    lastNewChange++
-
-    resp := parseJSON(pr)
-    fmt.Fprintf(GinkgoWriter, "New collection %s created\n", resp["_id"])
-    return resp["_id"]
-
-  } else if gr.StatusCode == 200 {
-    resp := parseJSON(gr)
-    fmt.Fprintf(GinkgoWriter, "Collection %s exists\n", resp["_id"])
-    return resp["_id"]
-
-  } else {
-    Expect(gr.StatusCode).Should(Equal(200))
-    return ""
-  }
+  fmt.Fprintf(GinkgoWriter, "Got JSON response %v\n", jsonBody)
+  return jsonBody
 }

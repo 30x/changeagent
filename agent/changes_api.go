@@ -19,15 +19,12 @@ const (
 
   ChangesURI = "/changes"
   SingleChange = ChangesURI + "/{change}"
-  SingleTenantChanges = "/tenants/{tenant}/changes"
 )
 
 func (a *ChangeAgent) initChangesAPI() {
   a.router.HandleFunc(ChangesURI, a.handlePostChanges).Methods("POST")
   a.router.HandleFunc(ChangesURI, a.handleGetChanges).Methods("GET")
   a.router.HandleFunc(SingleChange, a.handleGetChange).Methods("GET")
-  a.router.HandleFunc(SingleTenantChanges, a.handleGetTenantChanges).Methods("GET")
-  a.router.HandleFunc(SingleTenantChanges, a.handlePostTenantChanges).Methods("POST")
 }
 
 /*
@@ -35,21 +32,6 @@ func (a *ChangeAgent) initChangesAPI() {
  * of the change.
  */
 func (a *ChangeAgent) handlePostChanges(resp http.ResponseWriter, req *http.Request) {
-  a.postChange(resp, req, uuid.Nil)
-}
-
-func (a *ChangeAgent) handlePostTenantChanges(resp http.ResponseWriter, req *http.Request) {
-  tenantIDStr := mux.Vars(req)["tenant"]
-  tenantID, _, errCode, err := a.validateTenant(tenantIDStr)
-  if err != nil {
-    writeError(resp, errCode, err)
-    return
-  }
-
-  a.postChange(resp, req, tenantID)
-}
-
-func (a *ChangeAgent) postChange(resp http.ResponseWriter, req *http.Request, tenantID uuid.UUID) {
   if req.Header.Get("Content-Type")!= JSONContent {
     // TODO regexp?
     writeError(resp, http.StatusUnsupportedMediaType, errors.New("Unsupported content type"))
@@ -61,19 +43,6 @@ func (a *ChangeAgent) postChange(resp http.ResponseWriter, req *http.Request, te
   if err != nil {
     writeError(resp, http.StatusBadRequest, errors.New("Invalid JSON"))
     return
-  }
-
-  // Fix up tenant and collection IDs
-  if !uuid.Equal(proposal.Collection, uuid.Nil) && uuid.Equal(proposal.Tenant, uuid.Nil) {
-    _, collectionTenant, err := a.stor.GetCollectionByID(proposal.Collection)
-    if err != nil {
-      writeError(resp, http.StatusInternalServerError, err)
-      return
-    }
-    proposal.Tenant = collectionTenant
-  }
-  if !uuid.Equal(tenantID, uuid.Nil) {
-    proposal.Tenant = tenantID
   }
 
   newEntry, err := a.makeProposal(proposal)
@@ -102,21 +71,6 @@ func (a *ChangeAgent) postChange(resp http.ResponseWriter, req *http.Request, te
  * Result will be an array of objects, with metadata plus original JSON data.
  */
 func (a *ChangeAgent) handleGetChanges(resp http.ResponseWriter, req *http.Request) {
-  a.getChanges(uuid.Nil, resp, req)
-}
-
-func (a *ChangeAgent) handleGetTenantChanges(resp http.ResponseWriter, req *http.Request) {
-  tenantIDStr := mux.Vars(req)["tenant"]
-  tenantID, _, errCode, err := a.validateTenant(tenantIDStr)
-  if err != nil {
-    writeError(resp, errCode, err)
-    return
-  }
-
-  a.getChanges(tenantID, resp, req)
-}
-
-func (a *ChangeAgent) getChanges(id uuid.UUID, resp http.ResponseWriter, req *http.Request) {
   qps := req.URL.Query()
 
   limitStr := qps.Get("limit")
@@ -145,14 +99,14 @@ func (a *ChangeAgent) getChanges(id uuid.UUID, resp http.ResponseWriter, req *ht
   }
   block := time.Duration(bk)
 
-  entries, lastFullChange, err := a.fetchEntries(id, since, limit, resp)
+  entries, lastFullChange, err := a.fetchEntries(since, limit, resp)
   if err != nil { return }
 
   // TODO we need a tenant-specific tracker for this to work properly.
   if (len(entries) == 0) && (block > 0) {
     glog.V(2).Infof("Blocking for up to %d seconds since change %d", block, lastFullChange)
-    a.raft.GetAppliedTracker().TimedWait(id, lastFullChange + 1, block * time.Second)
-    entries, _, err = a.fetchEntries(id, lastFullChange, limit, resp)
+    a.raft.GetAppliedTracker().TimedWait(uuid.Nil, lastFullChange + 1, block * time.Second)
+    entries, _, err = a.fetchEntries(lastFullChange, limit, resp)
     if err != nil { return }
   }
 
@@ -167,7 +121,6 @@ func (a *ChangeAgent) getChanges(id uuid.UUID, resp http.ResponseWriter, req *ht
 }
 
 func (a *ChangeAgent) fetchEntries(
-    id uuid.UUID,
     since uint64,
     limit uint,
     resp http.ResponseWriter) ([]storage.Entry, uint64, error) {
@@ -178,23 +131,14 @@ func (a *ChangeAgent) fetchEntries(
 
   glog.V(2).Infof("Fetching up to %d changes since %d", limit, since)
 
-  if uuid.Equal(id, uuid.Nil) {
-    entries, err = a.stor.GetEntries(since, limit,
-      func(e *storage.Entry) bool {
-        if e.Index > since {
-          lastRawChange = e.Index
-        }
-        return e.Type == NormalChange
-      })
-  } else {
-    entries, err = a.stor.GetTenantEntries(id, since, limit,
-      func(e *storage.Entry) bool {
-        if e.Index > since {
-          lastRawChange = e.Index
-        }
-        return e.Type == NormalChange
-      })
-  }
+  entries, err = a.stor.GetEntries(since, limit,
+    func(e *storage.Entry) bool {
+      if e.Index > since {
+        lastRawChange = e.Index
+      }
+      return e.Type == NormalChange
+    })
+
   if err == nil {
     glog.V(2).Infof("Retrieved %d changes. raw = %d", len(entries), lastRawChange)
     return entries, lastRawChange, nil

@@ -6,7 +6,6 @@ import (
   "io/ioutil"
   "time"
   "revision.aeip.apigee.net/greg/changeagent/storage"
-  "github.com/satori/go.uuid"
 )
 
 var defaultTime = time.Time{}
@@ -70,7 +69,6 @@ func unmarshalJSON(in io.Reader) (storage.Entry, error) {
   }
   entry := storage.Entry{
     Index: fullData.ID,
-    Key: fullData.Key,
     Data: fullData.Data,
   }
 
@@ -78,17 +76,6 @@ func unmarshalJSON(in io.Reader) (storage.Entry, error) {
     entry.Timestamp = time.Time{}
   } else {
     entry.Timestamp = time.Unix(0, fullData.Timestamp)
-  }
-
-  if fullData.Collection != "" {
-    collectionID, err := uuid.FromString(fullData.Collection)
-    if err != nil { return storage.Entry{}, err }
-    entry.Collection = collectionID
-  }
-  if fullData.Tenant != "" {
-    tenantID, err := uuid.FromString(fullData.Tenant)
-    if err != nil { return storage.Entry{}, err }
-    entry.Tenant = tenantID
   }
 
   return entry, nil
@@ -142,18 +129,11 @@ func marshalError(result error) string {
 func convertData(entry storage.Entry) *JSONData {
   ret := JSONData{
     ID: entry.Index,
-    Key: entry.Key,
     Data: entry.Data,
   }
 
   if entry.Timestamp != defaultTime {
     ret.Timestamp = entry.Timestamp.UnixNano()
-  }
-  if !uuid.Equal(entry.Collection, uuid.Nil) {
-    ret.Collection = entry.Collection.String()
-  }
-  if !uuid.Equal(entry.Tenant, uuid.Nil) {
-    ret.Tenant = entry.Tenant.String()
   }
 
   return &ret
