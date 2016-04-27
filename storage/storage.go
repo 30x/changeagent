@@ -74,18 +74,18 @@ func EncodeEntry(entry *Entry) ([]byte, error) {
   header, err :=  proto.Marshal(&pb)
   if err != nil { return nil, err }
 
-  // Now concatenate lengths, header, and body into a single record
+  // Now concatenate lengths, header, and body into a buffer
 
-  buf := &bytes.Buffer{}
+  lenbuf := &bytes.Buffer{}
   hdrlen := uint32(len(header))
   bodylen := uint32(len(entry.Data))
+  binary.Write(lenbuf, storageByteOrder, &hdrlen)
+  binary.Write(lenbuf, storageByteOrder, &bodylen)
 
-  binary.Write(buf, storageByteOrder, &hdrlen)
-  binary.Write(buf, storageByteOrder, &bodylen)
-  buf.Write(header)
-  buf.Write(entry.Data)
+  buf := append(lenbuf.Bytes(), header...)
+  buf = append(buf, entry.Data...)
 
-  return buf.Bytes(), nil
+  return buf, nil
 }
 
 /*

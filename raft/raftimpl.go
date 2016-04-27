@@ -122,6 +122,7 @@ type proposalCommand struct {
 }
 
 var raftRand = makeRand()
+var raftRandLock = &sync.Mutex{}
 
 func StartRaft(comm communication.Communication,
                disco discovery.Discovery,
@@ -149,7 +150,10 @@ func StartRaft(comm communication.Communication,
   nodeID, err := stor.GetUintMetadata(LocalIDKey)
   if err != nil { return nil, err }
   if nodeID == 0 {
+    // Generate a random node ID
+    raftRandLock.Lock()
     nodeID = uint64(raftRand.Int63())
+    raftRandLock.Unlock()
     err = stor.SetUintMetadata(LocalIDKey, nodeID)
     if err != nil { return nil, err }
   }
@@ -473,9 +477,15 @@ func (r *Service) readLastApplied() uint64 {
 func (r *Service) randomElectionTimeout() time.Duration {
   rge := int64(HeartbeatTimeout * 2)
   min := int64(ElectionTimeout - HeartbeatTimeout)
+  raftRandLock.Lock()
+  defer raftRandLock.Unlock()
   return time.Duration(raftRand.Int63n(rge) + min)
 }
 
+/*
+ * Make a random-number generator for timeouts and for generating node IDs. Nanosecond
+ * accuracy should be random enough for the seed.
+ */
 func makeRand() *rand.Rand {
   s := rand.NewSource(time.Now().UnixNano())
   return rand.New(s)
