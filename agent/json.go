@@ -13,36 +13,12 @@ var defaultTime = time.Time{}
 type JSONData struct {
   ID uint64 `json:"_id,omitempty"`
   Timestamp int64 `json:"_ts,omitempty"`
-  Tenant string `json:"tenant,omitempty"`
-  Collection string `json:"collection,omitempty"`
-  Key string `json:"key,omitempty"`
+  Tags []string `json:"tags,omitempty"`
   Data json.RawMessage `json:"data,omitempty"`
 }
 
 type JSONError struct {
   Error string `json:"error"`
-}
-
-type TenantLink struct {
-  Name string `json:"name"`
-  ID string `json:"_id,omitempty"`
-  Self string `json:"_self,omitempty"`
-  Collections string `json:"_collections,omitempty"`
-}
-
-type CollectionLink struct {
-  Name string `json:"name"`
-  ID string `json:"_id,omitempty"`
-  Self string `json:"_self,omitempty"`
-  Keys string `json:"_keys,omitempty"`
-}
-
-func unmarshalAny(in io.Reader, v interface{}) error {
-  body, err := ioutil.ReadAll(in)
-  if err != nil { return err }
-
-  err = json.Unmarshal(body, v)
-  return err
 }
 
 /*
@@ -69,6 +45,7 @@ func unmarshalJSON(in io.Reader) (storage.Entry, error) {
   }
   entry := storage.Entry{
     Index: fullData.ID,
+    Tags: fullData.Tags,
     Data: fullData.Data,
   }
 
@@ -129,6 +106,7 @@ func marshalError(result error) string {
 func convertData(entry storage.Entry) *JSONData {
   ret := JSONData{
     ID: entry.Index,
+    Tags: entry.Tags,
     Data: entry.Data,
   }
 

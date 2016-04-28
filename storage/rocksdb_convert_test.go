@@ -71,6 +71,38 @@ var _ = Describe("Conversion", func() {
     s := e.String()
     Expect(s).Should(ContainSubstring("Index: 22"))
   })
+
+  It("Entry Tags", func() {
+    e1 := &Entry{
+      Index: 1,
+      Term: 1,
+    }
+    e2 := &Entry{
+      Index: 1,
+      Term: 1,
+      Tags: []string{"one"},
+    }
+    e3 := &Entry{
+      Index: 1,
+      Term: 1,
+      Tags: []string{"one", "two"},
+    }
+
+    Expect(e1.MatchesTags([]string{})).Should(BeTrue())
+    Expect(e1.MatchesTags([]string{"one"})).Should(BeFalse())
+    Expect(e1.MatchesTags([]string{"one", "two"})).Should(BeFalse())
+    Expect(e1.MatchesTags([]string{"one", "two", "three"})).Should(BeFalse())
+
+    Expect(e2.MatchesTags([]string{})).Should(BeTrue())
+    Expect(e2.MatchesTags([]string{"one"})).Should(BeTrue())
+    Expect(e2.MatchesTags([]string{"one", "two"})).Should(BeFalse())
+    Expect(e2.MatchesTags([]string{"one", "two", "three"})).Should(BeFalse())
+
+    Expect(e3.MatchesTags([]string{})).Should(BeTrue())
+    Expect(e3.MatchesTags([]string{"one"})).Should(BeTrue())
+    Expect(e3.MatchesTags([]string{"one", "two"})).Should(BeTrue())
+    Expect(e3.MatchesTags([]string{"one", "two", "three"})).Should(BeFalse())
+  })
 })
 
 func testIntKey(kt int, key uint64) bool {

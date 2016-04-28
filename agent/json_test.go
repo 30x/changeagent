@@ -22,6 +22,19 @@ const (
   testJSON2Out =
     "{\"data\":{\"one\":\"one\",\"two\":2,\"three\":3.0,\"four\":true}}"
 
+  testJSON3aIn =
+    "{\"data\": {\"count\": 1}, \"tags\": []}"
+  testJSON3aOut =
+    "{\"data\":{\"count\":1}}"
+  testJSON3bIn =
+    "{\"data\": {\"count\": 1}, \"tags\": [\"one\"]}"
+  testJSON3bOut =
+    "{\"data\":{\"count\":1},\"tags\":[\"one\"]}"
+  testJSON3cIn =
+    "{\"data\": {\"count\": 1}, \"tags\": [\"one\", \"two\"]}"
+  testJSON3cOut =
+    "{\"data\":{\"count\":1},\"tags\":[\"one\",\"two\"]}"
+
   testStringIn =
     "\"Hello, World!\""
   testStringOut =
@@ -70,6 +83,29 @@ var _ = Describe("JSON encoding tests", func() {
     entry2, err := unmarshalJSON(bytes.NewBuffer([]byte(str)))
     Expect(err).Should(Succeed())
     Expect(entry2.Timestamp).Should(Equal(ts))
+  })
+
+  It("Marshal With Tags", func() {
+    entry, err := unmarshalJSON(bytes.NewReader([]byte(testJSON3aIn)))
+    Expect(err).Should(Succeed())
+
+    str, err := marshalJSON(entry)
+    Expect(err).Should(Succeed())
+    Expect(str).Should(MatchJSON(testJSON3aOut))
+
+    entry, err = unmarshalJSON(bytes.NewReader([]byte(testJSON3bIn)))
+    Expect(err).Should(Succeed())
+
+    str, err = marshalJSON(entry)
+    Expect(err).Should(Succeed())
+    Expect(str).Should(MatchJSON(testJSON3bOut))
+
+    entry, err = unmarshalJSON(bytes.NewReader([]byte(testJSON3cIn)))
+    Expect(err).Should(Succeed())
+
+    str, err = marshalJSON(entry)
+    Expect(err).Should(Succeed())
+    Expect(str).Should(MatchJSON(testJSON3cOut))
   })
 
   It("Marshal string", func() {

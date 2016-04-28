@@ -99,15 +99,26 @@ func (a *ChangeAgent) handleGetChanges(resp http.ResponseWriter, req *http.Reque
   }
   block := time.Duration(bk)
 
-  entries, lastFullChange, err := a.fetchEntries(since, limit, resp)
+  tags := qps["tag"]
+
+  entries, lastFullChange, err := a.fetchEntries(since, limit, tags, resp)
   if err != nil { return }
 
-  // TODO we need a tenant-specific tracker for this to work properly.
   if (len(entries) == 0) && (block > 0) {
-    glog.V(2).Infof("Blocking for up to %d seconds since change %d", block, lastFullChange)
-    a.raft.GetAppliedTracker().TimedWait(uuid.Nil, lastFullChange + 1, block * time.Second)
-    entries, _, err = a.fetchEntries(lastFullChange, limit, resp)
-    if err != nil { return }
+    now := time.Now()
+    waitEnd := now.Add(block * time.Second)
+    waitFor := lastFullChange
+    for len(entries) == 0 && waitEnd.After(now) {
+      // Because of tags, do this in a loop, so we check for tags every time and re-wait
+      waitFor++
+      waitRemaining := waitEnd.Sub(now)
+      glog.V(2).Infof("Waiting %d milliseconds for the next change after %d", waitRemaining, waitFor)
+      a.raft.GetAppliedTracker().TimedWait(uuid.Nil, waitFor, waitRemaining)
+      entries, _, err = a.fetchEntries(waitFor - 1, limit, tags, resp)
+      if err != nil { return }
+      glog.V(2).Infof("Got %d changes after blocking", len(entries))
+      now = time.Now()
+    }
   }
 
   outBody, err := marshalChanges(entries)
@@ -123,6 +134,7 @@ func (a *ChangeAgent) handleGetChanges(resp http.ResponseWriter, req *http.Reque
 func (a *ChangeAgent) fetchEntries(
     since uint64,
     limit uint,
+    tags []string,
     resp http.ResponseWriter) ([]storage.Entry, uint64, error) {
 
   var entries []storage.Entry
@@ -136,7 +148,13 @@ func (a *ChangeAgent) fetchEntries(
       if e.Index > since {
         lastRawChange = e.Index
       }
-      return e.Type == NormalChange
+      if e.Type != NormalChange {
+        return false
+      }
+      if tags == nil {
+        return true
+      }
+      return e.MatchesTags(tags)
     })
 
   if err == nil {

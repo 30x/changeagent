@@ -122,6 +122,24 @@ func DecodeEntry(rawbuf []byte) (*Entry, error) {
   return &e, nil
 }
 
+func (e *Entry) MatchesTags(tags []string) bool {
+  for _, tag := range(tags) {
+    if !e.MatchesTag(tag) {
+      return false
+    }
+  }
+  return true
+}
+
+func (e *Entry) MatchesTag(tag string) bool {
+  for _, etag := range(e.Tags) {
+    if tag == etag {
+      return true
+    }
+  }
+  return false
+}
+
 func (e *Entry) String() string {
   return fmt.Sprintf("{ Index: %d Term: %d Type: %d (%d bytes) }",
     e.Index, e.Term, e.Type, len(e.Data))
