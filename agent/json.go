@@ -1,6 +1,7 @@
 package main
 
 import (
+  "bytes"
   "encoding/json"
   "io"
   "io/ioutil"
@@ -28,6 +29,8 @@ type JSONError struct {
  * including white space.
  */
 func unmarshalJSON(in io.Reader) (storage.Entry, error) {
+  // We are going to decode twice, because we accept two JSON formats.
+  // That means we need to read the whole body into memory.
   body, err := ioutil.ReadAll(in)
   if err != nil { return storage.Entry{}, err }
 
@@ -64,24 +67,32 @@ func unmarshalJSON(in io.Reader) (storage.Entry, error) {
  * named "data". Any fields in "metadata" that are non-empty will also be
  * added to the message.
  */
-func marshalJSON(entry storage.Entry) ([]byte, error) {
+func marshalJSON(entry storage.Entry, out io.Writer) error {
   jd := convertData(entry)
-  outBody, err := json.Marshal(&jd)
-  if err != nil { return nil, err }
-  return outBody, nil
+  enc := json.NewEncoder(out)
+  err := enc.Encode(&jd)
+  return err
+}
+
+func marshalJSONToString(entry storage.Entry) (string, error) {
+  out := &bytes.Buffer{}
+  err := marshalJSON(entry, out)
+  if err != nil { return "", err }
+  return out.String(), nil
 }
 
 /*
  * Same as above but marshal a whole array of changes.
  */
-func marshalChanges(changes []storage.Entry) ([]byte, error) {
+func marshalChanges(changes []storage.Entry, out io.Writer) error {
   if changes == nil || len(changes) == 0 {
-    return []byte("[]"), nil
+    out.Write([]byte("[]"))
+    return nil
   }
   changeList := convertChanges(changes)
-  outBody, err := json.Marshal(changeList)
-  if err != nil { return nil, err }
-  return outBody, nil
+  enc := json.NewEncoder(out)
+  err := enc.Encode(changeList)
+  return err
 }
 
 func convertChanges(changes []storage.Entry) []JSONData {

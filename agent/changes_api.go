@@ -50,14 +50,8 @@ func (a *ChangeAgent) handlePostChanges(resp http.ResponseWriter, req *http.Requ
     return
   }
 
-  body, err := marshalJSON(newEntry)
-  if err != nil {
-    writeError(resp, http.StatusInternalServerError, err)
-    return
-  }
-
   resp.Header().Set("Content-Type", JSONContent)
-  resp.Write(body)
+  marshalJSON(newEntry, resp)
 }
 
 /*
@@ -120,14 +114,8 @@ func (a *ChangeAgent) handleGetChanges(resp http.ResponseWriter, req *http.Reque
     }
   }
 
-  outBody, err := marshalChanges(entries)
-  if err != nil {
-    writeError(resp, http.StatusInternalServerError, err)
-    return
-  }
-
   resp.Header().Set("Content-Type", JSONContent)
-  resp.Write(outBody)
+  marshalChanges(entries, resp)
 }
 
 func (a *ChangeAgent) fetchEntries(
@@ -183,12 +171,7 @@ func (a *ChangeAgent) handleGetChange(resp http.ResponseWriter, req *http.Reques
     writeError(resp, http.StatusNotFound, errors.New("Not found"))
 
   } else {
-    outBody, err := marshalJSON(*entry)
-    if err != nil {
-      writeError(resp, http.StatusInternalServerError, err)
-      return
-    }
     resp.Header().Set("Content-Type", JSONContent)
-    resp.Write(outBody)
+    marshalJSON(*entry, resp)
   }
 }
