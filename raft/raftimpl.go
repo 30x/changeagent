@@ -7,7 +7,6 @@ import (
   "time"
   "math/rand"
   "github.com/golang/glog"
-  "github.com/satori/go.uuid"
   "revision.aeip.apigee.net/greg/changeagent/communication"
   "revision.aeip.apigee.net/greg/changeagent/discovery"
   "revision.aeip.apigee.net/greg/changeagent/storage"
@@ -372,7 +371,7 @@ func (r *Service) setLastApplied(t uint64) {
 
   atomic.StoreUint64(&r.lastApplied, t)
 
-  r.appliedTracker.Update(uuid.Nil, t)
+  r.appliedTracker.Update(t)
 }
 
 func (r *Service) GetAppliedTracker() *ChangeTracker {

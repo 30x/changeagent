@@ -7,7 +7,6 @@ import (
   "net/http"
   "github.com/golang/glog"
   "github.com/gorilla/mux"
-  "github.com/satori/go.uuid"
   "revision.aeip.apigee.net/greg/changeagent/storage"
 )
 
@@ -113,7 +112,7 @@ func (a *ChangeAgent) handleGetChanges(resp http.ResponseWriter, req *http.Reque
       waitFor++
       waitRemaining := waitEnd.Sub(now)
       glog.V(2).Infof("Waiting %d milliseconds for the next change after %d", waitRemaining, waitFor)
-      a.raft.GetAppliedTracker().TimedWait(uuid.Nil, waitFor, waitRemaining)
+      a.raft.GetAppliedTracker().TimedWait(waitFor, waitRemaining)
       entries, _, err = a.fetchEntries(waitFor - 1, limit, tags, resp)
       if err != nil { return }
       glog.V(2).Infof("Got %d changes after blocking", len(entries))

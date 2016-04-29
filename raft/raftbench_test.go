@@ -5,7 +5,6 @@ import (
   "testing"
   "time"
   "github.com/golang/glog"
-  "github.com/satori/go.uuid"
   "revision.aeip.apigee.net/greg/changeagent/storage"
 )
 
@@ -43,7 +42,7 @@ func doAppendBenchmark(b *testing.B, waitFrequency int) {
     lastIndex++
     if (waitFrequency == 1) || ((i > 0) && ((i % waitFrequency) == 0)) {
       //log.Debugf("Iteration %d. Waiting for changes up to %d", i, lastIndex)
-      leader.GetAppliedTracker().Wait(uuid.Nil, lastIndex)
+      leader.GetAppliedTracker().Wait(lastIndex)
     }
   }
   glog.V(2).Info("Done.")

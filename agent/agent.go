@@ -6,7 +6,6 @@ import (
   "net/http"
   "github.com/golang/glog"
   "github.com/gorilla/mux"
-  "github.com/satori/go.uuid"
   "revision.aeip.apigee.net/greg/changeagent/communication"
   "revision.aeip.apigee.net/greg/changeagent/discovery"
   "revision.aeip.apigee.net/greg/changeagent/raft"
@@ -85,7 +84,7 @@ func (a *ChangeAgent) makeProposal(proposal storage.Entry) (storage.Entry, error
 
   // Wait for the new commit to be applied, or time out
   appliedIndex :=
-    a.raft.GetAppliedTracker().TimedWait(uuid.Nil, newIndex, time.Second * CommitTimeoutSeconds)
+    a.raft.GetAppliedTracker().TimedWait(newIndex, time.Second * CommitTimeoutSeconds)
   glog.V(2).Infof("New index %d is now applied", appliedIndex)
   if appliedIndex >= newIndex {
     newEntry := storage.Entry{

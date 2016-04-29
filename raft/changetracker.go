@@ -5,19 +5,19 @@ import (
   "time"
   "math"
   "container/heap"
-  "github.com/satori/go.uuid"
 )
 
 /*
  * This module is like a condition variable in that it tracks a number,
  * and lets callers atomically wait if it hasn't changed since last time.
  * We could use a condition variable here but we're going to try and be
- * go-like and use channels instead.
+ * go-like and use channels instead. We have also done benchmarks that show that
+ * having all state in a single goroutine is more efficient than relying
+ * on condition variables.
  */
 
 type changeWaiter struct {
   change uint64
-  id uuid.UUID
   timeout time.Time
   fired bool
   waiter chan uint64
@@ -25,7 +25,6 @@ type changeWaiter struct {
 
 type changeUpdate struct {
   change uint64
-  id     uuid.UUID
 }
 
 type changeHeap struct {
@@ -36,7 +35,7 @@ type ChangeTracker struct {
   updateChan chan changeUpdate
   waiterChan chan changeWaiter
   stopChan chan bool
-  lastChanges map[uuid.UUID]uint64
+  lastChange uint64
   waiters *changeHeap
 }
 
@@ -52,7 +51,7 @@ func CreateTracker() *ChangeTracker {
     updateChan: make(chan changeUpdate, 1),
     waiterChan: make(chan changeWaiter, 1),
     stopChan: make(chan bool, 1),
-    lastChanges: make(map[uuid.UUID]uint64),
+    lastChange: 0,
     waiters: waiters,
   }
   go tracker.run()
@@ -82,10 +81,9 @@ func (t* ChangeTracker) Close() {
  * Indicate that the current sequence has changed. Wake up any waiting
  * waiters and tell them about it.
  */
-func (t *ChangeTracker) Update(id uuid.UUID, change uint64) {
+func (t *ChangeTracker) Update(change uint64) {
   u := changeUpdate{
     change: change,
-    id: id,
   }
   t.updateChan <- u
 }
@@ -94,24 +92,23 @@ func (t *ChangeTracker) Update(id uuid.UUID, change uint64) {
  * Wait forever until the change tracker has reached a value at least as high as
  * "curChange." Return the current value when that happens.
  */
-func (t *ChangeTracker) Wait(id uuid.UUID, curChange uint64) uint64 {
-  return t.doWait(id, curChange, timeMax)
+func (t *ChangeTracker) Wait(curChange uint64) uint64 {
+  return t.doWait(curChange, timeMax)
 }
 
 /*
  * Wait for a certain time, just like "wait". If the timeout expires then
  * we will return the current value.
  */
-func (t *ChangeTracker) TimedWait(id uuid.UUID, curChange uint64, maxWait time.Duration) uint64 {
+func (t *ChangeTracker) TimedWait(curChange uint64, maxWait time.Duration) uint64 {
   timeout := time.Now().Add(maxWait)
-  return t.doWait(id, curChange, timeout)
+  return t.doWait(curChange, timeout)
 }
 
-func (t *ChangeTracker) doWait(id uuid.UUID, curChange uint64, timeout time.Time) uint64 {
+func (t *ChangeTracker) doWait(curChange uint64, timeout time.Time) uint64 {
   waitMe := make(chan uint64, 1)
   w := changeWaiter{
     change: curChange,
-    id: id,
     waiter: waitMe,
     fired: false,
     timeout: timeout,
@@ -159,18 +156,17 @@ func (t *ChangeTracker) run() {
   // Close out all waiting waiters
   for i := 0; i < len(t.waiters.items); i++ {
     w := t.waiters.items[i]
-    c := t.lastChanges[w.id]
-    w.waiter <- c
+    w.waiter <- t.lastChange
   }
 }
 
 func (t *ChangeTracker) handleUpdate(u changeUpdate) {
   // Need to cycle through all changes and only remove those that should be waiting
-  t.lastChanges[u.id] = u.change
+  t.lastChange = u.change
   i := 0
   for i < len(t.waiters.items) {
     w := t.waiters.items[i]
-    if uuid.Equal(w.id, u.id) && (u.change >= w.change) && !w.fired {
+    if (u.change >= w.change) && !w.fired {
       // Removing screws up the heap, so just mark deleted here
       t.waiters.items[i].fired = true
       w.waiter <- u.change
@@ -181,8 +177,8 @@ func (t *ChangeTracker) handleUpdate(u changeUpdate) {
 }
 
 func (t *ChangeTracker) handleWaiter(w changeWaiter) {
-  if t.lastChanges[w.id] >= w.change {
-    w.waiter <- t.lastChanges[w.id]
+  if t.lastChange >= w.change {
+    w.waiter <- t.lastChange
   } else {
     heap.Push(t.waiters, w)
   }
@@ -194,7 +190,7 @@ func (t *ChangeTracker) handleTimeout(now time.Time) {
     if it == now || it.Before(now) {
       w := t.waiters.Pop().(changeWaiter)
       if !w.fired {
-        w.waiter <- t.lastChanges[w.id]
+        w.waiter <- t.lastChange
       }
     } else {
       return
