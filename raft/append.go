@@ -126,7 +126,7 @@ func (r *Service) appendEntries(entries []storage.Entry) error {
   for _, e := range(entries) {
     if terms[e.Index] != 0 && terms[e.Index] != e.Term {
       // Yep, that happened. Once we delete we can break out of this here loop too
-      err = r.stor.DeleteEntries(e.Index)
+      err = r.stor.DeleteEntriesAfter(e.Index)
       if err != nil { return err }
       // Update list of entries to make sure that we don't overwrite improperly
       terms, err = r.stor.GetEntryTerms(entries[0].Index)

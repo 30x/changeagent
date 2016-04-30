@@ -142,14 +142,14 @@ func entriesTest(stor Storage) {
   compareEntries(entry1, &entries[0])
   compareEntries(entry2, &entries[1])
 
-  err = stor.DeleteEntries(1)
+  err = stor.DeleteEntriesAfter(1)
   Expect(err).Should(Succeed())
 
   ets, err = stor.GetEntryTerms(1)
   Expect(err).Should(Succeed())
   Expect(len(ets)).Should(Equal(0))
 
-  err = stor.DeleteEntries(1)
+  err = stor.DeleteEntriesAfter(1)
   Expect(err).Should(Succeed())
 
   entry3 := &Entry{

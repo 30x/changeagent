@@ -13,7 +13,12 @@ import (
   "io"
   "unsafe"
   "sync"
+  "time"
   "github.com/golang/glog"
+)
+
+const (
+  maxDeleteBatch = 1000
 )
 
 var defaultWriteOptions = C.rocksdb_writeoptions_create();
@@ -285,6 +290,23 @@ func (s *LevelDBStorage) GetLastIndex() (uint64, uint64, error) {
   return index, entry.Term, nil
 }
 
+func (s *LevelDBStorage) getFirstIndex() (uint64, error) {
+  it := C.rocksdb_create_iterator_cf(s.db, defaultReadOptions, s.entries)
+  defer C.rocksdb_iter_destroy(it)
+
+  C.rocksdb_iter_seek_to_first(it)
+
+  if C.rocksdb_iter_valid(it) == 0 {
+    return 0, nil
+  }
+
+  index, keyType, _, err := readIterPosition(it)
+  if err != nil { return 0, err }
+
+  if keyType != EntryKey { return 0, nil }
+  return index, nil
+}
+
 /*
  * Read index, term, and data from current iterator position and free pointers
  * to data returned by LevelDB. Assumes that the iterator is valid at this
@@ -337,7 +359,7 @@ func (s *LevelDBStorage) GetEntryTerms(first uint64) (map[uint64]uint64, error) 
 }
 
 // Delete everything that is greater than or equal to the index
-func (s *LevelDBStorage) DeleteEntries(first uint64) error {
+func (s *LevelDBStorage) DeleteEntriesAfter(first uint64) error {
   it := C.rocksdb_create_iterator_cf(s.db, defaultReadOptions, s.entries)
   defer C.rocksdb_iter_destroy(it)
 
@@ -356,19 +378,101 @@ func (s *LevelDBStorage) DeleteEntries(first uint64) error {
       return nil
     }
 
-    delPtr, delLen := uintToKey(EntryKey, key)
-    defer freePtr(delPtr)
-
-    var e *C.char
-    C.go_rocksdb_delete(s.db, defaultWriteOptions, s.entries, delPtr, delLen, &e)
-    if e != nil {
-      defer freeString(e)
-      return stringToError(e)
-    }
-
+    err = s.deleteEntry(key)
+    if err != nil { return err }
     C.rocksdb_iter_next(it)
   }
   return nil
+}
+
+func (s *LevelDBStorage) deleteEntry(ix uint64) error {
+  delPtr, delLen := uintToKey(EntryKey, ix)
+  defer freePtr(delPtr)
+
+  var e *C.char
+  C.go_rocksdb_delete(s.db, defaultWriteOptions, s.entries, delPtr, delLen, &e)
+  if e != nil {
+    defer freeString(e)
+    return stringToError(e)
+  }
+  return nil
+}
+
+// Truncate older entries.
+func (s *LevelDBStorage) Truncate(minEntries uint64, maxDur time.Duration) (uint64, error) {
+  min, err := s.getFirstIndex()
+  if err != nil { return 0, err }
+
+  if min == 0 {
+    glog.V(2).Info("Empty database -- not truncating")
+    return 0, nil
+  }
+
+  max, _, err := s.GetLastIndex()
+  if err != nil { return 0, err }
+
+  total := max - min + 1
+  glog.V(2).Infof("Min index: %d. Max: %d. Total = %d", min, max, total)
+  if total <= minEntries {
+    glog.V(2).Infof("Only %d entries in database -- not truncating", total)
+    return 0, nil
+  }
+
+  maxTime := time.Now().Add(-maxDur)
+  truncCount := total - minEntries
+  var deleteCount uint64
+
+  it := C.rocksdb_create_iterator_cf(s.db, defaultReadOptions, s.entries)
+  defer C.rocksdb_iter_destroy(it)
+
+  C.rocksdb_iter_seek_to_first(it)
+
+  glog.Info("Starting database truncation...")
+
+  for truncCount > 0 {
+    toTrunc := truncCount
+    if toTrunc > maxDeleteBatch {
+      toTrunc = maxDeleteBatch
+    }
+
+    glog.V(2).Infof("Truncating a maximum of %d entries", toTrunc)
+    deleted, err := s.truncateBatch(it, toTrunc, maxTime)
+    deleteCount += deleted
+    if err != nil { return deleteCount, err }
+    glog.V(2).Infof("Truncated %d entries", deleted)
+    if deleted == 0 {
+      truncCount = 0
+    } else {
+      truncCount -= deleted
+    }
+  }
+
+  glog.Infof("Truncated %d entries from the database", deleteCount)
+  return deleteCount, nil
+}
+
+func (s *LevelDBStorage) truncateBatch(it *C.rocksdb_iterator_t, maxCount uint64, maxTime time.Time) (uint64, error) {
+  var deleteCount uint64
+
+  for deleteCount < maxCount {
+    if C.rocksdb_iter_valid(it) == 0 {
+      return deleteCount, nil
+    }
+
+    ix, _, e, err := readIterPosition(it)
+    if err != nil { return deleteCount, err }
+
+    if e.Timestamp.After(maxTime) {
+      return deleteCount, err
+    }
+
+    err = s.deleteEntry(ix)
+    if err != nil { return deleteCount, err }
+    deleteCount++
+
+    C.rocksdb_iter_next(it)
+  }
+  return deleteCount, nil
 }
 
 func (s *LevelDBStorage) putEntry(

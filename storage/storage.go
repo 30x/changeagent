@@ -44,7 +44,13 @@ type Storage interface {
   // Return index and term of everything from index to the end
   GetEntryTerms(index uint64) (map[uint64]uint64, error)
   // Delete everything that is greater than or equal to the index
-  DeleteEntries(index uint64) error
+  DeleteEntriesAfter(index uint64) error
+  // Truncate entries, ensuring that at least "minEntries" are left in the database,
+  // and that any entries younger than "maxAge" are retained.
+  // This could run for a long time -- a goroutine is advised.
+  // This operation is also idempotent.
+  // Return the number of entries actually deleted
+  Truncate(minEntries uint64, maxAge time.Duration) (uint64, error)
 
   // Maintenance
   Close()
