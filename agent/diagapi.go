@@ -4,6 +4,7 @@ import (
   "encoding/json"
   "fmt"
   "runtime"
+  "strconv"
   "net/http"
   "revision.aeip.apigee.net/greg/changeagent/raft"
 )
@@ -22,7 +23,7 @@ const (
 
 type RaftState struct {
   State string `json:"state"`
-  Leader uint64 `json:"leader"`
+  Leader string `json:"leader"`
 }
 
 func (a *ChangeAgent) initDiagnosticAPI() {
@@ -39,8 +40,8 @@ func (a *ChangeAgent) initDiagnosticAPI() {
 func (a *ChangeAgent) handleRootCall(resp http.ResponseWriter, req *http.Request) {
   links := make(map[string]string)
   // TODO convert links properly
-  links["changes"] = "./changes"
-  links["diagnostics"] = "./diagnostics"
+  links["changes"] = makeLink(req, "/changes")
+  links["diagnostics"] = makeLink(req, "/diagnostics")
 
   body, _ := json.Marshal(&links)
 
@@ -51,9 +52,9 @@ func (a *ChangeAgent) handleRootCall(resp http.ResponseWriter, req *http.Request
 func (a *ChangeAgent) handleDiagRootCall(resp http.ResponseWriter, req *http.Request) {
   links := make(map[string]string)
   // TODO convert links properly
-  links["id"] = IDURI
-  links["stack"] = StackURI
-  links["raft"] = RaftURI
+  links["id"] = makeLink(req, IDURI)
+  links["stack"] = makeLink(req, StackURI)
+  links["raft"] = makeLink(req, RaftURI)
   body, _ := json.Marshal(&links)
 
   resp.Header().Set("Content-Type", JSON)
@@ -79,7 +80,7 @@ func (a *ChangeAgent) handleLeaderCall(resp http.ResponseWriter, req *http.Reque
 func (a *ChangeAgent) handleRaftInfo(resp http.ResponseWriter, req *http.Request) {
   state := RaftState{
     State: a.GetRaftState().String(),
-    Leader: a.getLeaderID(),
+    Leader: strconv.FormatUint(a.getLeaderID(), 10),
   }
 
   body, _ := json.Marshal(&state)
@@ -109,4 +110,15 @@ func handleStackCall(resp http.ResponseWriter, req *http.Request) {
       return
     }
   }
+}
+
+func makeLink(req *http.Request, path string) string {
+  var proto string
+  if req.TLS == nil {
+    proto = "http"
+  } else {
+    proto = "https"
+  }
+
+  return fmt.Sprintf("%s://%s%s", proto, req.Host, path)
 }
