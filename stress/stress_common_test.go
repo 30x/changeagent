@@ -18,7 +18,7 @@ const (
 
 type RaftState struct {
   State string `json:"state"`
-  Leader uint64 `json:"leader"`
+  Leader string `json:"leader"`
 }
 
 func launchAgent(port int, dataDir string) (*os.Process, error) {
@@ -70,7 +70,10 @@ func getRaftState(port int, maxWait int) (string, uint64, error) {
       if err == nil {
         var state RaftState
         err = json.Unmarshal(body, &state)
-        return state.State, state.Leader, nil
+        if err != nil { return "", 0, err }
+        leaderID, err := strconv.ParseUint(state.Leader, 10, 64)
+        if err != nil { return "", 0, err }
+        return state.State, leaderID, nil
       }
     } else {
       if err == nil {
