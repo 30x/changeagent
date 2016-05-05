@@ -26,11 +26,38 @@ type RaftState struct {
 }
 
 func (a *ChangeAgent) initDiagnosticAPI() {
+  a.router.HandleFunc("/", a.handleRootCall).Methods("GET")
+  a.router.HandleFunc(BaseURI, a.handleDiagRootCall).Methods("GET")
   a.router.HandleFunc(IDURI, a.handleIDCall).Methods("GET")
   a.router.HandleFunc(RaftStateURI, a.handleStateCall).Methods("GET")
   a.router.HandleFunc(RaftLeaderURI, a.handleLeaderCall).Methods("GET")
   a.router.HandleFunc(RaftURI, a.handleRaftInfo).Methods("GET")
   a.router.HandleFunc(StackURI, handleStackCall).Methods("GET")
+}
+
+
+func (a *ChangeAgent) handleRootCall(resp http.ResponseWriter, req *http.Request) {
+  links := make(map[string]string)
+  // TODO convert links properly
+  links["changes"] = "./changes"
+  links["diagnostics"] = "./diagnostics"
+
+  body, _ := json.Marshal(&links)
+
+  resp.Header().Set("Content-Type", JSON)
+  resp.Write(body)
+}
+
+func (a *ChangeAgent) handleDiagRootCall(resp http.ResponseWriter, req *http.Request) {
+  links := make(map[string]string)
+  // TODO convert links properly
+  links["id"] = IDURI
+  links["stack"] = StackURI
+  links["raft"] = RaftURI
+  body, _ := json.Marshal(&links)
+
+  resp.Header().Set("Content-Type", JSON)
+  resp.Write(body)
 }
 
 func (a *ChangeAgent) handleIDCall(resp http.ResponseWriter, req *http.Request) {
