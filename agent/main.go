@@ -30,30 +30,31 @@ func runAgentMain() int {
   var help bool
 
   flag.IntVar(&port, "p", DefaultPort, "Port to listen on.")
-  flag.StringVar(&dbDir, "d", "", "Directory in which to place data.")
-  flag.StringVar(&discoveryFile, "s", "", "File from which to read list of peers")
-  flag.BoolVar(&help, "h", false, "Print help message")
+  flag.StringVar(&dbDir, "d", "", "Directory in which to place data. Required.")
+  flag.StringVar(&discoveryFile, "s", "", "File from which to read list of peers. Default is single-node operation.")
+  flag.BoolVar(&help, "h", false, "Print help message.")
 
   flag.Parse()
   if help || !flag.Parsed() {
-    flag.PrintDefaults()
+    printUsage("")
     return 2
   }
 
   if dbDir == "" {
-    fmt.Println("Database directory must be specified.")
-    flag.PrintDefaults()
+    printUsage("Database directory must be specified.")
     return 3
   }
-  if discoveryFile == "" {
-    fmt.Println("Discovery file name must be specified.")
-    return 4
-  }
 
-  disco, err := discovery.ReadDiscoveryFile(discoveryFile, DefaultConfigScan)
-  if err != nil {
-    fmt.Printf("Error reading discovery file: %s\n", err)
-    return 5
+  var disco discovery.Discovery
+  var err error
+  if discoveryFile == "" {
+    disco = discovery.CreateStaticDiscovery([]string{fmt.Sprintf("localhost:%d", port)})
+  } else {
+    disco, err = discovery.ReadDiscoveryFile(discoveryFile, DefaultConfigScan)
+    if err != nil {
+      fmt.Printf("Error reading discovery file: %s\n", err)
+      return 5
+    }
   }
   defer disco.Close()
 
@@ -94,4 +95,16 @@ func runAgentMain() int {
   <- doneChan
   glog.Infof("Shutting down.")
   return 0
+}
+
+func printUsage(msg string) {
+  if msg != "" {
+    fmt.Println(msg)
+    fmt.Println()
+  }
+  fmt.Println("Usage:")
+  flag.PrintDefaults()
+  fmt.Println()
+  fmt.Println("Example:")
+  fmt.Println("  agent -d ./data -p 9000 -s discovery")
 }

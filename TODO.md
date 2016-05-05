@@ -216,7 +216,9 @@ management APIs to discover the real IP and port to use to communicate with each
 In this case, we will need to add some metadata to the K8s API so that each node puts its unique ID in a place
 where the other nodes can find it.
 
-Other ideas:
+###
+
+Other ideas from Shankar and Martin:
 
 Checkpoints. With change #.
 
@@ -232,3 +234,55 @@ Possibility:
 	Delete all tenants?
 	Add tags.
 	Optimize tag implementation.
+
+## How to manage checkpoints
+
+Leave this entirely to a separate tier of "checkpointer" servers.
+
+Each checkpointer simply reads the change log like any other consumer. It is free to run at its own 
+pace, block, or whatever, without affecting the main message path. So far, so good.
+
+Each checkpointer watches changes, and at a certain point it goes back and re-reads the log
+to construct a checkpoint, and then stores the checkpoint in a checkpoint store.
+
+Checkpoints are idempotent, so it doesn't matter if we have more than one checkpointer running
+on a particular set of changes at once. However, that will be inefficient.
+
+Instead, each checkpointer should write a "start of checkpoint" record when it starts the checkpoint
+process, and an "end of checkpoint" when done. Other checkpointers will use that to avoid starting
+a duplicate checkpoint. However, if the checkpointer takes too long, then they may step in anyway.
+End of checkpoint records will also tell clients that a checkpoint is available and that they
+should use it.
+
+Furthermore, each checkpointer should use the tagging mechanism to entire multitenancy.
+
+What happens if the checkpointers fall too far behind and changes are truncated from the
+main database? Should checkpointers register somehow? Or do we just manage that
+operationally?
+
+How do we locate checkpoints? Do we end up with a separate checkpoint of checkpoints? 
+A checkpoint database built in to each server? Might make things much more efficient if we do.
+
+## How to manage data integrity
+
+We have no 2PC, and 2PC doesn't really work anyway. Two approaches for data integrity.
+
+First: maintain a system of record (RDBMS, C*). All requests to change data go to an API over
+the SOR DB. API then follows this process:
+
+* Start transaction
+* Change data -- at this point regular integrity mechanisms will kick in to place
+* Write to change agent
+* Commit
+
+In an RDBMS, this will provide serializable consistency.
+
+This may not always be possible, and furthermore we don't want to necessarily use an RDBMS.
+
+Instead:
+
+* Change goes directly to changeagent
+* Changeagent maintains a collection of "valdator" URLs
+* CA leader invokes each validator, in parallel, with new proposed change
+* Any validator may reject the change
+* Use tags to make multitenant
