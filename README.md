@@ -1,23 +1,25 @@
 # ChangeAgent
 
-ChangeAgent is a small distributed database that is especially well-suited for 
+ChangeAgent is a small distributed data store that is especially well-suited for
 tracking changes to data and distributing them to other systems. It has the
 following characteristics:
 
 ## Data Model
 
-Each record in the database is also referred to as a "change". Each change
-has the following fields:
+Each record in the database is also referred to as a "change". Changes are
+kept in a sequential list. Each change has the following fields:
 
 * Index: A global sequential ordering among all changes in the system
-* Tenant ID: An optional unique identifier that groups records for a tenant
-* Collection ID: An optional identifier that groups records within a tenant
-* Key: An optional unique key that identifies a record inside a collection
-* Data: Arbitrary JSON data
+* Type: An integer that may be used to distinguish different types of records
+  if necessary. Types less than zero are reserved for internal changes.
+* Tags: An optional collection of strings. These may be used to filter changes
+  into different categories during consumption.
+* Data: Arbitrary JSON data.
+* Timestamp: The time that the change was made. (However, the canonical ordering
+  for changes is the index. Changes created on different nodes may not necessarily
+  have their timestamps in order. Timestamps are for informational purposes.)
 
-Using these records, the data model presents three fundamental collections.
-
-### Global Change List
+## API
 
 All records, upon insert, are added to the global change list. This puts them
 in a sequential order across all records in the system. No two records will
@@ -30,137 +32,262 @@ sets of records between database instances and to clients.
 
 Clients may use an optional long-polling mechanism, in which the client asks
 for records that are higher than a certain sequence, and waits for a period
-of time until a record is inserted. This allows clients to quickly and 
+of time until a record is inserted. This allows clients to quickly and
 efficiently replicate their view of the database even if the server is
 periodically unavailable or the network is unreliable.
 
-### Tenant-Specific Change List
+In addition, clients may filter queries to the change list using tags. This way,
+records for different tenants or use cases can be filtered.
 
-Records that contain a tenant ID are also added to a tenant-specific change
-list. This change list works just like the global change list. Using this
-mechanism, a central database can be used to efficiently replicate sets
-of data to a large group of clients, without having to send all the data
-to each client.
+## Architecture
 
-### Collections
+changeagent servers are stand-alone, self-contained servers that persist data on
+the local disk using [RocksDB](http://rocksdb.org/). A single changeagent server
+can run stand-alone as a quick and simple way to track change lists, but
+for most use cases, servers should be clustered.
 
-Records may optionally contain a collection ID and a key. Records that have
-these fields are added to the global and tenant-specific change lists just
-like everything else. In addition, query, update, and delete operations may
-be performed just like in a traditional key-value store. 
+Clustering is implemented using [Raft](https://raft.github.io/). This makes changeagent
+a fairly straightforward use case, since Raft is designed to maintain a consistently
+ordered list of entries among a cluster of servers.
 
-## Design
+## Characteristics
 
-ChangeAgent is designed to be configured as a cluster. Each server in the 
-cluster contains a complete replica of all the data. Clients may query
-any replica at any time and ese the most recent set of changes that
-have been replicated to all the servers. Clients may modify the database
-only when a quorum of servers are operating.
- 
-The replication model uses the Raft algorithm. This has the following 
-implications:
+Given these implementation, changeagent is designed to offer the following
+characteristics:
 
-* The servers in the cluster will elect a leader within a few seconds
-as long as a quorum ((N / 2) + 1) of nodes are able to talk to one
-another.
-* If there is no leader, or if an election is in progress, then writes
-will fail and clients must be prepared to retry.
-* If the leader is lost, as along as a quorum is present a new leader will
-be elected within a few seconds
-* When new nodes join the cluster, they will be available for reads right
-away, but it will take some time to replicate all the data to them.
-* All changes will be propagated to all replicas in the same order, no
-matter what.
-* Raft will work no matter how many nodes are in the cluster. It will
-eventually find a leader, even in a two-node cluster.
-* However, Raft functions best when there are an odd number of replicas. A three-node
-cluster requires two servers to form a quorum, and a five-node cluster 
-requires three. However, a four-node cluster also requires three nodes,
-and a two-node cluster requires that both nodes be available in order for
-any writes to succeed.
+* All changes will eventually be visible on all servers in the cluster in the same order.
+No two servers will ever display the list of changes in a different order.
+* However, changes will not necessarily propagate to all servers at once, so
+different servers in the cluster may have shorter change lists than others.
+* No change can be accepted into the system unless a quorum (N / 2 + 1) of nodes
+is available and can interoperate.
+* As such, the system is available for writes as long as a quorum is present.
+* Furthermore, each individual server can always serve up its own copy of the change
+list, so the system is available for reads as long as a single node is reachable.
 
 ## Use Cases
 
+changeagent is designed for storing configuration changes for a distributed system.
+It is excellent for workloads that have the following characteristics:
 
+* Changes must be propagated in order to a large number of consumers
+* Consumers are occasionally connected, and cannot rely on anything but the abilty
+to make outgoing HTTP requests.
+* Changes are produced at a "human" scale -- 10s of changes per second, at most.
+* Latency for retrieving lists of changes is important.
+* Latency of introducing new changes is less important.
 
-## API
+# Example
 
-### Using ChangeAgent as a Simple Log
+Post a new change. The API expects an element called "data" which will
+hold the actual change data:
 
-Post a new change to the database:
+    curl http://localhost:9000/changes
+      -H "Content-Type: application/json"
+      -d '{"data":{"Hello":"world"}}'
 
-    POST /changes
-    { "data": { "This": "is", "some": "JSON" } }
-    
-    Response:
-    { "_id": 123 }
-    
-Retrieve the first 100 changes in the system:
+Retrieve the first 100 changes since the beginning of time:
 
-    GET /changes?limit=100
-    
-Retrieve the first 100 changes after change 123:
+    curl http://localhost:9000/changes
+    [{"_id": 2,"_ts": 1464804748947570788,"data": {"Hello": "world"}}]
 
-    GET /changes?since=123&limit=100
-    
-Retrieve up to 100 changes since change 123, but wait if there are no 
-changes available for up to 60 seconds before returning:
+... now we'll post a few more changes ...
 
-    GET /changes?since=123&limit=100&block=60
-    
-### Using ChangeAgent as a Multi-Tenant Log
+Retrieve only the changes since change 12:
 
-Create a tenant:
+    curl http://localhost:9000/changes?since=12
+    [{"_id":13,"_ts":1464805001822543303,"data":{"Hello":"world","seq":10}},
+    {"_id":14,"_ts":1464805003646294078,"data":{"Hello":"world","seq":11}},
+    {"_id":15,"_ts":1464805005509406435,"data":{"Hello":"world","seq":12}}]
 
-    POST /tenants
-    { "name": "foo" }
-    
-    { "tenant": "AFA5CA50-1F64-4E45-B95A-CEC797787C7D" }
-    
-Insert a change to that tenant's log:
+Retrieve the changes since change 15, and wait for up to 120 seconds for a
+new change to be posted. (And while this API call is running, post a new change
+by POSTing to the "/changes" URI:
 
-    POST /tenants/AFA5CA50-1F64-4E45-B95A-CEC797787C7/changes
-    { "data": { "This": "is", "some": "JSON" } }
-    
-(The change also now appears in the top-level /changes log.)    
-   
-Get changes specifically for that tenant.
+    $ curl "http://localhost:9000/changes?since=15&block=120"
+    [{"_id":16,"_ts":1464805113553316620,"data":{"Hello":"World","seq":13}}]
 
-    GET /tenant/AFA5CA50-1F64-4E45-B95A-CEC797787C7/changes?limit=100
-    
-Address the tenant using a name instead of a UUID:
+Now ask again for the changes since change 16, but this time don't post anything
+new:
 
-    GET /tenant/foo/changes?limit=100
-    
-### Using Collections
+    $ curl "http://localhost:9000/changes?since=16&block=5"
+    []
 
-Create a collection:
+Post a change that includes two tags:
 
-    POST /tenants/foo/collections
-    { "name": "bar" }
-    
-    { "collection": "9E9A8ED4-4A6B-41F2-A68C-698B6F17E8D4" }
-    
-Insert into the collection:
+    curl http://localhost:9000/changes
+    -H "Content-Type: application/json"
+    -d '{"tags":["testTag","testTag2"],"data":{"Hello":"world", "seq": 12}}'
 
-    POST /collections/9E9A8ED4-4A6B-41F2-A68C-698B6F17E8D4/keys
-    { "key": "baz", "data": { "This": "is", "some": "JSON" } }
-    
-(The data now appears in the top-level "/changes" log as well as the tenant's
-change log.)
+Retrieve up to 10 changes including only ones that have the tag "testTag":
 
-Retrieve a single item by key:
+    curl "http://localhost:9000/changes?limit=10&tag=testTag"
+    [{"_id":17,"_ts":1464805241291100178,
+      "tags":["testTag","testTag2"],"data":{"Hello":"world","seq":12}}
 
-   GET /collections/9E9A8ED4-4A6B-41F2-A68C-698B6F17E8D4/keys/baz
-   
-Retrieve collection items in sorted order by key:
+# Building
 
-    GET /collections/9E9A8ED4-4A6B-41F2-A68C-698B6F17E8D4/keys
+The product is built in Go, but it relies on the "glide" package management
+tool for dependency management, and on the rocksdb library for data storage.
+Both must be installed to build, in addition to Go.
 
-## Rationale
+## Installing Prerequisites on OS X / Darwin
 
-## Plans
+First, install [Homebrew](http://brew.sh/). This will serve you well in the future
+if you do not already have it.
 
-* Snapshot replication so that new nodes come online more quickly
-* Read-only replicas
-* Local cached copies
+Then install the following prerequisites:
+
+    brew install go
+    brew install glide
+    brew install rocksdb
+
+## Installing Prerequisites on Linux
+
+The prerequisites will come from different places depending on the OS that you
+are using.
+
+## Building
+
+Glide requires that the go "vendor extension" is enabled:
+
+    export GO15VENDOREXPERIMENT=1
+
+Install the dependencies using glide:
+
+    glide install
+
+Build:
+
+    make
+
+In addition, there are a few other top-level targets:
+
+* make test: Runs tests in all directories. All of them should pass..
+* make clean: Cleans up the "agent" binary and intermediate files.
+
+# Running
+
+## Running a Single Node
+
+To run a standalone node, you will need to pass a port and a directory to
+store the data.
+
+The binary "agent" will have been built by "make" in the "agent" subdirectory.
+
+For instance, here is a simple way to run on port 9000:
+
+    mkdir data
+    ./agent/agent -p 9000 -d ./data -logtostderr
+
+## Running a Cluster
+
+To run a cluster, you will need to create a file that lists the host names and
+ports for each cluster node. Then it's necessary to start each agent.
+
+For instance, create a file called "nodes" that contains the following:
+
+    localhost:9000
+    localhost:9001
+    localhost:9002
+
+Then, start three "agent" binaries:
+
+    mkdir data1
+    mkdir data2
+    mkdir data3
+    ./agent/agent -p 9000 -d ./data1 -logtostderr -s nodes &
+    ./agent/agent -p 9001 -d ./data2 -logtostderr -s nodes &
+    ./agent/agent -p 9002 -d ./data3 -logtostderr -s nodes &
+
+After about 10 seconds, the three agents will agree on a leader, and you will
+be able to make API calls to any cluster node.
+
+# Rationale
+
+Change agent was created to handle a particular use case with the following characteristics.
+In particular, there would be many nodes, on many types of networks, that need to be
+notified of changes to a set of central data.
+
+We felt that the simplest and most reliable way to get these nodes up to date would
+be to allow them to maintain a local copy of the data and to "long poll" for changes.
+This way changes made on the central system are not slowed down by slow clients,
+and slow clients or clients on slow networks will automatically adjust while still
+getting accurate results. Plus, by basing this on an HTTP API, clients need only
+to be able to make outgoing HTTP requests in order to be upgraded.
+
+In order for this to be reliable, the servers maintaining the change list need to be
+highly available for reads, which means load balancing. Once we are making HTTP
+requests to get lists of changes in order, clients may be frequently re-load-balanced
+to another server. None of this works if different servers maintain the change list
+in different orders. So, all the servers need to maintain the change list in the same
+order.
+
+Once we put these things together, we see that the Raft protocol is ideally suited
+for this use case. In particular, it guarantees that updates are always propagated in the
+same order, and as long as a quorum of nodes is available we can make updates.
+
+However, Raft is not suited for all use cases. In particular, all writes go to the
+leader, and the leader must communicate with a quorum of nodes on every write.
+So, it is not ideal when high write throughput is needed. Furthermore, if there
+is not a quorum, no writes are possible.
+
+We feel that these compromises are acceptable for our use case, which is for data
+that does not change often. In these cases, we are also willing to accept less
+write availability for more consistency.
+
+Given an extremely over-simplified reading of the CAP theorem, then, it could
+be said that this project achieves "CA," like other systems such as etcd and
+Zookeeper, and not "AP" like a system such as Dynamo or Cassandra.
+
+## Why Didn't You Just?
+
+There are many other ways to solve this problem. Here's why we think that
+changeagent is best for our use case.
+
+### etcd
+
+etcd has a very similar design to changeagent in that it is built in Go and
+uses the Raft protocol and a local database. However it has two limitations.
+First, it has a different data model which organizes the world into a hierarchical
+directory structure. Although it supports watchers via HTTP long-polling as well,
+those watchers work only on parts of the directory structure. So, distributing
+changes of many different types, as we wish to do, would require a number of different
+simultaneous APIs to watch the change list.
+
+Plus, etcd uses a fairly simple in-memory database, plus a write-ahead log. We didn't
+feel that it would handle the amount of data that we felt we'd need to store,
+which could number into the millions of records.
+
+### Zookeeper
+
+We already use Zookeeper in production at Apigee and we are well aware of its
+strengths and weaknesses. Like etcd (which attempted to improve on Zookeeper),
+ZK relies on a hierarchical directory structure and would require us to manage
+many watchers. Plus, Zookeeper uses a binary protocol and not HTTP, which would
+make "raw" ZK a non-starter for our use case.
+
+### Postgres
+
+Another approach to this problem would be to simply put all the data in Postgres
+and query a "change" table. This is a simple solution that has a lot of merit.
+However, we see changeagent as a low-level service, and it should require much
+less configuration and management than Postgres. Furthermore, Postgres is not
+itself highly-available, so we'd rely on a service like Amazon RDS, or we'd have
+to instruct customers how to make it highly-available for writes on its own.
+Also, we'd need to layer an HTTP API on top anyway.
+
+### Cassandra
+
+We also use Cassandra extensively and it also has strengths and weaknesses.
+Maintaining an ordered change list, across nodes, in a consistent way is not
+what Cassandra was designed to do, and it would not be good for that task.
+
+### CouchDB
+
+CouchDB is an excellent choice for this problem, and it inspired the changeagent
+API, because any collection of data maintains a "changes" feed that may be
+accessed via long polling. However, making CouchDB reliable out of the box would
+require setting up master-slave replication, just like Postgres, which is a
+pattern that we prefer to avoid because it requires either manual intervention
+or additional complex automation in the event of a failure of the master.
