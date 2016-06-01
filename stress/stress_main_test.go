@@ -1,11 +1,12 @@
 package stress
 
 import (
-  "os"
-  "path"
-  "testing"
-  . "github.com/onsi/ginkgo"
-  . "github.com/onsi/gomega"
+	"os"
+	"path"
+	"testing"
+
+	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/gomega"
 )
 
 var testPids map[int]os.Process
@@ -17,20 +18,20 @@ func TestRaft(t *testing.T) {
 }
 
 var _ = BeforeSuite(func() {
-  testPids = make(map[int]os.Process)
-  dataDir = path.Join(".", "stressData")
-  err := os.MkdirAll(dataDir, 0777)
-  Expect(err).Should(Succeed())
+	testPids = make(map[int]os.Process)
+	dataDir = path.Join(".", "stressData")
+	err := os.MkdirAll(dataDir, 0777)
+	Expect(err).Should(Succeed())
 })
 
 var _ = AfterSuite(func() {
-  for _, proc := range(testPids) {
-    proc.Kill()
-    proc.Wait()
-  }
+	for _, proc := range testPids {
+		proc.Kill()
+		proc.Wait()
+	}
 
-  err := os.RemoveAll(dataDir)
-  Expect(err).Should(Succeed())
+	err := os.RemoveAll(dataDir)
+	Expect(err).Should(Succeed())
 
-  os.Remove("./tmpdisco")
+	os.Remove("./tmpdisco")
 })

@@ -7,19 +7,19 @@ package storage
 import "C"
 
 import (
-  "bytes"
-  "errors"
-  "fmt"
-  "unsafe"
-  "encoding/binary"
+	"bytes"
+	"encoding/binary"
+	"errors"
+	"fmt"
+	"unsafe"
 )
 
 /* These have to match constants in leveldb_native.h */
 const (
-  KeyVersion = 1
-  MetadataKey = 1
-  EntryKey = 10
-  EntryValue = 3
+	KeyVersion  = 1
+	MetadataKey = 1
+	EntryKey    = 10
+	EntryValue  = 3
 )
 
 /*
@@ -54,149 +54,153 @@ var storageByteOrder binary.ByteOrder = binary.LittleEndian
  * uint64 key, used for entries.
  */
 func uintToKey(keyType int, v uint64) (unsafe.Pointer, C.size_t) {
-  buf := &bytes.Buffer{}
-  binary.Write(buf, storageByteOrder, keyPrefix(keyType)[0])
-  binary.Write(buf, storageByteOrder, v)
-  return bytesToPtr(buf.Bytes())
+	buf := &bytes.Buffer{}
+	binary.Write(buf, storageByteOrder, keyPrefix(keyType)[0])
+	binary.Write(buf, storageByteOrder, v)
+	return bytesToPtr(buf.Bytes())
 }
 
 /*
  * uint64 key, used for entries.
  */
 func keyToUint(ptr unsafe.Pointer, len C.size_t) (int, uint64, error) {
-  if len < 1 {
-    return 0, 0, errors.New("Invalid key")
-  }
-  bb := ptrToBytes(ptr, len)
-  buf := bytes.NewBuffer(bb)
+	if len < 1 {
+		return 0, 0, errors.New("Invalid key")
+	}
+	bb := ptrToBytes(ptr, len)
+	buf := bytes.NewBuffer(bb)
 
-  var ktb byte
-  binary.Read(buf, storageByteOrder, &ktb)
-  vers, kt := parseKeyPrefix(ktb)
-  if vers != KeyVersion {
-    return 0, 0, fmt.Errorf("Invalid key version %d", vers)
-  }
-  var key uint64
-  binary.Read(buf, storageByteOrder, &key)
+	var ktb byte
+	binary.Read(buf, storageByteOrder, &ktb)
+	vers, kt := parseKeyPrefix(ktb)
+	if vers != KeyVersion {
+		return 0, 0, fmt.Errorf("Invalid key version %d", vers)
+	}
+	var key uint64
+	binary.Read(buf, storageByteOrder, &key)
 
-  return kt, key, nil
+	return kt, key, nil
 }
 
 /*
  * String key, used for metadata.
  */
 func stringToKey(keyType int, k string) (unsafe.Pointer, C.size_t) {
-  buf := &bytes.Buffer{}
-  binary.Write(buf, storageByteOrder, keyPrefix(keyType)[0])
-  buf.WriteString(k)
-  return bytesToPtr(buf.Bytes())
+	buf := &bytes.Buffer{}
+	binary.Write(buf, storageByteOrder, keyPrefix(keyType)[0])
+	buf.WriteString(k)
+	return bytesToPtr(buf.Bytes())
 }
 
 func keyToString(ptr unsafe.Pointer, len C.size_t) (int, string, error) {
-  if len < 1 {
-    return 0, "", errors.New("Invalid key")
-  }
-  bb := ptrToBytes(ptr, len)
-  buf := bytes.NewBuffer(bb)
+	if len < 1 {
+		return 0, "", errors.New("Invalid key")
+	}
+	bb := ptrToBytes(ptr, len)
+	buf := bytes.NewBuffer(bb)
 
-  var ktb byte
-  binary.Read(buf, storageByteOrder, &ktb)
-  vers, kt := parseKeyPrefix(ktb)
-  if vers != KeyVersion {
-    return 0, "", fmt.Errorf("Invalid key version %d", vers)
-  }
-  k := buf.String()
-  return kt, k, nil
+	var ktb byte
+	binary.Read(buf, storageByteOrder, &ktb)
+	vers, kt := parseKeyPrefix(ktb)
+	if vers != KeyVersion {
+		return 0, "", fmt.Errorf("Invalid key version %d", vers)
+	}
+	k := buf.String()
+	return kt, k, nil
 }
 
 /*
  * Given an entire entry, format the data into an entire record.
  */
 func entryToPtr(entry *Entry) (unsafe.Pointer, C.size_t) {
-  marsh, err := EncodeEntry(entry)
-  if err != nil { panic(err.Error()) }
-  pfx := keyPrefix(EntryValue)
-  bytes := append(pfx, marsh...)
+	marsh, err := EncodeEntry(entry)
+	if err != nil {
+		panic(err.Error())
+	}
+	pfx := keyPrefix(EntryValue)
+	bytes := append(pfx, marsh...)
 
-  return bytesToPtr(bytes)
+	return bytesToPtr(bytes)
 }
 
 /*
  * Given a pointer to an entry record, return the actual Entry
  */
 func ptrToEntry(ptr unsafe.Pointer, len C.size_t) (*Entry, error) {
-  if len < 0 { return nil, errors.New("Invalid entry: invalid") }
-  bytes := ptrToBytes(ptr, len)
+	if len < 0 {
+		return nil, errors.New("Invalid entry: invalid")
+	}
+	bytes := ptrToBytes(ptr, len)
 
-  vers, kt := parseKeyPrefix(bytes[0])
-  if vers != KeyVersion {
-    return nil, fmt.Errorf("Invalid entry version %d", vers)
-  }
-  if kt != EntryValue {
-    return nil, fmt.Errorf("Invalid entry type %d", kt)
-  }
+	vers, kt := parseKeyPrefix(bytes[0])
+	if vers != KeyVersion {
+		return nil, fmt.Errorf("Invalid entry version %d", vers)
+	}
+	if kt != EntryValue {
+		return nil, fmt.Errorf("Invalid entry type %d", kt)
+	}
 
-  return DecodeEntry(bytes[1:])
+	return DecodeEntry(bytes[1:])
 }
 
 func freeString(c *C.char) {
-  C.free(unsafe.Pointer(c))
+	C.free(unsafe.Pointer(c))
 }
 
 func freePtr(ptr unsafe.Pointer) {
-  C.free(ptr)
+	C.free(ptr)
 }
 
 func stringToError(c *C.char) error {
-  es := C.GoString(c)
-  return errors.New(es)
+	es := C.GoString(c)
+	return errors.New(es)
 }
 
 func uintToPtr(v uint64) (unsafe.Pointer, C.size_t) {
-  bb := uintToBytes(v)
-  return bytesToPtr(bb)
+	bb := uintToBytes(v)
+	return bytesToPtr(bb)
 }
 
 func bytesToPtr(bb []byte) (unsafe.Pointer, C.size_t) {
-  bsLen := C.size_t(len(bb))
-  buf := C.malloc(bsLen)
-  copy((*[1<<30]byte)(buf)[:], bb)
-  return buf, bsLen
+	bsLen := C.size_t(len(bb))
+	buf := C.malloc(bsLen)
+	copy((*[1 << 30]byte)(buf)[:], bb)
+	return buf, bsLen
 }
 
 func uintToBytes(v uint64) []byte {
-  buf := &bytes.Buffer{}
-  binary.Write(buf, storageByteOrder, v)
-  return buf.Bytes()
+	buf := &bytes.Buffer{}
+	binary.Write(buf, storageByteOrder, v)
+	return buf.Bytes()
 }
 
 func ptrToBytes(ptr unsafe.Pointer, len C.size_t) []byte {
-  bb := make([]byte, int(len))
-  copy(bb[:], (*[1<<30]byte)(unsafe.Pointer(ptr))[:])
-  return bb
+	bb := make([]byte, int(len))
+	copy(bb[:], (*[1 << 30]byte)(unsafe.Pointer(ptr))[:])
+	return bb
 }
 
 func ptrToUint(ptr unsafe.Pointer, len C.size_t) uint64 {
-  bb := ptrToBytes(ptr, len)
-  buf := bytes.NewBuffer(bb)
-  var ret uint64
-  binary.Read(buf, storageByteOrder, &ret)
-  return ret
+	bb := ptrToBytes(ptr, len)
+	buf := bytes.NewBuffer(bb)
+	var ret uint64
+	binary.Read(buf, storageByteOrder, &ret)
+	return ret
 }
 
 func keyPrefix(keyType int) []byte {
-  flag := (KeyVersion << 4) | (keyType & 0xf)
-  return []byte{ byte(flag) }
+	flag := (KeyVersion << 4) | (keyType & 0xf)
+	return []byte{byte(flag)}
 }
 
 func parseKeyPrefix(b byte) (int, int) {
-  bi := int(b)
-  vers := (bi >> 4) & 0xf
-  kt := bi & 0xf
-  return vers, kt
+	bi := int(b)
+	vers := (bi >> 4) & 0xf
+	kt := bi & 0xf
+	return vers, kt
 }
 
 func compareKeys(ptra unsafe.Pointer, lena C.size_t, ptrb unsafe.Pointer, lenb C.size_t) int {
-  cmp := C.go_compare_bytes(nil, ptra, lena, ptrb, lenb);
-  return int(cmp)
+	cmp := C.go_compare_bytes(nil, ptra, lena, ptrb, lenb)
+	return int(cmp)
 }
