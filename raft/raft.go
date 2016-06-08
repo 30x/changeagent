@@ -1,7 +1,7 @@
 package raft
 
 import (
-	"revision.aeip.apigee.net/greg/changeagent/storage"
+	"github.com/30x/changeagent/storage"
 )
 
 type StateMachine interface {

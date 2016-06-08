@@ -5,10 +5,10 @@
 package raft
 
 import (
+	"github.com/30x/changeagent/communication"
+	"github.com/30x/changeagent/discovery"
+	"github.com/30x/changeagent/storage"
 	"github.com/golang/glog"
-	"revision.aeip.apigee.net/greg/changeagent/communication"
-	"revision.aeip.apigee.net/greg/changeagent/discovery"
-	"revision.aeip.apigee.net/greg/changeagent/storage"
 )
 
 func (r *Service) handleAppend(state *raftState, cmd appendCommand) {

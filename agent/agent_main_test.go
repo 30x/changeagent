@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"revision.aeip.apigee.net/greg/changeagent/discovery"
+	"github.com/30x/changeagent/discovery"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"

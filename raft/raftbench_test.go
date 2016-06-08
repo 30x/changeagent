@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/30x/changeagent/storage"
 	"github.com/golang/glog"
-	"revision.aeip.apigee.net/greg/changeagent/storage"
 )
 
 func BenchmarkSlowAppends(b *testing.B) {

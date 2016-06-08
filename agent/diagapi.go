@@ -7,7 +7,7 @@ import (
 	"runtime"
 	"strconv"
 
-	"revision.aeip.apigee.net/greg/changeagent/raft"
+	"github.com/30x/changeagent/raft"
 )
 
 const (

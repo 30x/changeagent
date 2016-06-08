@@ -5,12 +5,12 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/30x/changeagent/communication"
+	"github.com/30x/changeagent/discovery"
+	"github.com/30x/changeagent/raft"
+	"github.com/30x/changeagent/storage"
 	"github.com/golang/glog"
 	"github.com/gorilla/mux"
-	"revision.aeip.apigee.net/greg/changeagent/communication"
-	"revision.aeip.apigee.net/greg/changeagent/discovery"
-	"revision.aeip.apigee.net/greg/changeagent/raft"
-	"revision.aeip.apigee.net/greg/changeagent/storage"
 )
 
 type ChangeAgent struct {

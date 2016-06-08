@@ -9,11 +9,11 @@ import (
 	"path"
 	"testing"
 
+	"github.com/30x/changeagent/communication"
+	"github.com/30x/changeagent/discovery"
+	"github.com/30x/changeagent/storage"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	"revision.aeip.apigee.net/greg/changeagent/communication"
-	"revision.aeip.apigee.net/greg/changeagent/discovery"
-	"revision.aeip.apigee.net/greg/changeagent/storage"
 )
 
 const (

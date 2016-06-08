@@ -3,7 +3,7 @@ package communication
 import (
 	"fmt"
 
-	"revision.aeip.apigee.net/greg/changeagent/storage"
+	"github.com/30x/changeagent/storage"
 )
 
 //go:generate protoc --go_out=. communication.proto

@@ -10,8 +10,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/30x/changeagent/discovery"
 	"github.com/golang/glog"
-	"revision.aeip.apigee.net/greg/changeagent/discovery"
 )
 
 const (

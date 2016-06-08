@@ -7,7 +7,7 @@ import (
 	"io/ioutil"
 	"time"
 
-	"revision.aeip.apigee.net/greg/changeagent/storage"
+	"github.com/30x/changeagent/storage"
 )
 
 var defaultTime = time.Time{}
