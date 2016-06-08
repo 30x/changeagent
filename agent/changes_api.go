@@ -12,19 +12,18 @@ import (
 )
 
 const (
-	DefaultSince         = "0"
-	DefaultLimit         = "100"
-	DefaultBlock         = "0"
-	CommitTimeoutSeconds = 10
+	defaultSince = "0"
+	defaultLimit = "100"
+	defaultBlock = "0"
 
-	ChangesURI   = "/changes"
-	SingleChange = ChangesURI + "/{change}"
+	changesURI   = "/changes"
+	singleChange = changesURI + "/{change}"
 )
 
 func (a *ChangeAgent) initChangesAPI() {
-	a.router.HandleFunc(ChangesURI, a.handlePostChanges).Methods("POST")
-	a.router.HandleFunc(ChangesURI, a.handleGetChanges).Methods("GET")
-	a.router.HandleFunc(SingleChange, a.handleGetChange).Methods("GET")
+	a.router.HandleFunc(changesURI, a.handlePostChanges).Methods("POST")
+	a.router.HandleFunc(changesURI, a.handleGetChanges).Methods("GET")
+	a.router.HandleFunc(singleChange, a.handleGetChange).Methods("GET")
 }
 
 /*
@@ -32,7 +31,7 @@ func (a *ChangeAgent) initChangesAPI() {
  * of the change.
  */
 func (a *ChangeAgent) handlePostChanges(resp http.ResponseWriter, req *http.Request) {
-	if req.Header.Get("Content-Type") != JSONContent {
+	if req.Header.Get("Content-Type") != jsonContent {
 		// TODO regexp?
 		writeError(resp, http.StatusUnsupportedMediaType, errors.New("Unsupported content type"))
 		return
@@ -51,7 +50,7 @@ func (a *ChangeAgent) handlePostChanges(resp http.ResponseWriter, req *http.Requ
 		return
 	}
 
-	resp.Header().Set("Content-Type", JSONContent)
+	resp.Header().Set("Content-Type", jsonContent)
 	marshalJSON(newEntry, resp)
 }
 
@@ -69,7 +68,7 @@ func (a *ChangeAgent) handleGetChanges(resp http.ResponseWriter, req *http.Reque
 
 	limitStr := qps.Get("limit")
 	if limitStr == "" {
-		limitStr = DefaultLimit
+		limitStr = defaultLimit
 	}
 	lmt, err := strconv.ParseUint(limitStr, 10, 32)
 	if err != nil {
@@ -80,7 +79,7 @@ func (a *ChangeAgent) handleGetChanges(resp http.ResponseWriter, req *http.Reque
 
 	sinceStr := qps.Get("since")
 	if sinceStr == "" {
-		sinceStr = DefaultSince
+		sinceStr = defaultSince
 	}
 	since, err := strconv.ParseUint(sinceStr, 10, 64)
 	if err != nil {
@@ -90,7 +89,7 @@ func (a *ChangeAgent) handleGetChanges(resp http.ResponseWriter, req *http.Reque
 
 	blockStr := qps.Get("block")
 	if blockStr == "" {
-		blockStr = DefaultBlock
+		blockStr = defaultBlock
 	}
 	bk, err := strconv.ParseUint(blockStr, 10, 32)
 	if err != nil {
@@ -125,7 +124,7 @@ func (a *ChangeAgent) handleGetChanges(resp http.ResponseWriter, req *http.Reque
 		}
 	}
 
-	resp.Header().Set("Content-Type", JSONContent)
+	resp.Header().Set("Content-Type", jsonContent)
 	marshalChanges(entries, resp)
 }
 
@@ -182,7 +181,7 @@ func (a *ChangeAgent) handleGetChange(resp http.ResponseWriter, req *http.Reques
 		writeError(resp, http.StatusNotFound, errors.New("Not found"))
 
 	} else {
-		resp.Header().Set("Content-Type", JSONContent)
+		resp.Header().Set("Content-Type", jsonContent)
 		marshalJSON(*entry, resp)
 	}
 }

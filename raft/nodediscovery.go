@@ -9,6 +9,8 @@ import (
 )
 
 const (
+	// DiscoveryInterval is the amount of time that the discovery service checks
+	// for new changes.
 	DiscoveryInterval   = 5 * time.Second
 	RediscoveryInterval = time.Hour
 )

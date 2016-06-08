@@ -31,6 +31,11 @@ type changeHeap struct {
 	items []changeWaiter
 }
 
+/*
+A ChangeTracker allows clients to submit a change, and to wait for a change
+to occur. The overall effect is like a condition variable, in that waiters
+are notified when something changes.
+*/
 type ChangeTracker struct {
 	updateChan chan changeUpdate
 	waiterChan chan changeWaiter
@@ -43,6 +48,9 @@ var changeTrackers = make(map[string]*ChangeTracker)
 var trackerLock = new(sync.Mutex)
 var timeMax = time.Unix(1<<40, 0)
 
+/*
+CreateTracker creates a new change tracker with "lastChange" set to zero.
+*/
 func CreateTracker() *ChangeTracker {
 	waiters := &changeHeap{}
 	heap.Init(waiters)
@@ -58,6 +66,10 @@ func CreateTracker() *ChangeTracker {
 	return tracker
 }
 
+/*
+GetNamedTracker retrieves a tracker from a thread-safe global table of names
+trackers. If no tracker with the specified name exists, then one is created.
+*/
 func GetNamedTracker(name string) *ChangeTracker {
 	trackerLock.Lock()
 	defer trackerLock.Unlock()
@@ -71,16 +83,16 @@ func GetNamedTracker(name string) *ChangeTracker {
 }
 
 /*
- * Stop the change tracker from delivering notifications.
- */
+Close stops the change tracker from delivering notifications.
+*/
 func (t *ChangeTracker) Close() {
 	t.stopChan <- true
 }
 
 /*
- * Indicate that the current sequence has changed. Wake up any waiting
- * waiters and tell them about it.
- */
+Update indicates that the current sequence has changed. Wake up any waiting
+waiters and tell them about it.
+*/
 func (t *ChangeTracker) Update(change uint64) {
 	u := changeUpdate{
 		change: change,
@@ -89,17 +101,17 @@ func (t *ChangeTracker) Update(change uint64) {
 }
 
 /*
- * Wait forever until the change tracker has reached a value at least as high as
- * "curChange." Return the current value when that happens.
- */
+Wait blocks the calling gorouting forever until the change tracker has reached a value at least as high as
+"curChange." Return the current value when that happens.
+*/
 func (t *ChangeTracker) Wait(curChange uint64) uint64 {
 	return t.doWait(curChange, timeMax)
 }
 
 /*
- * Wait for a certain time, just like "wait". If the timeout expires then
- * we will return the current value.
- */
+TimedWait blocks the current gorouting until either a new value higher than
+"curChange" has been reached, or "maxWait" has been exceeded.
+*/
 func (t *ChangeTracker) TimedWait(curChange uint64, maxWait time.Duration) uint64 {
 	timeout := time.Now().Add(maxWait)
 	return t.doWait(curChange, timeout)

@@ -13,6 +13,10 @@ import (
 	"github.com/gorilla/mux"
 )
 
+/*
+ChangeAgent is a server that implements the Raft protocol, plus the "changeagent"
+API.
+*/
 type ChangeAgent struct {
 	stor   storage.Storage
 	raft   *raft.Service
@@ -20,18 +24,26 @@ type ChangeAgent struct {
 }
 
 const (
-	NormalChange  = 0
-	CommandChange = 1
+	// NormalChange denotes a Raft proposal that will appear to everyone in the change log.
+	// We may introduce additional change types in the future.
+	NormalChange = 0
 
-	JSONContent = "application/json"
-	FormContent = "application/x-www-form-urlencoded"
+	commitTimeoutSeconds = 10
+	dbCacheSize          = 10 * 1024 * 1024
 
-	CreateTenantCommand     = "CreateTenant"
-	CreateCollectionCommand = "CreateCollection"
-
-	DBCacheSize = 10 * 1024 * 1024
+	jsonContent      = "application/json"
+	plainTextContent = "text/plain"
 )
 
+/*
+StartChangeAgent starts an instance of changeagent with its API listening on a specific
+HTTP "mux".
+
+"dbFile" denotes the name of the base directory for the local RocksDB database.
+
+"httpMux" must have been previously created using the "net/http" package,
+and it must listen for HTTP requests.
+*/
 func StartChangeAgent(disco discovery.Discovery,
 	dbFile string,
 	httpMux *http.ServeMux) (*ChangeAgent, error) {
@@ -39,7 +51,7 @@ func StartChangeAgent(disco discovery.Discovery,
 	if err != nil {
 		return nil, err
 	}
-	stor, err := storage.CreateRocksDBStorage(dbFile, DBCacheSize)
+	stor, err := storage.CreateRocksDBStorage(dbFile, dbCacheSize)
 	if err != nil {
 		return nil, err
 	}
@@ -64,15 +76,25 @@ func StartChangeAgent(disco discovery.Discovery,
 	return agent, nil
 }
 
+/*
+Close stops changeagent.
+*/
 func (a *ChangeAgent) Close() {
 	a.raft.Close()
 	a.stor.Close()
 }
 
+/*
+Delete deletes the database, cleaning out the contents of the DB
+directory. "Close" must be called first.
+*/
 func (a *ChangeAgent) Delete() {
 	a.stor.Delete()
 }
 
+/*
+GetRaftState returns the state of the internal Raft implementation.
+*/
 func (a *ChangeAgent) GetRaftState() raft.State {
 	return a.raft.GetState()
 }
@@ -91,7 +113,7 @@ func (a *ChangeAgent) makeProposal(proposal storage.Entry) (storage.Entry, error
 
 	// Wait for the new commit to be applied, or time out
 	appliedIndex :=
-		a.raft.GetAppliedTracker().TimedWait(newIndex, time.Second*CommitTimeoutSeconds)
+		a.raft.GetAppliedTracker().TimedWait(newIndex, time.Second*commitTimeoutSeconds)
 	glog.V(2).Infof("New index %d is now applied", appliedIndex)
 	if appliedIndex >= newIndex {
 		newEntry := storage.Entry{
@@ -103,6 +125,10 @@ func (a *ChangeAgent) makeProposal(proposal storage.Entry) (storage.Entry, error
 	return storage.Entry{}, errors.New("Commit timeout")
 }
 
+/*
+Commit is called by the Raft implementation when an entry has reached
+commit state. However, we do not do anything here today.
+*/
 func (a *ChangeAgent) Commit(entry *storage.Entry) error {
 	// Nothing to do now. Perhaps we take this interface out.
 	return nil
@@ -111,7 +137,7 @@ func (a *ChangeAgent) Commit(entry *storage.Entry) error {
 func writeError(resp http.ResponseWriter, code int, err error) {
 	glog.Errorf("Returning error %d: %s", code, err)
 	msg := marshalError(err)
-	resp.Header().Set("Content-Type", JSONContent)
+	resp.Header().Set("Content-Type", jsonContent)
 	resp.WriteHeader(code)
 	resp.Write([]byte(msg))
 }

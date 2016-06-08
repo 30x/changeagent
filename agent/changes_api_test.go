@@ -12,10 +12,6 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-const (
-	jsonContent = "application/json"
-)
-
 var lastNewChange uint64
 var numPosts int
 

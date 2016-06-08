@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"io"
 	"io/ioutil"
@@ -12,6 +11,9 @@ import (
 
 var defaultTime = time.Time{}
 
+/*
+JSONData represents a single change represented as JSON.
+*/
 type JSONData struct {
 	ID        uint64          `json:"_id,omitempty"`
 	Timestamp int64           `json:"_ts,omitempty"`
@@ -19,6 +21,9 @@ type JSONData struct {
 	Data      json.RawMessage `json:"data,omitempty"`
 }
 
+/*
+JSONError represents an error represented in JSON.
+*/
 type JSONError struct {
 	Error string `json:"error"`
 }
@@ -79,20 +84,11 @@ func marshalJSON(entry storage.Entry, out io.Writer) error {
 	return err
 }
 
-func marshalJSONToString(entry storage.Entry) (string, error) {
-	out := &bytes.Buffer{}
-	err := marshalJSON(entry, out)
-	if err != nil {
-		return "", err
-	}
-	return out.String(), nil
-}
-
 /*
  * Same as above but marshal a whole array of changes.
  */
 func marshalChanges(changes []storage.Entry, out io.Writer) error {
-	if changes == nil || len(changes) == 0 {
+	if len(changes) == 0 {
 		out.Write([]byte("[]"))
 		return nil
 	}

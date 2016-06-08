@@ -26,7 +26,7 @@ var defaultWriteOptions = C.rocksdb_writeoptions_create()
 var defaultReadOptions = C.rocksdb_readoptions_create()
 var rocksInitOnce sync.Once
 
-type LevelDBStorage struct {
+type rocksDBStorage struct {
 	baseFile string
 	dbHandle *C.GoRocksDb
 	db       *C.rocksdb_t
@@ -34,8 +34,18 @@ type LevelDBStorage struct {
 	entries  *C.rocksdb_column_family_handle_t
 }
 
-func CreateRocksDBStorage(baseFile string, cacheSize uint) (*LevelDBStorage, error) {
-	stor := &LevelDBStorage{
+/*
+CreateRocksDBStorage creates an instance of the Storage interface using RocksDB.
+
+The "baseFile" parameter refers to the name of a directory where RocksDB can
+store its data. RocksDB will create many files inside this directory. To create
+an empty database, make sure that it is empty.
+
+The "cacheSize" parameter specifies the maximum number of bytes to use in memory
+for an LRU cache of database contents. How this cache is used is up to RocksDB.
+*/
+func CreateRocksDBStorage(baseFile string, cacheSize uint) (Storage, error) {
+	stor := &rocksDBStorage{
 		baseFile: baseFile,
 	}
 
@@ -66,16 +76,16 @@ func CreateRocksDBStorage(baseFile string, cacheSize uint) (*LevelDBStorage, err
 	return stor, nil
 }
 
-func (s *LevelDBStorage) GetDataPath() string {
+func (s *rocksDBStorage) GetDataPath() string {
 	return s.baseFile
 }
 
-func (s *LevelDBStorage) Close() {
+func (s *rocksDBStorage) Close() {
 	C.go_rocksdb_close(s.dbHandle)
 	freePtr(unsafe.Pointer(s.dbHandle))
 }
 
-func (s *LevelDBStorage) Delete() error {
+func (s *rocksDBStorage) Delete() error {
 	var e *C.char
 	opts := C.rocksdb_options_create()
 	defer C.rocksdb_options_destroy(opts)
@@ -84,18 +94,18 @@ func (s *LevelDBStorage) Delete() error {
 	defer freeString(dbCName)
 	C.rocksdb_destroy_db(opts, dbCName, &e)
 	if e == nil {
-		glog.Infof("Destroyed LevelDB database in %s", s.baseFile)
+		glog.Infof("Destroyed RocksDB database in %s", s.baseFile)
 		return nil
 	}
 	defer freeString(e)
 	err := stringToError(e)
 	if err != nil {
-		glog.Infof("Error destroying LevelDB database: %s", err)
+		glog.Infof("Error destroying RocksDB database: %s", err)
 	}
 	return err
 }
 
-func (s *LevelDBStorage) Dump(out io.Writer, max int) {
+func (s *rocksDBStorage) Dump(out io.Writer, max int) {
 	mit := C.rocksdb_create_iterator_cf(s.db, defaultReadOptions, s.metadata)
 	defer C.rocksdb_iter_destroy(mit)
 
@@ -175,7 +185,7 @@ func (s *LevelDBStorage) Dump(out io.Writer, max int) {
 	}
 }
 
-func (s *LevelDBStorage) GetUintMetadata(key string) (uint64, error) {
+func (s *rocksDBStorage) GetUintMetadata(key string) (uint64, error) {
 	keyBuf, keyLen := stringToKey(MetadataKey, key)
 	defer freePtr(keyBuf)
 
@@ -191,7 +201,7 @@ func (s *LevelDBStorage) GetUintMetadata(key string) (uint64, error) {
 	return ptrToUint(val, valLen), nil
 }
 
-func (s *LevelDBStorage) GetMetadata(key string) ([]byte, error) {
+func (s *rocksDBStorage) GetMetadata(key string) ([]byte, error) {
 	keyBuf, keyLen := stringToKey(MetadataKey, key)
 	defer freePtr(keyBuf)
 
@@ -207,7 +217,7 @@ func (s *LevelDBStorage) GetMetadata(key string) ([]byte, error) {
 	return ptrToBytes(val, valLen), nil
 }
 
-func (s *LevelDBStorage) SetUintMetadata(key string, val uint64) error {
+func (s *rocksDBStorage) SetUintMetadata(key string, val uint64) error {
 	keyBuf, keyLen := stringToKey(MetadataKey, key)
 	defer freePtr(keyBuf)
 	valBuf, valLen := uintToPtr(val)
@@ -216,7 +226,7 @@ func (s *LevelDBStorage) SetUintMetadata(key string, val uint64) error {
 	return s.putEntry(s.metadata, keyBuf, keyLen, valBuf, valLen)
 }
 
-func (s *LevelDBStorage) SetMetadata(key string, val []byte) error {
+func (s *rocksDBStorage) SetMetadata(key string, val []byte) error {
 	keyBuf, keyLen := stringToKey(MetadataKey, key)
 	defer freePtr(keyBuf)
 	valBuf, valLen := bytesToPtr(val)
@@ -227,7 +237,7 @@ func (s *LevelDBStorage) SetMetadata(key string, val []byte) error {
 
 // Methods for the Raft index
 
-func (s *LevelDBStorage) AppendEntry(entry *Entry) error {
+func (s *rocksDBStorage) AppendEntry(entry *Entry) error {
 	keyPtr, keyLen := uintToKey(EntryKey, entry.Index)
 	defer freePtr(keyPtr)
 
@@ -239,7 +249,7 @@ func (s *LevelDBStorage) AppendEntry(entry *Entry) error {
 }
 
 // Get term and data for entry. Return term 0 if not found.
-func (s *LevelDBStorage) GetEntry(index uint64) (*Entry, error) {
+func (s *rocksDBStorage) GetEntry(index uint64) (*Entry, error) {
 	keyPtr, keyLen := uintToKey(EntryKey, index)
 	defer freePtr(keyPtr)
 
@@ -255,7 +265,7 @@ func (s *LevelDBStorage) GetEntry(index uint64) (*Entry, error) {
 	return ptrToEntry(valPtr, valLen)
 }
 
-func (s *LevelDBStorage) GetEntries(since uint64, max uint, filter func(*Entry) bool) ([]Entry, error) {
+func (s *rocksDBStorage) GetEntries(since uint64, max uint, filter func(*Entry) bool) ([]Entry, error) {
 	it := C.rocksdb_create_iterator_cf(s.db, defaultReadOptions, s.entries)
 	defer C.rocksdb_iter_destroy(it)
 
@@ -288,7 +298,7 @@ func (s *LevelDBStorage) GetEntries(since uint64, max uint, filter func(*Entry) 
 	return entries, nil
 }
 
-func (s *LevelDBStorage) GetLastIndex() (uint64, uint64, error) {
+func (s *rocksDBStorage) GetLastIndex() (uint64, uint64, error) {
 	it := C.rocksdb_create_iterator_cf(s.db, defaultReadOptions, s.entries)
 	defer C.rocksdb_iter_destroy(it)
 
@@ -309,7 +319,7 @@ func (s *LevelDBStorage) GetLastIndex() (uint64, uint64, error) {
 	return index, entry.Term, nil
 }
 
-func (s *LevelDBStorage) getFirstIndex() (uint64, error) {
+func (s *rocksDBStorage) getFirstIndex() (uint64, error) {
 	it := C.rocksdb_create_iterator_cf(s.db, defaultReadOptions, s.entries)
 	defer C.rocksdb_iter_destroy(it)
 
@@ -332,7 +342,7 @@ func (s *LevelDBStorage) getFirstIndex() (uint64, error) {
 
 /*
  * Read index, term, and data from current iterator position and free pointers
- * to data returned by LevelDB. Assumes that the iterator is valid at this
+ * to data returned by RocksDB. Assumes that the iterator is valid at this
  * position!
  */
 func readIterPosition(it *C.rocksdb_iterator_t) (uint64, int, *Entry, error) {
@@ -360,7 +370,7 @@ func readIterPosition(it *C.rocksdb_iterator_t) (uint64, int, *Entry, error) {
 }
 
 // Return index and term of everything from index to the end
-func (s *LevelDBStorage) GetEntryTerms(first uint64) (map[uint64]uint64, error) {
+func (s *rocksDBStorage) GetEntryTerms(first uint64) (map[uint64]uint64, error) {
 	it := C.rocksdb_create_iterator_cf(s.db, defaultReadOptions, s.entries)
 	defer C.rocksdb_iter_destroy(it)
 
@@ -388,7 +398,7 @@ func (s *LevelDBStorage) GetEntryTerms(first uint64) (map[uint64]uint64, error) 
 }
 
 // Delete everything that is greater than or equal to the index
-func (s *LevelDBStorage) DeleteEntriesAfter(first uint64) error {
+func (s *rocksDBStorage) DeleteEntriesAfter(first uint64) error {
 	it := C.rocksdb_create_iterator_cf(s.db, defaultReadOptions, s.entries)
 	defer C.rocksdb_iter_destroy(it)
 
@@ -418,7 +428,7 @@ func (s *LevelDBStorage) DeleteEntriesAfter(first uint64) error {
 	return nil
 }
 
-func (s *LevelDBStorage) deleteEntry(ix uint64) error {
+func (s *rocksDBStorage) deleteEntry(ix uint64) error {
 	delPtr, delLen := uintToKey(EntryKey, ix)
 	defer freePtr(delPtr)
 
@@ -432,7 +442,7 @@ func (s *LevelDBStorage) deleteEntry(ix uint64) error {
 }
 
 // Truncate older entries.
-func (s *LevelDBStorage) Truncate(minEntries uint64, maxDur time.Duration) (uint64, error) {
+func (s *rocksDBStorage) Truncate(minEntries uint64, maxDur time.Duration) (uint64, error) {
 	min, err := s.getFirstIndex()
 	if err != nil {
 		return 0, err
@@ -490,7 +500,7 @@ func (s *LevelDBStorage) Truncate(minEntries uint64, maxDur time.Duration) (uint
 	return deleteCount, nil
 }
 
-func (s *LevelDBStorage) truncateBatch(it *C.rocksdb_iterator_t, maxCount uint64, maxTime time.Time) (uint64, error) {
+func (s *rocksDBStorage) truncateBatch(it *C.rocksdb_iterator_t, maxCount uint64, maxTime time.Time) (uint64, error) {
 	var deleteCount uint64
 
 	for deleteCount < maxCount {
@@ -518,7 +528,7 @@ func (s *LevelDBStorage) truncateBatch(it *C.rocksdb_iterator_t, maxCount uint64
 	return deleteCount, nil
 }
 
-func (s *LevelDBStorage) putEntry(
+func (s *rocksDBStorage) putEntry(
 	cf *C.rocksdb_column_family_handle_t,
 	keyPtr unsafe.Pointer, keyLen C.size_t,
 	valPtr unsafe.Pointer, valLen C.size_t) error {
@@ -535,7 +545,7 @@ func (s *LevelDBStorage) putEntry(
 	return stringToError(e)
 }
 
-func (s *LevelDBStorage) readEntry(
+func (s *rocksDBStorage) readEntry(
 	cf *C.rocksdb_column_family_handle_t,
 	keyPtr unsafe.Pointer, keyLen C.size_t) (unsafe.Pointer, C.size_t, error) {
 

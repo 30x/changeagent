@@ -12,6 +12,10 @@ import (
 
 //go:generate protoc --go_out=. rocksdb_records.proto
 
+/*
+An Entry represents a single record in the storage system. It is used by many
+packages as the basis of the data model
+*/
 type Entry struct {
 	Index     uint64
 	Type      int32
@@ -22,10 +26,10 @@ type Entry struct {
 }
 
 /*
- * This is an interface that is implemented by Storage implementations
- * so that we could swap them in the future.
- */
-
+Storage is an interface that abstracts all persistence-related operations
+in changeagent. It is the only interface that other modules should use within
+the project.
+*/
 type Storage interface {
 	// Methods for all kinds of metadata used for maintenance and operation
 	GetUintMetadata(key string) (uint64, error)
@@ -61,8 +65,11 @@ type Storage interface {
 }
 
 /*
- * Use the protobuf to encode an Entry into a standard byte buffer.
- */
+EncodeEntry encodes an entry in to a byte array using the protobuf defined in this
+package. It could return an error but it's not clear why.
+
+TODO why don't we just panic on error here?
+*/
 func EncodeEntry(entry *Entry) ([]byte, error) {
 	ts := entry.Timestamp.UnixNano()
 	pb := EntryPb{
@@ -98,8 +105,10 @@ func EncodeEntry(entry *Entry) ([]byte, error) {
 }
 
 /*
- * Use the same protobuf to decode.
- */
+DecodeEntry turns a protobuf created by EncodeEntry back into an Entry.
+It will return an error if the specified array is not a valid protobuf for
+the Entry type.
+*/
 func DecodeEntry(rawbuf []byte) (*Entry, error) {
 	buf := bytes.NewBuffer(rawbuf)
 
@@ -133,6 +142,10 @@ func DecodeEntry(rawbuf []byte) (*Entry, error) {
 	return &e, nil
 }
 
+/*
+MatchesTags returns true if the specified entry contains all the tags in the
+"tags" array.
+*/
 func (e *Entry) MatchesTags(tags []string) bool {
 	for _, tag := range tags {
 		if !e.MatchesTag(tag) {
@@ -142,6 +155,10 @@ func (e *Entry) MatchesTags(tags []string) bool {
 	return true
 }
 
+/*
+MatchesTag returns true if the specified entry contains the tag from the "tag"
+argument.
+*/
 func (e *Entry) MatchesTag(tag string) bool {
 	for _, etag := range e.Tags {
 		if tag == etag {

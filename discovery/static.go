@@ -10,12 +10,23 @@ import (
 	"github.com/golang/glog"
 )
 
-func CreateStaticDiscovery(nodes []string) *Service {
+/*
+CreateStaticDiscovery returns an instance of the service that only contains
+the list of nodes specified. Each string in the "nodes" array must be a
+"hostname:port" string.
+*/
+func CreateStaticDiscovery(nodes []string) Discovery {
 	ret := createImpl(nodes, nil)
 	return ret
 }
 
-func ReadDiscoveryFile(fileName string, updateInterval time.Duration) (*Service, error) {
+/*
+ReadDiscoveryFile reads a file that contains a list of host:port strings,
+each on a separate line. It will turn that list of strings into an instance
+of the Discovery interface. It will also poll the file whenever "updateInterval"
+expires and update the service if anything has changed.
+*/
+func ReadDiscoveryFile(fileName string, updateInterval time.Duration) (Discovery, error) {
 	info, err := os.Stat(fileName)
 	if err != nil {
 		return nil, err
@@ -40,7 +51,7 @@ func ReadDiscoveryFile(fileName string, updateInterval time.Duration) (*Service,
 }
 
 type fileReader struct {
-	d        *Service
+	d        *discoService
 	fileName string
 	interval time.Duration
 	stopChan chan bool

@@ -6,7 +6,7 @@ import (
 	"github.com/golang/glog"
 )
 
-type Service struct {
+type discoService struct {
 	latch       *sync.Mutex
 	nodes       []string
 	spi         discoverySpi
@@ -22,8 +22,8 @@ type discoverySpi interface {
 /*
  * SPIs must call this to create the thing that they return from their "create" methods.
  */
-func createImpl(nodes []string, spi discoverySpi) *Service {
-	disco := &Service{
+func createImpl(nodes []string, spi discoverySpi) *discoService {
+	disco := &discoService{
 		latch:       &sync.Mutex{},
 		nodes:       nodes,
 		spi:         spi,
@@ -35,25 +35,25 @@ func createImpl(nodes []string, spi discoverySpi) *Service {
 	return disco
 }
 
-func (d *Service) GetCurrentConfig() *NodeConfig {
+func (d *discoService) GetCurrentConfig() *NodeConfig {
 	nodes := d.getNodes()
 	cur := NodeList{New: nodes}
 	return &NodeConfig{Current: &cur}
 }
 
-func (d *Service) getNodes() []string {
+func (d *discoService) getNodes() []string {
 	d.latch.Lock()
 	defer d.latch.Unlock()
 	return d.nodes
 }
 
-func (d *Service) setNodes(newNodes []string) {
+func (d *discoService) setNodes(newNodes []string) {
 	d.latch.Lock()
 	d.nodes = newNodes
 	d.latch.Unlock()
 }
 
-func (d *Service) AddNode(newNode string) {
+func (d *discoService) AddNode(newNode string) {
 	d.latch.Lock()
 	defer d.latch.Unlock()
 
@@ -69,7 +69,7 @@ func (d *Service) AddNode(newNode string) {
 	}
 }
 
-func (d *Service) DeleteNode(oldNode string) {
+func (d *discoService) DeleteNode(oldNode string) {
 	d.latch.Lock()
 	defer d.latch.Unlock()
 
@@ -82,17 +82,17 @@ func (d *Service) DeleteNode(oldNode string) {
 	d.updateNodes(newNodes)
 }
 
-func (d *Service) Watch() <-chan bool {
+func (d *discoService) Watch() <-chan bool {
 	watchChan := make(chan bool, 1)
 	d.watcherChan <- watchChan
 	return watchChan
 }
 
-func (d *Service) updateNodes(newNodes []string) {
+func (d *discoService) updateNodes(newNodes []string) {
 	d.changeChan <- newNodes
 }
 
-func (d *Service) Close() {
+func (d *discoService) Close() {
 	if d.spi != nil {
 		d.spi.stop()
 	}
@@ -102,7 +102,7 @@ func (d *Service) Close() {
 	<-stopped
 }
 
-func (d *Service) discoveryLoop() {
+func (d *discoService) discoveryLoop() {
 	running := true
 	var watchers [](chan bool)
 

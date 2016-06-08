@@ -4,14 +4,6 @@ import (
 	"sort"
 )
 
-/*
- * Sort a slice of uint64s in place in numeric order.
- */
-func sortUint64(a []uint64) {
-	sorter := &uintSorter{a: a, reverse: false}
-	sort.Sort(sorter)
-}
-
 func reverseSortUint64(a []uint64) {
 	sorter := &uintSorter{a: a, reverse: true}
 	sort.Sort(sorter)

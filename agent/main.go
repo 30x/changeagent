@@ -15,9 +15,8 @@ import (
 )
 
 const (
-	DefaultNode       = 1
-	DefaultPort       = 8080
-	DefaultConfigScan = 10 * time.Second
+	defaultPort       = 8080
+	defaultConfigScan = 10 * time.Second
 )
 
 func main() {
@@ -30,7 +29,7 @@ func runAgentMain() int {
 	var discoveryFile string
 	var help bool
 
-	flag.IntVar(&port, "p", DefaultPort, "Port to listen on.")
+	flag.IntVar(&port, "p", defaultPort, "Port to listen on.")
 	flag.StringVar(&dbDir, "d", "", "Directory in which to place data. Required.")
 	flag.StringVar(&discoveryFile, "s", "", "File from which to read list of peers. Default is single-node operation.")
 	flag.BoolVar(&help, "h", false, "Print help message.")
@@ -51,7 +50,7 @@ func runAgentMain() int {
 	if discoveryFile == "" {
 		disco = discovery.CreateStaticDiscovery([]string{fmt.Sprintf("localhost:%d", port)})
 	} else {
-		disco, err = discovery.ReadDiscoveryFile(discoveryFile, DefaultConfigScan)
+		disco, err = discovery.ReadDiscoveryFile(discoveryFile, defaultConfigScan)
 		if err != nil {
 			fmt.Printf("Error reading discovery file: %s\n", err)
 			return 5

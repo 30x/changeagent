@@ -9,10 +9,9 @@ import (
 //go:generate protoc --go_out=. communication.proto
 
 /*
- * The raft implementation needs to export this interface in order to be able to plug in
- * to this package. It represents the calls that we'll make to it when we get stuff from
- * the network.
- */
+Raft is the interface that a Raft implementation must implement so that this
+module can call it back when it gets various events over the network.
+*/
 type Raft interface {
 	MyID() uint64
 	RequestVote(req VoteRequest) (VoteResponse, error)
@@ -20,6 +19,10 @@ type Raft interface {
 	Propose(e storage.Entry) (uint64, error)
 }
 
+/*
+A VoteRequest is the message that a raft node sends when it wants to be elected
+the leader.
+*/
 type VoteRequest struct {
 	Term         uint64
 	CandidateID  uint64
@@ -27,6 +30,9 @@ type VoteRequest struct {
 	LastLogTerm  uint64
 }
 
+/*
+A VoteResponse is the response to a VoteRequest.
+*/
 type VoteResponse struct {
 	NodeID      uint64
 	NodeAddress string
@@ -35,6 +41,10 @@ type VoteResponse struct {
 	Error       error
 }
 
+/*
+An AppendRequest is the message that the leader sends when it wants to append
+a new record to the raft log of another node.
+*/
 type AppendRequest struct {
 	Term         uint64
 	LeaderID     uint64
@@ -54,6 +64,9 @@ func (a *AppendRequest) String() string {
 	return s
 }
 
+/*
+An AppendResponse is the repsonse to an AppendRequest.
+*/
 type AppendResponse struct {
 	Term        uint64
 	Success     bool
@@ -61,6 +74,9 @@ type AppendResponse struct {
 	Error       error
 }
 
+/*
+DefaultAppendResponse is a convenient empty response.
+*/
 var DefaultAppendResponse = AppendResponse{}
 
 func (a *AppendResponse) String() string {
@@ -73,11 +89,19 @@ func (a *AppendResponse) String() string {
 	return s
 }
 
+/*
+A ProposalResponse is the response to the proposal of a new storage
+entry. It is used when a non-leader node wishes to ask the leader
+to propose something.
+*/
 type ProposalResponse struct {
 	NewIndex uint64
 	Error    error
 }
 
+/*
+DefaultProposalResponse is a convenient empty response.
+*/
 var DefaultProposalResponse = ProposalResponse{}
 
 func (a *ProposalResponse) String() string {
@@ -89,10 +113,28 @@ func (a *ProposalResponse) String() string {
 	return s
 }
 
+/*
+Communication is the interface that other modules use in order to communicate
+with other nodes in the cluster.
+*/
 type Communication interface {
+	// SetRaft must be called to wire up the communications module before anything
+	// else may be called.
 	SetRaft(raft Raft)
+
+	// Discover may be called by any node to discover the unique ID of another
+	// node.
 	Discover(address string) (uint64, error)
+
+	// RequestVote is called by a candidate when it wishes to be elected.
+	// The response will be delivered asynchronously via a channel.
 	RequestVote(address string, req VoteRequest, ch chan<- VoteResponse)
+
+	// Append is called by the leader to add a new entry to the log of another
+	// node. It blocks until it gets a response.
 	Append(address string, req AppendRequest) (AppendResponse, error)
+
+	// Propose is called by a non-leader node to ask the leader to propose a new
+	// change to its followers. It blocks until it gets a response.
 	Propose(address string, e storage.Entry) (ProposalResponse, error)
 }

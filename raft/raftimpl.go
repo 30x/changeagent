@@ -26,14 +26,20 @@ const (
 )
 
 const (
-	// Special message type for membership changes. Also persists between nodes.
+	// MembershipChange denodes a special message type for membership changes.
+	//Also persists between nodes.
 	MembershipChange = -1
 
-	// Some timeouts
-	ElectionTimeout  = 10 * time.Second
+	// ElectionTimeout is the amount of time a node will wait once it has heard
+	// from the current leader before it declares itself a candidate.
+	// It must always be a small multiple of HeartbeatTimeout.
+	ElectionTimeout = 10 * time.Second
+	// HeartbeatTimeout is the amount of time between heartbeat messages from the
+	// leader to other nodes.
 	HeartbeatTimeout = 2 * time.Second
 )
 
+// State is the current state of the Raft implementation.
 type State int32
 
 /*
@@ -56,6 +62,7 @@ const (
 	proposedFinalConsensus
 )
 
+// TODO this should use "stringer."
 func (r State) String() string {
 	switch r {
 	case Follower:
@@ -73,6 +80,11 @@ func (r State) String() string {
 	}
 }
 
+/*
+Service is an instance of code that implements the Raft protocol.
+It relies on the Storage, Discovery, and Communication services to do
+its work, and invokes the StateMachine when changes are committed.
+*/
 type Service struct {
 	id                  uint64
 	localAddress        atomic.Value
@@ -124,6 +136,11 @@ type proposalCommand struct {
 var raftRand = makeRand()
 var raftRandLock = &sync.Mutex{}
 
+/*
+StartRaft starts an instance of the raft implementation running.
+It will start at least one goroutine for its implementation of the protocol,
+and others to communicate with other nodes.
+*/
 func StartRaft(comm communication.Communication,
 	disco discovery.Discovery,
 	stor storage.Storage,
@@ -221,6 +238,10 @@ func (r *Service) loadCurrentConfig(disco discovery.Discovery, stor storage.Stor
 	return nil
 }
 
+/*
+Close shuts the service down and stops its goroutines. It does not close
+the database, however.
+*/
 func (r *Service) Close() {
 	s := r.GetState()
 	if s != Stopped && s != Stopping {
@@ -254,6 +275,10 @@ func (r *Service) cleanup() {
 	//close(r.receivedAppendChan)
 }
 
+/*
+RequestVote is called from the communication interface when another node
+requests a vote.
+*/
 func (r *Service) RequestVote(req communication.VoteRequest) (communication.VoteResponse, error) {
 	if r.GetState() == Stopping || r.GetState() == Stopped {
 		return communication.VoteResponse{}, errors.New("Raft is stopped")
@@ -269,6 +294,10 @@ func (r *Service) RequestVote(req communication.VoteRequest) (communication.Vote
 	return vr, vr.Error
 }
 
+/*
+Append is called by the commnunication service when the leader has a new
+item to append to the index.
+*/
 func (r *Service) Append(req communication.AppendRequest) (communication.AppendResponse, error) {
 	glog.V(2).Infof("Node %d append request. State is %v", r.id, r.GetState())
 	if r.GetState() == Stopping || r.GetState() == Stopped {
@@ -286,6 +315,11 @@ func (r *Service) Append(req communication.AppendRequest) (communication.AppendR
 	return resp, resp.Error
 }
 
+/*
+Propose is called by anyone who wants to propose a new change. It will return
+with the change number of the new change. However, that change number will
+not necessarily have been committed yet.
+*/
 func (r *Service) Propose(e storage.Entry) (uint64, error) {
 	if r.GetState() == Stopping || r.GetState() == Stopped {
 		return 0, errors.New("Raft is stopped")
@@ -304,10 +338,16 @@ func (r *Service) Propose(e storage.Entry) (uint64, error) {
 	return result.index, result.err
 }
 
+/*
+MyID returns the unique ID of this Raft node.
+*/
 func (r *Service) MyID() uint64 {
 	return r.id
 }
 
+/*
+GetState returns the state of this Raft node in a thread-safe way.
+*/
 func (r *Service) GetState() State {
 	s := atomic.LoadInt32(&r.state)
 	return State(s)
@@ -319,6 +359,10 @@ func (r *Service) setState(newState State) {
 	atomic.StoreInt32(&r.state, ns)
 }
 
+/*
+GetLeaderID returns the unique ID of the leader node, or zero if there is
+currently no known leader.
+*/
 func (r *Service) GetLeaderID() uint64 {
 	return atomic.LoadUint64(&r.leaderID)
 }
@@ -332,6 +376,9 @@ func (r *Service) setLeaderID(newID uint64) {
 	atomic.StoreUint64(&r.leaderID, newID)
 }
 
+/*
+GetCurrentTerm returns the current Raft term.
+*/
 func (r *Service) GetCurrentTerm() uint64 {
 	r.latch.Lock()
 	defer r.latch.Unlock()
@@ -346,6 +393,10 @@ func (r *Service) setCurrentTerm(t uint64) {
 	r.writeCurrentTerm(t)
 }
 
+/*
+GetCommitIndex returns the current index that has been committed to a quorum
+of nodes.
+*/
 func (r *Service) GetCommitIndex() uint64 {
 	return atomic.LoadUint64(&r.commitIndex)
 }
@@ -356,6 +407,10 @@ func (r *Service) setCommitIndex(t uint64) bool {
 	return oldIndex != t
 }
 
+/*
+GetLastApplied returns the current index that has been applied to this local
+node.
+*/
 func (r *Service) GetLastApplied() uint64 {
 	return atomic.LoadUint64(&r.lastApplied)
 }
@@ -391,10 +446,20 @@ func (r *Service) setLastApplied(t uint64) {
 	r.appliedTracker.Update(t)
 }
 
+/*
+GetAppliedTracker returns a change tracker that can be used to wait until a
+particular change number has been applied. This allows a caller who
+recently proposed a new value to wait until the value has been applied
+to a quorum of cluster nodes.
+*/
 func (r *Service) GetAppliedTracker() *ChangeTracker {
 	return r.appliedTracker
 }
 
+/*
+GetLastIndex returns the highest index that exists in the local raft log,
+and the corresponding term for that index.
+*/
 func (r *Service) GetLastIndex() (uint64, uint64) {
 	// Use a mutex here so that both values are consistent
 	r.latch.Lock()

@@ -14,37 +14,44 @@ import (
 )
 
 const (
+	// ContentType is the MIME type that this module will use for all of its
+	// HTTP requests and responses.
 	ContentType    = "application/changeagent+protobuf"
-	RequestVoteURI = "/raft/requestvote"
-	AppendURI      = "/raft/append"
-	ProposeURI     = "/raft/propose"
-	DiscoveryURI   = "/raft/id"
-	RequestTimeout = 10 * time.Second
+	requestVoteURI = "/raft/requestvote"
+	appendURI      = "/raft/append"
+	proposeURI     = "/raft/propose"
+	discoveryURI   = "/raft/id"
+	requestTimeout = 10 * time.Second
 )
 
 var httpClient = &http.Client{
-	Timeout: RequestTimeout,
+	Timeout: requestTimeout,
 }
 
-type HTTPCommunication struct {
+type httpCommunication struct {
 	raft Raft
 }
 
-func StartHTTPCommunication(mux *http.ServeMux) (*HTTPCommunication, error) {
-	comm := HTTPCommunication{}
-	mux.HandleFunc(RequestVoteURI, comm.handleRequestVote)
-	mux.HandleFunc(AppendURI, comm.handleAppend)
-	mux.HandleFunc(ProposeURI, comm.handlePropose)
-	mux.HandleFunc(DiscoveryURI, comm.handleDiscovery)
+/*
+StartHTTPCommunication creates an instance of the Communication interface that
+runs over HTTP. Requests and responses are made in the form of encoded
+protobufs.
+*/
+func StartHTTPCommunication(mux *http.ServeMux) (Communication, error) {
+	comm := httpCommunication{}
+	mux.HandleFunc(requestVoteURI, comm.handleRequestVote)
+	mux.HandleFunc(appendURI, comm.handleAppend)
+	mux.HandleFunc(proposeURI, comm.handlePropose)
+	mux.HandleFunc(discoveryURI, comm.handleDiscovery)
 	return &comm, nil
 }
 
-func (h *HTTPCommunication) SetRaft(raft Raft) {
+func (h *httpCommunication) SetRaft(raft Raft) {
 	h.raft = raft
 }
 
-func (h *HTTPCommunication) Discover(addr string) (uint64, error) {
-	uri := fmt.Sprintf("http://%s%s", addr, DiscoveryURI)
+func (h *httpCommunication) Discover(addr string) (uint64, error) {
+	uri := fmt.Sprintf("http://%s%s", addr, discoveryURI)
 
 	resp, err := httpClient.Get(uri)
 	if err != nil {
@@ -70,12 +77,12 @@ func (h *HTTPCommunication) Discover(addr string) (uint64, error) {
 	return respPb.GetNodeId(), nil
 }
 
-func (h *HTTPCommunication) RequestVote(addr string, req VoteRequest, ch chan<- VoteResponse) {
+func (h *httpCommunication) RequestVote(addr string, req VoteRequest, ch chan<- VoteResponse) {
 	go h.sendVoteRequest(addr, req, ch)
 }
 
-func (h *HTTPCommunication) sendVoteRequest(addr string, req VoteRequest, ch chan<- VoteResponse) {
-	uri := fmt.Sprintf("http://%s%s", addr, RequestVoteURI)
+func (h *httpCommunication) sendVoteRequest(addr string, req VoteRequest, ch chan<- VoteResponse) {
+	uri := fmt.Sprintf("http://%s%s", addr, requestVoteURI)
 
 	reqPb := VoteRequestPb{
 		Term:         &req.Term,
@@ -131,8 +138,8 @@ func (h *HTTPCommunication) sendVoteRequest(addr string, req VoteRequest, ch cha
 	ch <- voteResp
 }
 
-func (h *HTTPCommunication) Append(addr string, req AppendRequest) (AppendResponse, error) {
-	uri := fmt.Sprintf("http://%s%s", addr, AppendURI)
+func (h *httpCommunication) Append(addr string, req AppendRequest) (AppendResponse, error) {
+	uri := fmt.Sprintf("http://%s%s", addr, appendURI)
 
 	reqPb := AppendRequestPb{
 		Term:         &req.Term,
@@ -184,8 +191,8 @@ func (h *HTTPCommunication) Append(addr string, req AppendRequest) (AppendRespon
 	return appResp, nil
 }
 
-func (h *HTTPCommunication) Propose(addr string, e storage.Entry) (ProposalResponse, error) {
-	uri := fmt.Sprintf("http://%s%s", addr, ProposeURI)
+func (h *httpCommunication) Propose(addr string, e storage.Entry) (ProposalResponse, error) {
+	uri := fmt.Sprintf("http://%s%s", addr, proposeURI)
 
 	reqBody, err := storage.EncodeEntry(&e)
 	if err != nil {
@@ -224,7 +231,7 @@ func (h *HTTPCommunication) Propose(addr string, e storage.Entry) (ProposalRespo
 	return appResp, nil
 }
 
-func (h *HTTPCommunication) handleRequestVote(resp http.ResponseWriter, req *http.Request) {
+func (h *httpCommunication) handleRequestVote(resp http.ResponseWriter, req *http.Request) {
 	defer req.Body.Close()
 
 	if req.Method != "POST" {
@@ -279,7 +286,7 @@ func (h *HTTPCommunication) handleRequestVote(resp http.ResponseWriter, req *htt
 	resp.Write(respBody)
 }
 
-func (h *HTTPCommunication) handleAppend(resp http.ResponseWriter, req *http.Request) {
+func (h *httpCommunication) handleAppend(resp http.ResponseWriter, req *http.Request) {
 	defer req.Body.Close()
 
 	if req.Method != "POST" {
@@ -312,7 +319,8 @@ func (h *HTTPCommunication) handleAppend(resp http.ResponseWriter, req *http.Req
 		LeaderCommit: reqpb.GetLeaderCommit(),
 	}
 	for _, e := range reqpb.GetEntries() {
-		newEntry, err := storage.DecodeEntry(e)
+		var newEntry *storage.Entry
+		newEntry, err = storage.DecodeEntry(e)
 		if err != nil {
 			resp.WriteHeader(http.StatusBadRequest)
 			return
@@ -342,7 +350,7 @@ func (h *HTTPCommunication) handleAppend(resp http.ResponseWriter, req *http.Req
 	resp.Write(respBody)
 }
 
-func (h *HTTPCommunication) handlePropose(resp http.ResponseWriter, req *http.Request) {
+func (h *httpCommunication) handlePropose(resp http.ResponseWriter, req *http.Request) {
 	defer req.Body.Close()
 
 	if req.Method != "POST" {
@@ -391,7 +399,7 @@ func (h *HTTPCommunication) handlePropose(resp http.ResponseWriter, req *http.Re
 	resp.Write(respBody)
 }
 
-func (h *HTTPCommunication) handleDiscovery(resp http.ResponseWriter, req *http.Request) {
+func (h *httpCommunication) handleDiscovery(resp http.ResponseWriter, req *http.Request) {
 	defer req.Body.Close()
 
 	if req.Method != "GET" {

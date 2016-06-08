@@ -16,25 +16,29 @@ import (
  */
 
 /*
- * A NodeList is a list of nodes that represents the current config state. It has a "new" and "old"
- * list of Nodes. Under normal operation, only the "new" list is available. During a configuration
- * change, both lists are set and we are in a mode of joint consensus.
- */
+A NodeList is a list of nodes that represents the current config state. It has a "new" and "old"
+list of Nodes. Under normal operation, only the "new" list is available. During a configuration
+change, both lists are set and we are in a mode of joint consensus.
+*/
 type NodeList struct {
 	New []string
 	Old []string
 }
 
 /*
- * The current configuration of nodes in the system. This is what we persist in the raft
- * implementation. It includes both the current and previous node lists. We use this in case
- * we need to backtrack in the history and restore an old set of node configuration.
- */
+NodeConfig is the current configuration of nodes in the system. This is what we persist in the raft
+implementation. It includes both the current and previous node lists. We use this in case
+we need to backtrack in the history and restore an old set of node configuration.
+*/
 type NodeConfig struct {
 	Current  *NodeList
 	Previous *NodeList
 }
 
+/*
+Discovery is the interface that other modules use to get an intial node list
+from the discovery mechanism.
+*/
 type Discovery interface {
 	/*
 	 * Get the current configuration from this service, which will only contain a new, "current"
@@ -64,8 +68,8 @@ type Discovery interface {
 }
 
 /*
- * Turn a NodeConfig into a marhshalled set of bytes for storage and distribution.
- */
+EncodeConfig turns a NodeConfig into a marhshalled set of bytes for storage and distribution.
+*/
 func EncodeConfig(config *NodeConfig) ([]byte, error) {
 	cfgPb := NodeConfigPb{}
 	if config.Current != nil {
@@ -79,8 +83,8 @@ func EncodeConfig(config *NodeConfig) ([]byte, error) {
 }
 
 /*
- * Do the opposite of EncodeConfig.
- */
+DecodeConfig turns the bytes from EncodeConfig into a NodeConfig object.
+*/
 func DecodeConfig(msg []byte) (*NodeConfig, error) {
 	var cfg NodeConfigPb
 	err := proto.Unmarshal(msg, &cfg)
@@ -99,9 +103,9 @@ func DecodeConfig(msg []byte) (*NodeConfig, error) {
 }
 
 /*
- * Return a deduped list of all the nodes in the current config.
- * This will return the latest node list if we are in joint consensus mode.
- */
+GetUniqueNodes returns a deduped list of all the nodes in the current config.
+This will return the latest node list if we are in joint consensus mode.
+*/
 func (c *NodeConfig) GetUniqueNodes() []string {
 	nl := make(map[string]string)
 	if c.Current != nil {
@@ -156,6 +160,10 @@ func (n *NodeList) String() string {
 	return buf.String()
 }
 
+/*
+Equal returns true if the specified node lists have the same
+sets of keys and values.
+*/
 func (n *NodeList) Equal(o *NodeList) bool {
 	if len(n.New) != len(o.New) {
 		return false
@@ -187,6 +195,10 @@ func (c *NodeConfig) String() string {
 	return buf.String()
 }
 
+/*
+Equal returns true if the specified NodeConfig objects have the same
+sets of keys and values.
+*/
 func (c *NodeConfig) Equal(o *NodeConfig) bool {
 	if c.Current == nil {
 		if o.Current != nil {

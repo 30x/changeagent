@@ -171,3 +171,12 @@ var _ = Describe("JSON encoding tests", func() {
 		Expect(re.Index).Should(BeEquivalentTo(456))
 	})
 })
+
+func marshalJSONToString(entry storage.Entry) (string, error) {
+	out := &bytes.Buffer{}
+	err := marshalJSON(entry, out)
+	if err != nil {
+		return "", err
+	}
+	return out.String(), nil
+}
