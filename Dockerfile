@@ -39,13 +39,13 @@
 
 FROM  gbrail/go-rocksdb:4.2.1
 
-COPY . /go/src/revision.aeip.apigee.net/greg/changeagent
-
-WORKDIR /go/src/revision.aeip.apigee.net/greg/changeagent
+COPY . /go/src/github.com/30x/changeagent
+COPY ./metadata/apigee-file.yaml /
 
 RUN \
-    glide install \
- && (cd agent; go build) \
+    (cd /go/src/github.com/30x/changeagent; glide install) \
+ && (cd /go/src/github.com/30x/changeagent; make clean all) \
+ && cp /go/src/github.com/30x/changeagent/agent/agent /agent \
  && mkdir -p /var/changeagent/data \
  && mkdir -p /etc/changeagent
 
@@ -55,5 +55,4 @@ VOLUME /var/changeagent/data /etc/changeagent
 
 ENV LD_LIBRARY_PATH=/usr/local/lib
 
-ENTRYPOINT ["./agent/agent", "-logtostderr", "-p", "8080", "-d", "/var/changeagent/data", "-s", "/etc/changeagent/disco"]
-
+ENTRYPOINT ["/agent", "-logtostderr", "-p", "8080", "-d", "/var/changeagent/data"]

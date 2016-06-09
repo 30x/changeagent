@@ -1,0 +1,13 @@
+{
+  "machine": {
+    "language": "go"
+  },
+  "setup_commands": [
+  ],
+  "unit_test": [
+    "go test ./communication ./discovery ./storage ./raft"
+  ],
+  "functional_test": [
+    "go test ./agent"
+  ]
+}
