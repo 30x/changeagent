@@ -7,9 +7,9 @@
 #
 # For example, for a three-node cluster, it should contain
 #
-# 1 192.168.100.200:8080
-# 2 192.168.100.300:8080
-# 3 192.168.100.400:8080
+# 192.168.100.200:8080
+# 192.168.100.300:8080
+# 192.168.100.400:8080
 #
 # Create a directory on your docker host for this file and put it in a file called "disco":
 #   mkdir ~/agent/etc
@@ -23,20 +23,21 @@
 #
 # docker run -it -p 8080:8080 \
 #   -v /home/docker/agent/etc:/etc/changeagent \
-#   -v /home/docker/agent/data1:/var/changeagent/data changeagent -id 1
-#
-# (Pass a different "-id" parameter for each different cluster node.)
+#   -v /home/docker/agent/data1:/var/changeagent/data changeagent
 #
 # Image details:
 #
 # Changeagent will listen on port 8080. Map it however you want.
 #
-# It expects a file called /etc/changeagent/disco. This should be the same across
+# For a multi-node configuration, it expects a file called
+# /etc/changeagent/disco. This should be the same across
 # all agents in the cluster. The directory mounting above is designed to make this work.
+# If it's not found, it will run as a single node.
 #
 # Each agent will store its database in /var/changeagent/data. Since data is important,
 # this should be a persistent volume.
 
+# This image has Git, Glide, and rocksdb pre-built for us.
 FROM  gbrail/go-rocksdb:4.2.1
 
 COPY . /go/src/github.com/30x/changeagent

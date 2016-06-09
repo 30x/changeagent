@@ -2,9 +2,9 @@
 	"apiVersion": "v1",
 	"kind": "Pod",
 	"metadata": {
-		"name": "${APP_NAME}",
+		"name": "changeagent",
     "labels": {
-        "app": "${APP_NAME}"
+        "app": "changeagent"
     },
 		"annotations": {
       "publicPaths": "8080:/changes",
@@ -16,8 +16,9 @@
 			"name": "ecr-key"
 		}],
 		"containers": [{
-			"name": "${APP_NAME}",
-			"image": "${IMAGE_URL}:latest",
+			"imagePullPolicy": "Never",
+			"name": "changeagent",
+			"image": "changeagent:latest",
 			"ports": [{
 				"containerPort": 8080
 			}]
