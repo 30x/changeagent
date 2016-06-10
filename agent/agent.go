@@ -18,9 +18,10 @@ ChangeAgent is a server that implements the Raft protocol, plus the "changeagent
 API.
 */
 type ChangeAgent struct {
-	stor   storage.Storage
-	raft   *raft.Service
-	router *mux.Router
+	stor      storage.Storage
+	raft      *raft.Service
+	router    *mux.Router
+	uriPrefix string
 }
 
 const (
@@ -43,10 +44,25 @@ HTTP "mux".
 
 "httpMux" must have been previously created using the "net/http" package,
 and it must listen for HTTP requests.
+
+If "uriPrefix" is not the empty string, then every API call will require that
+it be prepended. In other words, "/changes" will become "/prefix/changes".
+The prefix must not end with a "/".
 */
 func StartChangeAgent(disco discovery.Discovery,
 	dbFile string,
-	httpMux *http.ServeMux) (*ChangeAgent, error) {
+	httpMux *http.ServeMux,
+	uriPrefix string) (*ChangeAgent, error) {
+
+	if uriPrefix != "" {
+		if uriPrefix[len(uriPrefix)-1] == '/' {
+			return nil, errors.New("Invalid URI prefix: Must not end with a slash")
+		}
+		if uriPrefix[0] != '/' {
+			uriPrefix = "/" + uriPrefix
+		}
+	}
+
 	comm, err := communication.StartHTTPCommunication(httpMux)
 	if err != nil {
 		return nil, err
@@ -57,8 +73,9 @@ func StartChangeAgent(disco discovery.Discovery,
 	}
 
 	agent := &ChangeAgent{
-		stor:   stor,
-		router: mux.NewRouter(),
+		stor:      stor,
+		router:    mux.NewRouter(),
+		uriPrefix: uriPrefix,
 	}
 
 	raft, err := raft.StartRaft(comm, disco, stor, agent)
@@ -68,8 +85,8 @@ func StartChangeAgent(disco discovery.Discovery,
 	agent.raft = raft
 	comm.SetRaft(raft)
 
-	agent.initDiagnosticAPI()
-	agent.initChangesAPI()
+	agent.initDiagnosticAPI(uriPrefix)
+	agent.initChangesAPI(uriPrefix)
 
 	httpMux.Handle("/", agent.router)
 

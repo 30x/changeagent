@@ -28,21 +28,21 @@ type RaftState struct {
 	Leader string `json:"leader"`
 }
 
-func (a *ChangeAgent) initDiagnosticAPI() {
-	a.router.HandleFunc("/", a.handleRootCall).Methods("GET")
-	a.router.HandleFunc(baseURI, a.handleDiagRootCall).Methods("GET")
-	a.router.HandleFunc(idURI, a.handleIDCall).Methods("GET")
-	a.router.HandleFunc(raftStateURI, a.handleStateCall).Methods("GET")
-	a.router.HandleFunc(raftLeaderURI, a.handleLeaderCall).Methods("GET")
-	a.router.HandleFunc(raftURI, a.handleRaftInfo).Methods("GET")
-	a.router.HandleFunc(stackURI, handleStackCall).Methods("GET")
+func (a *ChangeAgent) initDiagnosticAPI(prefix string) {
+	a.router.HandleFunc(prefix+"/", a.handleRootCall).Methods("GET")
+	a.router.HandleFunc(prefix+baseURI, a.handleDiagRootCall).Methods("GET")
+	a.router.HandleFunc(prefix+idURI, a.handleIDCall).Methods("GET")
+	a.router.HandleFunc(prefix+raftStateURI, a.handleStateCall).Methods("GET")
+	a.router.HandleFunc(prefix+raftLeaderURI, a.handleLeaderCall).Methods("GET")
+	a.router.HandleFunc(prefix+raftURI, a.handleRaftInfo).Methods("GET")
+	a.router.HandleFunc(prefix+stackURI, handleStackCall).Methods("GET")
 }
 
 func (a *ChangeAgent) handleRootCall(resp http.ResponseWriter, req *http.Request) {
 	links := make(map[string]string)
 	// TODO convert links properly
-	links["changes"] = makeLink(req, "/changes")
-	links["diagnostics"] = makeLink(req, "/diagnostics")
+	links["changes"] = a.makeLink(req, "/changes")
+	links["diagnostics"] = a.makeLink(req, "/diagnostics")
 
 	body, _ := json.Marshal(&links)
 
@@ -53,9 +53,9 @@ func (a *ChangeAgent) handleRootCall(resp http.ResponseWriter, req *http.Request
 func (a *ChangeAgent) handleDiagRootCall(resp http.ResponseWriter, req *http.Request) {
 	links := make(map[string]string)
 	// TODO convert links properly
-	links["id"] = makeLink(req, idURI)
-	links["stack"] = makeLink(req, stackURI)
-	links["raft"] = makeLink(req, raftURI)
+	links["id"] = a.makeLink(req, idURI)
+	links["stack"] = a.makeLink(req, stackURI)
+	links["raft"] = a.makeLink(req, raftURI)
 	body, _ := json.Marshal(&links)
 
 	resp.Header().Set("Content-Type", jsonContent)
@@ -113,7 +113,7 @@ func handleStackCall(resp http.ResponseWriter, req *http.Request) {
 	}
 }
 
-func makeLink(req *http.Request, path string) string {
+func (a *ChangeAgent) makeLink(req *http.Request, path string) string {
 	var proto string
 	if req.TLS == nil {
 		proto = "http"
@@ -121,5 +121,5 @@ func makeLink(req *http.Request, path string) string {
 		proto = "https"
 	}
 
-	return fmt.Sprintf("%s://%s%s", proto, req.Host, path)
+	return fmt.Sprintf("%s://%s%s%s", proto, req.Host, a.uriPrefix, path)
 }

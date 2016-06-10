@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"strconv"
@@ -69,6 +70,7 @@ func getJSON(path string) map[string]string {
 }
 
 func testURI(uri string) string {
+	fmt.Fprintf(GinkgoWriter, "Invoking %s\n", uri)
 	resp, err := http.Get(uri)
 	Expect(err).Should(Succeed())
 	Expect(resp.StatusCode).Should(Equal(http.StatusOK))

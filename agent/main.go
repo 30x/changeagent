@@ -27,12 +27,14 @@ func runAgentMain() int {
 	var port int
 	var dbDir string
 	var discoveryFile string
+	var apiPrefix string
 	var help bool
 
 	flag.IntVar(&port, "p", defaultPort, "Port to listen on.")
 	flag.StringVar(&dbDir, "d", "", "Directory in which to place data. Required.")
 	flag.StringVar(&discoveryFile, "s", "", "File from which to read list of peers. Default is single-node operation.")
 	flag.BoolVar(&help, "h", false, "Print help message.")
+	flag.StringVar(&apiPrefix, "P", "", "API Path Prefix. Ex. \"foo\" means all APIs prefixed with \"/foo\"")
 
 	flag.Parse()
 	if help || !flag.Parsed() {
@@ -59,7 +61,7 @@ func runAgentMain() int {
 	defer disco.Close()
 
 	mux := http.NewServeMux()
-	agent, err := StartChangeAgent(disco, dbDir, mux)
+	agent, err := StartChangeAgent(disco, dbDir, mux, apiPrefix)
 	if err != nil {
 		fmt.Printf("Error starting agent: %s\n", err)
 		return 6

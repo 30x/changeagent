@@ -20,10 +20,10 @@ const (
 	singleChange = changesURI + "/{change}"
 )
 
-func (a *ChangeAgent) initChangesAPI() {
-	a.router.HandleFunc(changesURI, a.handlePostChanges).Methods("POST")
-	a.router.HandleFunc(changesURI, a.handleGetChanges).Methods("GET")
-	a.router.HandleFunc(singleChange, a.handleGetChange).Methods("GET")
+func (a *ChangeAgent) initChangesAPI(prefix string) {
+	a.router.HandleFunc(prefix+changesURI, a.handlePostChanges).Methods("POST")
+	a.router.HandleFunc(prefix+changesURI, a.handleGetChanges).Methods("GET")
+	a.router.HandleFunc(prefix+singleChange, a.handleGetChange).Methods("GET")
 }
 
 /*

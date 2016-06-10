@@ -21,6 +21,7 @@ const (
 	DataDir           = "./agenttestdata"
 	PreserveDatabases = false
 	DebugMode         = false
+	uriPrefix         = "/changetest"
 )
 
 var testListener *net.TCPListener
@@ -41,9 +42,10 @@ var _ = BeforeSuite(func() {
 	}
 	flag.Parse()
 
-	// Create three TCP listeners -- we'll use them for a cluster
 	anyPort := &net.TCPAddr{}
-	testListener, err := net.ListenTCP("tcp4", anyPort)
+
+	var err error
+	testListener, err = net.ListenTCP("tcp4", anyPort)
 	if err != nil {
 		panic("Can't listen on a TCP port")
 	}
@@ -53,7 +55,7 @@ var _ = BeforeSuite(func() {
 	}
 	listenAddr = fmt.Sprintf("localhost:%s", port)
 	disco := discovery.CreateStaticDiscovery([]string{listenAddr})
-	listenURI = fmt.Sprintf("http://localhost:%s", port)
+	listenURI = fmt.Sprintf("http://localhost:%s%s", port, uriPrefix)
 	fmt.Fprintf(GinkgoWriter, "Listening on port %s\n", port)
 
 	testAgent, err = startAgent(1, disco, DataDir, testListener)
@@ -69,7 +71,7 @@ var _ = AfterSuite(func() {
 func startAgent(id uint64, disco discovery.Discovery, dir string, listener *net.TCPListener) (*ChangeAgent, error) {
 	mux := http.NewServeMux()
 
-	agent, err := StartChangeAgent(disco, dir, mux)
+	agent, err := StartChangeAgent(disco, dir, mux, uriPrefix)
 	if err != nil {
 		return nil, err
 	}
