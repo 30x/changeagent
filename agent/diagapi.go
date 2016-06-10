@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"path"
 	"runtime"
 	"strconv"
 
@@ -15,6 +16,8 @@ const (
 	stackURI      = baseURI + "/stack"
 	idURI         = baseURI + "/id"
 	raftURI       = baseURI + "/raft"
+	memURI        = baseURI + "/memory"
+	cpuURI        = baseURI + "/cpu"
 	raftStateURI  = raftURI + "/state"
 	raftLeaderURI = raftURI + "/leader"
 )
@@ -29,13 +32,15 @@ type RaftState struct {
 }
 
 func (a *ChangeAgent) initDiagnosticAPI(prefix string) {
-	a.router.HandleFunc(prefix+"/", a.handleRootCall).Methods("GET")
+	a.router.HandleFunc(path.Join(prefix, "/"), a.handleRootCall).Methods("GET")
 	a.router.HandleFunc(prefix+baseURI, a.handleDiagRootCall).Methods("GET")
 	a.router.HandleFunc(prefix+idURI, a.handleIDCall).Methods("GET")
 	a.router.HandleFunc(prefix+raftStateURI, a.handleStateCall).Methods("GET")
 	a.router.HandleFunc(prefix+raftLeaderURI, a.handleLeaderCall).Methods("GET")
 	a.router.HandleFunc(prefix+raftURI, a.handleRaftInfo).Methods("GET")
 	a.router.HandleFunc(prefix+stackURI, handleStackCall).Methods("GET")
+	a.router.HandleFunc(prefix+memURI, handleMemoryCall).Methods("GET")
+	a.router.HandleFunc(prefix+cpuURI, handleCPUCall).Methods("GET")
 }
 
 func (a *ChangeAgent) handleRootCall(resp http.ResponseWriter, req *http.Request) {
@@ -51,12 +56,17 @@ func (a *ChangeAgent) handleRootCall(resp http.ResponseWriter, req *http.Request
 }
 
 func (a *ChangeAgent) handleDiagRootCall(resp http.ResponseWriter, req *http.Request) {
-	links := make(map[string]string)
+	o := make(map[string]string)
 	// TODO convert links properly
-	links["id"] = a.makeLink(req, idURI)
-	links["stack"] = a.makeLink(req, stackURI)
-	links["raft"] = a.makeLink(req, raftURI)
-	body, _ := json.Marshal(&links)
+	o["arch"] = runtime.GOARCH
+	o["os"] = runtime.GOOS
+	o["maxprocs"] = strconv.Itoa(runtime.GOMAXPROCS(-1))
+	o["id"] = a.makeLink(req, idURI)
+	o["stack"] = a.makeLink(req, stackURI)
+	o["raft"] = a.makeLink(req, raftURI)
+	o["memory"] = a.makeLink(req, memURI)
+	o["cpu"] = a.makeLink(req, cpuURI)
+	body, _ := json.Marshal(&o)
 
 	resp.Header().Set("Content-Type", jsonContent)
 	resp.Write(body)
@@ -111,6 +121,35 @@ func handleStackCall(resp http.ResponseWriter, req *http.Request) {
 			return
 		}
 	}
+}
+
+func handleMemoryCall(resp http.ResponseWriter, req *http.Request) {
+	var stats runtime.MemStats
+	runtime.ReadMemStats(&stats)
+
+	s := make(map[string]uint64)
+	s["alloc"] = stats.Alloc
+	s["totalAlloc"] = stats.TotalAlloc
+	s["sys"] = stats.Sys
+	s["lookups"] = stats.Lookups
+	s["mallocs"] = stats.Mallocs
+	s["frees"] = stats.Frees
+
+	body, _ := json.Marshal(&s)
+	resp.Header().Set("Content-Type", jsonContent)
+	resp.Write(body)
+}
+
+func handleCPUCall(resp http.ResponseWriter, req *http.Request) {
+	s := make(map[string]string)
+	s["gomaxprocs"] = strconv.Itoa(runtime.GOMAXPROCS(-1))
+	s["numcpu"] = strconv.Itoa(runtime.NumCPU())
+	s["numcgocall"] = strconv.FormatInt(runtime.NumCgoCall(), 10)
+	s["numgoroutine"] = strconv.Itoa(runtime.NumGoroutine())
+
+	body, _ := json.Marshal(&s)
+	resp.Header().Set("Content-Type", jsonContent)
+	resp.Write(body)
 }
 
 func (a *ChangeAgent) makeLink(req *http.Request, path string) string {
