@@ -82,8 +82,8 @@ to make outgoing HTTP requests.
 Post a new change. The API expects an element called "data" which will
 hold the actual change data:
 
-    curl http://localhost:9000/changes
-      -H "Content-Type: application/json"
+    curl http://localhost:9000/changes    \
+      -H "Content-Type: application/json" \
       -d '{"data":{"Hello":"world"}}'
 
 Retrieve the first 100 changes since the beginning of time:
@@ -115,9 +115,9 @@ new:
 
 Post a change that includes two tags:
 
-    curl http://localhost:9000/changes
-    -H "Content-Type: application/json"
-    -d '{"tags":["testTag","testTag2"],"data":{"Hello":"world", "seq": 12}}'
+    curl http://localhost:9000/changes      \
+      -H "Content-Type: application/json"   \
+      -d '{"tags":["testTag","testTag2"],"data":{"Hello":"world", "seq": 12}}'
 
 Retrieve up to 10 changes including only ones that have the tag "testTag":
 
