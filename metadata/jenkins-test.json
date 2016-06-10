@@ -4,22 +4,11 @@
     "version": "1.6.2"
   },
   "setup_commands": [
-    "sudo yum -y install gcc",
-    "go get github.com/golang/glog",
-    "go get github.com/golang/protobuf/proto",
-    "go get github.com/gorilla/mux",
-    "go get github.com/onsi/ginkgo",
-    "go get github.com/onsi/gomega"
   ],
   "build_commands": [
-    "go build -o changeagent ./agent"
   ],
   "unit_test": [
-    "go test ./discovery ./communication ./storage ./raft"
   ],
   "functional_test": [
-    "go test ./agent",
-    "cd agent; go build",
-    "go test ./stress"
   ]
 }
