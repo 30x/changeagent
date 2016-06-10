@@ -4,7 +4,7 @@
 # ${APP_NAME} is required for the jenkins job.
 
 # REQUIRED: The name of the application
-name: changeagent
+name: ${APP_NAME}
 description: A distributed change log
 version: 1.0.0
 type: app
