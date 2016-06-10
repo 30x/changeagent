@@ -17,7 +17,7 @@
 		}],
 		"containers": [{
 			"name": "${APP_NAME}",
-			"image": "${APP_NAME}:latest",
+			"image": "${IMAGE_URL}:latest",
 			"ports": [{
 				"containerPort": 8080
 			}]
