@@ -1,7 +1,10 @@
 package raft
 
 import (
+	cryptoRand "crypto/rand"
 	"errors"
+	"math"
+	"math/big"
 	"math/rand"
 	"sync"
 	"sync/atomic"
@@ -170,9 +173,7 @@ func StartRaft(comm communication.Communication,
 	}
 	if nodeID == 0 {
 		// Generate a random node ID
-		raftRandLock.Lock()
-		nodeID = uint64(raftRand.Int63())
-		raftRandLock.Unlock()
+		nodeID = uint64(randomInt64())
 		err = stor.SetUintMetadata(LocalIDKey, nodeID)
 		if err != nil {
 			return nil, err
@@ -218,7 +219,8 @@ func (r *Service) loadCurrentConfig(disco discovery.Discovery, stor storage.Stor
 	if buf == nil {
 		glog.Info("Loading configuration from the discovery file for the first time")
 		cfg := disco.GetCurrentConfig()
-		storBuf, err := discovery.EncodeConfig(cfg)
+		var storBuf []byte
+		storBuf, err = discovery.EncodeConfig(cfg)
 		if err != nil {
 			return err
 		}
@@ -572,7 +574,8 @@ func (r *Service) readLastApplied() uint64 {
 	return la
 }
 
-// Election timeout is the default timeout, plus or minus one heartbeat interval
+// Election timeout is the default timeout, plus or minus one heartbeat interval.
+// Use math.rand here, not crypto.rand, because it happens an awful lot.
 func (r *Service) randomElectionTimeout() time.Duration {
 	rge := int64(HeartbeatTimeout * 2)
 	min := int64(ElectionTimeout - HeartbeatTimeout)
@@ -582,10 +585,24 @@ func (r *Service) randomElectionTimeout() time.Duration {
 }
 
 /*
- * Make a random-number generator for timeouts and for generating node IDs. Nanosecond
- * accuracy should be random enough for the seed.
- */
+Use the crypto random number generator to initialize the regular one.
+The regular one is just used to randomize election timeouts.
+If we don't seed the generator, then a bunch of nodes won't get their
+timeouts in a random way. But use a new generator here because the default
+one might be used for various testing frameworks. Finally, be aware that
+the non-default generator is not thread-safe!
+*/
 func makeRand() *rand.Rand {
-	s := rand.NewSource(time.Now().UnixNano())
+	s := rand.NewSource(randomInt64())
 	return rand.New(s)
+}
+
+var maxBigInt = big.NewInt(math.MaxInt64)
+
+func randomInt64() int64 {
+	ri, err := cryptoRand.Int(cryptoRand.Reader, maxBigInt)
+	if err != nil {
+		panic(err.Error())
+	}
+	return ri.Int64()
 }
