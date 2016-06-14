@@ -1,0 +1,9 @@
+package hooks;
+
+message WebHookPb {
+  required string url = 1;
+}
+
+message WebHookConfigPb {
+  repeated WebHookPb hooks = 1;
+}
