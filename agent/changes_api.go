@@ -31,9 +31,7 @@ func (a *ChangeAgent) initChangesAPI(prefix string) {
  * of the change.
  */
 func (a *ChangeAgent) handlePostChanges(resp http.ResponseWriter, req *http.Request) {
-	if req.Header.Get("Content-Type") != jsonContent {
-		// TODO regexp?
-		writeError(resp, http.StatusUnsupportedMediaType, errors.New("Unsupported content type"))
+	if !isJSON(resp, req) {
 		return
 	}
 

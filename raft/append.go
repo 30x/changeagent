@@ -193,6 +193,7 @@ func (r *Service) appendEntries(entries []storage.Entry) error {
 
 func (r *Service) invokeWebHooks(newEntry *storage.Entry) error {
 	cfg := r.GetWebHooks()
+	glog.V(2).Infof("Invoking %d web hooks", len(cfg))
 	// TODO pass the content type from somewhere?
 	return hooks.Invoke(cfg, newEntry.Data, jsonContent)
 }

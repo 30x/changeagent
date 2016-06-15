@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"io/ioutil"
 	"net/http"
 
@@ -21,13 +20,15 @@ func (a *ChangeAgent) initHooksAPI(prefix string) {
 func (a *ChangeAgent) handleGetHooks(resp http.ResponseWriter, req *http.Request) {
 	h := a.raft.GetWebHooks()
 	resp.Header().Set("Content-Type", jsonContent)
-	resp.Write(hooks.EncodeHooksJSON(h))
+	if h == nil {
+		resp.Write([]byte("[]"))
+	} else {
+		resp.Write(hooks.EncodeHooksJSON(h))
+	}
 }
 
 func (a *ChangeAgent) handleSetHooks(resp http.ResponseWriter, req *http.Request) {
-	if req.Header.Get("Content-Type") != jsonContent {
-		// TODO regexp?
-		writeError(resp, http.StatusUnsupportedMediaType, errors.New("Unsupported content type"))
+	if !isJSON(resp, req) {
 		return
 	}
 

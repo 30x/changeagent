@@ -347,7 +347,8 @@ func (r *Service) Propose(e storage.Entry) (uint64, error) {
 		rc:    rc,
 	}
 
-	glog.V(2).Infof("Going to propose a value of %d bytes", len(e.Data))
+	glog.V(2).Infof("Going to propose a value of %d bytes and type %d",
+		len(e.Data), e.Type)
 	r.proposals <- cmd
 
 	result := <-rc
@@ -517,6 +518,7 @@ particular web service URI that the leader will invoke before trying to commit a
 new change -- if any one of the hooks fails, the leader will not make the change.
 */
 func (r *Service) UpdateWebHooks(webHooks []hooks.WebHook) (uint64, error) {
+	glog.V(2).Infof("Starting update to %d web hooks", len(webHooks))
 	json := hooks.EncodeHooksJSON(webHooks)
 	entry := storage.Entry{
 		Type:      WebHookChange,

@@ -232,6 +232,8 @@ func (r *Service) leaderLoop(state *raftState) chan bool {
 			// First check the webhooks and reply immediately if this fails
 			if prop.entry.Type >= 0 {
 				err = r.invokeWebHooks(&prop.entry)
+			} else {
+				err = nil
 			}
 
 			var index uint64

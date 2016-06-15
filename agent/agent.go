@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"net/http"
+	"regexp"
 	"time"
 
 	"github.com/30x/changeagent/communication"
@@ -32,8 +33,8 @@ const (
 	commitTimeoutSeconds = 10
 	dbCacheSize          = 10 * 1024 * 1024
 
-	jsonContent      = "application/json"
 	plainTextContent = "text/plain"
+	jsonContent      = "application/json"
 )
 
 /*
@@ -166,4 +167,14 @@ func writeError(resp http.ResponseWriter, code int, err error) {
 	resp.Header().Set("Content-Type", jsonContent)
 	resp.WriteHeader(code)
 	resp.Write([]byte(msg))
+}
+
+var jsonContentRe = regexp.MustCompile("^application/json(;.*)?$")
+
+func isJSON(resp http.ResponseWriter, req *http.Request) bool {
+	if !jsonContentRe.MatchString(req.Header.Get("Content-Type")) {
+		writeError(resp, http.StatusUnsupportedMediaType, errors.New("Unsupported content type"))
+		return false
+	}
+	return true
 }
