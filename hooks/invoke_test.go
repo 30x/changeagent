@@ -51,4 +51,19 @@ var _ = Describe("Hook invocation tests", func() {
 		Expect(err).Should(
 			MatchError(MatchRegexp("Error 0: WebHook returned status 404\nError 1: .+\n")))
 	})
+
+	It("Invoke with header", func() {
+		uri := fmt.Sprintf("http://%s/header", testAddress)
+		hooks := []WebHook{
+			WebHook{
+				URI: uri,
+				Headers: []Header{
+					Header{Name: "X-Apigee-Testing", Value: "yes"},
+				},
+			},
+		}
+
+		err := Invoke(hooks, []byte(goodTestBody), "text/plain")
+		Expect(err).Should(Succeed())
+	})
 })

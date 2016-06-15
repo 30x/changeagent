@@ -16,6 +16,13 @@ func EncodeHooks(hooks []WebHook) []byte {
 		pb := WebHookPb{
 			Url: proto.String(hook.URI),
 		}
+		for _, hdr := range hook.Headers {
+			hdrPb := HeaderPb{
+				Name:  proto.String(hdr.Name),
+				Value: proto.String(hdr.Value),
+			}
+			pb.Headers = append(pb.Headers, &hdrPb)
+		}
 		cfg.Hooks = append(cfg.Hooks, &pb)
 	}
 
@@ -51,6 +58,13 @@ func DecodeHooks(buf []byte) ([]WebHook, error) {
 	for _, hookPb := range cfg.GetHooks() {
 		newHook := WebHook{
 			URI: hookPb.GetUrl(),
+		}
+		for _, hdrPb := range hookPb.Headers {
+			hdr := Header{
+				Name:  hdrPb.GetName(),
+				Value: hdrPb.GetValue(),
+			}
+			newHook.Headers = append(newHook.Headers, hdr)
 		}
 		hooks = append(hooks, newHook)
 	}

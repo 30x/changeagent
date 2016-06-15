@@ -65,6 +65,13 @@ func (s *testServer) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 		} else {
 			resp.WriteHeader(http.StatusOK)
 		}
+	} else if req.URL.Path == "/header" {
+		val := req.Header.Get("X-Apigee-Testing")
+		if val != "yes" {
+			resp.WriteHeader(http.StatusBadRequest)
+		} else {
+			resp.WriteHeader(http.StatusOK)
+		}
 	} else {
 		resp.WriteHeader(http.StatusNotFound)
 	}

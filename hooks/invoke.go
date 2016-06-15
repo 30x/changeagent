@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"net/http"
+	"net/url"
 	"time"
 )
 
@@ -51,7 +53,26 @@ func invokeOne(
 	payload []byte,
 	contentType string,
 	ch chan<- string) {
-	resp, err := httpClient.Post(hook.URI, contentType, bytes.NewBuffer(payload))
+	uriObj, err := url.Parse(hook.URI)
+	if err != nil {
+		ch <- err.Error()
+		return
+	}
+
+	req := http.Request{
+		URL:           uriObj,
+		Method:        "POST",
+		Body:          ioutil.NopCloser(bytes.NewBuffer(payload)),
+		ContentLength: int64(len(payload)),
+		Header:        make(map[string][]string),
+	}
+	req.Header.Set("Content-Type", contentType)
+
+	for _, h := range hook.Headers {
+		req.Header.Set(h.Name, h.Value)
+	}
+
+	resp, err := httpClient.Do(&req)
 	if err != nil {
 		ch <- err.Error()
 		return

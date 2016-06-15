@@ -1,7 +1,13 @@
 package hooks;
 
+message HeaderPb {
+  required string name = 1;
+  optional string value = 2;
+}
+
 message WebHookPb {
   required string url = 1;
+  repeated HeaderPb headers = 2;
 }
 
 message WebHookConfigPb {
