@@ -7,6 +7,7 @@ package raft
 import (
 	"github.com/30x/changeagent/communication"
 	"github.com/30x/changeagent/discovery"
+	"github.com/30x/changeagent/hooks"
 	"github.com/30x/changeagent/storage"
 	"github.com/golang/glog"
 )
@@ -188,6 +189,12 @@ func (r *Service) appendEntries(entries []storage.Entry) error {
 	}
 
 	return nil
+}
+
+func (r *Service) invokeWebHooks(newEntry *storage.Entry) error {
+	cfg := r.GetWebHooks()
+	// TODO pass the content type from somewhere?
+	return hooks.Invoke(cfg, newEntry.Data, jsonContent)
 }
 
 func (r *Service) makeProposal(newEntry *storage.Entry, state *raftState) (uint64, error) {

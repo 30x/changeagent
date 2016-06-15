@@ -12,6 +12,7 @@ import (
 
 	"github.com/30x/changeagent/communication"
 	"github.com/30x/changeagent/discovery"
+	"github.com/30x/changeagent/hooks"
 	"github.com/30x/changeagent/storage"
 	"github.com/golang/glog"
 )
@@ -26,12 +27,15 @@ const (
 	LocalIDKey     = "localID"
 	LastAppliedKey = "lastApplied"
 	NodeConfig     = "nodeConfig"
+	WebHooks       = "webHooks"
 )
 
 const (
-	// MembershipChange denodes a special message type for membership changes.
-	//Also persists between nodes.
+	// MembershipChange denotes a special message type for membership changes.
 	MembershipChange = -1
+	// WebHookChange denotes a change in the WebHook configuration for the
+	// cluster.
+	WebHookChange = -2
 
 	// ElectionTimeout is the amount of time a node will wait once it has heard
 	// from the current leader before it declares itself a candidate.
@@ -40,6 +44,8 @@ const (
 	// HeartbeatTimeout is the amount of time between heartbeat messages from the
 	// leader to other nodes.
 	HeartbeatTimeout = 2 * time.Second
+
+	jsonContent = "application/json"
 )
 
 // State is the current state of the Raft implementation.
@@ -114,6 +120,7 @@ type Service struct {
 	lastTerm            uint64
 	appliedTracker      *ChangeTracker
 	stateMachine        StateMachine
+	webHooks            atomic.Value
 }
 
 type voteCommand struct {
@@ -165,6 +172,7 @@ func StartRaft(comm communication.Communication,
 		followerOnly:        false,
 		appliedTracker:      CreateTracker(),
 		stateMachine:        state,
+		webHooks:            atomic.Value{},
 	}
 
 	nodeID, err := stor.GetUintMetadata(LocalIDKey)
@@ -183,6 +191,10 @@ func StartRaft(comm communication.Communication,
 	glog.Infof("Node %d starting", r.id)
 
 	err = r.loadCurrentConfig(disco, stor)
+	if err != nil {
+		return nil, err
+	}
+	err = r.loadWebHooks(stor)
 	if err != nil {
 		return nil, err
 	}
@@ -237,6 +249,24 @@ func (r *Service) loadCurrentConfig(disco discovery.Discovery, stor storage.Stor
 		return err
 	}
 	r.nodeConfig.Store(cfg)
+	return nil
+}
+
+func (r *Service) loadWebHooks(stor storage.Storage) error {
+	buf, err := stor.GetMetadata(WebHooks)
+	if err != nil {
+		return err
+	}
+
+	var webHooks []hooks.WebHook
+	if buf != nil {
+		webHooks, err = hooks.DecodeHooks(buf)
+		if err != nil {
+			return err
+		}
+	}
+
+	r.webHooks.Store(webHooks)
 	return nil
 }
 
@@ -417,6 +447,11 @@ func (r *Service) GetLastApplied() uint64 {
 	return atomic.LoadUint64(&r.lastApplied)
 }
 
+/*
+This is where we finally apply the changes. Some changes are purely internal,
+so we handle them here. Note that node configuration changes were handled
+elsewhere.
+*/
 func (r *Service) setLastApplied(t uint64) {
 	entry, err := r.stor.GetEntry(t)
 	if err != nil {
@@ -428,7 +463,11 @@ func (r *Service) setLastApplied(t uint64) {
 		return
 	}
 
-	if entry.Type >= 0 {
+	switch t := entry.Type; {
+	case t == WebHookChange:
+		r.applyWebHookChange(entry)
+
+	case t >= 0:
 		// Only pass positive (or zero) entry types to the state machine.
 		err = r.stateMachine.Commit(entry)
 		if err != nil {
@@ -446,6 +485,17 @@ func (r *Service) setLastApplied(t uint64) {
 	atomic.StoreUint64(&r.lastApplied, t)
 
 	r.appliedTracker.Update(t)
+}
+
+func (r *Service) applyWebHookChange(entry *storage.Entry) {
+	hooks, err := hooks.DecodeHooksJSON(entry.Data)
+	if err != nil {
+		glog.Errorf("Error receiving web hook change data")
+		return
+	}
+
+	glog.Info("Updating the web hook configuration on the server")
+	r.setWebHooks(hooks)
 }
 
 /*
@@ -474,6 +524,22 @@ func (r *Service) setLastIndex(ix uint64, term uint64) {
 	defer r.latch.Unlock()
 	r.lastIndex = ix
 	r.lastTerm = term
+}
+
+/*
+UpdateWebHooks updates the configuration of web hooks for the cluster by
+propagating a special change record to all the nodes. A web hook is a
+particular web service URI that the leader will invoke before trying to commit any
+new change -- if any one of the hooks fails, the leader will not make the change.
+*/
+func (r *Service) UpdateWebHooks(webHooks []hooks.WebHook) (uint64, error) {
+	json := hooks.EncodeHooksJSON(webHooks)
+	entry := storage.Entry{
+		Type:      WebHookChange,
+		Timestamp: time.Now(),
+		Data:      json,
+	}
+	return r.Propose(entry)
 }
 
 func (r *Service) getNodeConfig() *discovery.NodeConfig {
@@ -521,6 +587,20 @@ func (r *Service) getLocalAddress() string {
 		return ""
 	}
 	return *addr
+}
+
+/*
+GetWebHooks returns the set of WebHook configuration that is currently configured
+for this node.
+*/
+func (r *Service) GetWebHooks() []hooks.WebHook {
+	return r.webHooks.Load().([]hooks.WebHook)
+}
+
+func (r *Service) setWebHooks(h []hooks.WebHook) {
+	buf := hooks.EncodeHooks(h)
+	r.stor.SetMetadata(WebHooks, buf)
+	r.webHooks.Store(h)
 }
 
 // Used only in unit testing. Forces us to never become a leader.

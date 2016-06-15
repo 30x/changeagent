@@ -3,6 +3,7 @@ package raft
 import (
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"os"
@@ -30,6 +31,8 @@ var unitTestListener *net.TCPListener
 var testDiscovery discovery.Discovery
 var anyPort net.TCPAddr
 var unitTestAddr string
+var webHookListener *net.TCPListener
+var webHookAddr string
 
 func TestRaft(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -56,7 +59,8 @@ var _ = BeforeSuite(func() {
 	testDiscovery = disco
 
 	// Create one more for unit tests
-	unitTestListener, unitAddr := startListener()
+	var unitAddr string
+	unitTestListener, unitAddr = startListener()
 	unitTestAddr = unitAddr
 	unitDisco := discovery.CreateStaticDiscovery([]string{unitAddr})
 
@@ -74,6 +78,10 @@ var _ = BeforeSuite(func() {
 
 	unitTestRaft, err = startRaft(unitDisco, unitTestListener, path.Join(DataDir, "unit"))
 	Expect(err).Should(Succeed())
+
+	webHookListener, webHookAddr = startListener()
+	go http.Serve(webHookListener, &webHookServer{})
+
 	// This happens normally -- need it to happen here for unit tests to work.
 	unitTestRaft.addDiscoveredNode(unitTestRaft.id, unitAddr)
 })
@@ -89,6 +97,7 @@ func startListener() (*net.TCPListener, string) {
 
 var _ = AfterSuite(func() {
 	cleanRafts()
+	webHookListener.Close()
 })
 
 func startRaft(disco discovery.Discovery, listener *net.TCPListener, dir string) (*Service, error) {
@@ -143,4 +152,23 @@ type dummyStateMachine struct {
 
 func (d *dummyStateMachine) Commit(e *storage.Entry) error {
 	return nil
+}
+
+type webHookServer struct {
+}
+
+/*
+This function implements a little webhook that will reject any request that
+consists of the string "FailMe"
+*/
+func (w *webHookServer) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
+	defer req.Body.Close()
+	bod, err := ioutil.ReadAll(req.Body)
+	if err != nil {
+		resp.WriteHeader(http.StatusInternalServerError)
+	} else if string(bod) == "FailMe" {
+		resp.WriteHeader(http.StatusBadRequest)
+	} else {
+		resp.WriteHeader(http.StatusOK)
+	}
 }

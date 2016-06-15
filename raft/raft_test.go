@@ -8,13 +8,15 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/30x/changeagent/hooks"
 	"github.com/30x/changeagent/storage"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )
 
 const (
-	MaxWaitTime = 60 * time.Second
+	pollInterval = 250 * time.Millisecond
+	testTimeout  = 10 * time.Second
 )
 
 var _ = Describe("Raft Tests", func() {
@@ -22,8 +24,46 @@ var _ = Describe("Raft Tests", func() {
 		assertOneLeader()
 	})
 
-	It("Wait for leader", func() {
+	It("Basic Append", func() {
 		appendAndVerify("First test", 3)
+	})
+
+	It("Append to Non-Leader", func() {
+		entry := storage.Entry{
+			Data:      []byte("Non-Leader Append"),
+			Timestamp: time.Now(),
+		}
+		ix, err := getNonLeader().Propose(entry)
+		Expect(err).Should(Succeed())
+		waitForApply(ix, 3)
+	})
+
+	// Verify that we can add a webhook that will block invalid requests
+	It("WebHook", func() {
+		appendAndVerify("FailMe", 3)
+
+		wh := []hooks.WebHook{
+			hooks.WebHook{URI: fmt.Sprintf("http://%s", webHookAddr)},
+		}
+		ix, err := getLeader().UpdateWebHooks(wh)
+		Expect(err).Should(Succeed())
+		waitForApply(ix, 3)
+
+		entry := storage.Entry{
+			Data:      []byte("FailMe"),
+			Timestamp: time.Now(),
+		}
+		ix, err = getLeader().Propose(entry)
+		Expect(err).ShouldNot(Succeed())
+		waitForApply(ix, 3)
+
+		appendAndVerify("DontFailMe", 3)
+
+		ix, err = getLeader().UpdateWebHooks([]hooks.WebHook{})
+		Expect(err).Should(Succeed())
+		waitForApply(ix, 3)
+
+		appendAndVerify("FailMe", 3)
 	})
 
 	// After stopping the leader, a new one is elected
@@ -155,20 +195,20 @@ func appendAndVerify(msg string, expectedCount int) uint64 {
 	Expect(index).Should(Equal(lastIndex + 1))
 	fmt.Fprintf(GinkgoWriter, "Wrote data at index %d\n", lastIndex+1)
 
-	for i := 0; i < 10; i++ {
+	Eventually(func() bool {
 		if verifyIndex(index, data, expectedCount) {
 			fmt.Fprintf(GinkgoWriter, "Index now matches")
 			if verifyCommit(index, expectedCount) {
 				fmt.Fprintf(GinkgoWriter, "Commit index matches too")
-				if verifyApplied(index, data, expectedCount) {
+				if verifyApplied(index, expectedCount) {
 					fmt.Fprintf(GinkgoWriter, "Applied data matches too")
-					return index
+					return true
 				}
 			}
 		}
-		time.Sleep(time.Second)
-	}
-	Expect(false).Should(BeTrue())
+		return false
+	}, testTimeout, pollInterval).Should(BeTrue())
+
 	return lastIndex
 }
 
@@ -190,6 +230,15 @@ func countRafts() (int, int) {
 func getLeader() *Service {
 	for _, r := range testRafts {
 		if r.GetState() == Leader {
+			return r
+		}
+	}
+	return nil
+}
+
+func getNonLeader() *Service {
+	for _, r := range testRafts {
+		if r.GetState() != Leader {
 			return r
 		}
 	}
@@ -230,7 +279,7 @@ func verifyCommit(ix uint64, expectedCount int) bool {
 	return correctCount >= expectedCount
 }
 
-func verifyApplied(ix uint64, expectedData []byte, expectedCount int) bool {
+func verifyApplied(ix uint64, expectedCount int) bool {
 	correctCount := 0
 	for _, raft := range testRafts {
 		if raft.GetLastApplied() >= ix {
@@ -240,4 +289,10 @@ func verifyApplied(ix uint64, expectedData []byte, expectedCount int) bool {
 	fmt.Fprintf(GinkgoWriter, "%d peers have right data applied out of %d expected\n",
 		correctCount, expectedCount)
 	return correctCount >= expectedCount
+}
+
+func waitForApply(ix uint64, expectedCount int) {
+	Eventually(func() bool {
+		return verifyApplied(ix, expectedCount)
+	}, testTimeout, pollInterval).Should(BeTrue())
 }

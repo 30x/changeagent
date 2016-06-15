@@ -229,13 +229,21 @@ func (r *Service) leaderLoop(state *raftState) chan bool {
 			r.handleAppend(state, appendCmd)
 
 		case prop := <-r.proposals:
-			// If command received from client: append entry to local log,
-			// respond after entry applied to state machine (§5.3)
-			index, err := r.makeProposal(&prop.entry, state)
-			if len(state.peers) == 0 {
-				// Special handling for a stand-alone node
-				r.setCommitIndex(index)
-				r.applyCommittedEntries(index)
+			// First check the webhooks and reply immediately if this fails
+			if prop.entry.Type >= 0 {
+				err = r.invokeWebHooks(&prop.entry)
+			}
+
+			var index uint64
+			if err == nil {
+				// If command received from client: append entry to local log,
+				// respond after entry applied to state machine (§5.3)
+				index, err = r.makeProposal(&prop.entry, state)
+				if len(state.peers) == 0 {
+					// Special handling for a stand-alone node
+					r.setCommitIndex(index)
+					r.applyCommittedEntries(index)
+				}
 			}
 			pr := proposalResult{
 				index: index,
