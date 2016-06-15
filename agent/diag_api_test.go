@@ -14,7 +14,7 @@ import (
 
 var _ = Describe("Diagnostic API test", func() {
 	It("Root Links", func() {
-		links := getJSON("/")
+		links := getJSON("")
 		Expect(links["changes"]).ShouldNot(BeEmpty())
 		testURI(links["changes"])
 		Expect(links["diagnostics"]).ShouldNot(BeEmpty())
@@ -56,6 +56,7 @@ var _ = Describe("Diagnostic API test", func() {
 
 func getJSON(path string) map[string]string {
 	uri := listenURI + path
+	fmt.Fprintf(GinkgoWriter, "GET %s\n", uri)
 	resp, err := http.Get(uri)
 	Expect(err).Should(Succeed())
 	Expect(resp.StatusCode).Should(Equal(http.StatusOK))

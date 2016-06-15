@@ -87,6 +87,7 @@ func StartChangeAgent(disco discovery.Discovery,
 
 	agent.initDiagnosticAPI(uriPrefix)
 	agent.initChangesAPI(uriPrefix)
+	agent.initHooksAPI(uriPrefix)
 
 	httpMux.Handle("/", agent.router)
 
@@ -128,18 +129,26 @@ func (a *ChangeAgent) makeProposal(proposal storage.Entry) (storage.Entry, error
 	}
 	glog.V(2).Infof("Proposed new change with index %d", newIndex)
 
-	// Wait for the new commit to be applied, or time out
-	appliedIndex :=
-		a.raft.GetAppliedTracker().TimedWait(newIndex, time.Second*commitTimeoutSeconds)
-	glog.V(2).Infof("New index %d is now applied", appliedIndex)
-	if appliedIndex >= newIndex {
+	err = a.waitForCommit(newIndex)
+	if err == nil {
 		newEntry := storage.Entry{
 			Index: newIndex,
 		}
 		return newEntry, nil
 	}
 
-	return storage.Entry{}, errors.New("Commit timeout")
+	return storage.Entry{}, err
+}
+
+// Wait for the new commit to be applied, or time out
+func (a *ChangeAgent) waitForCommit(ix uint64) error {
+	appliedIndex :=
+		a.raft.GetAppliedTracker().TimedWait(ix, time.Second*commitTimeoutSeconds)
+	glog.V(2).Infof("New index %d is now applied", appliedIndex)
+	if appliedIndex < ix {
+		return errors.New("Commit timeout")
+	}
+	return nil
 }
 
 /*
