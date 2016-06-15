@@ -51,6 +51,8 @@ const (
 // State is the current state of the Raft implementation.
 type State int32
 
+//go:generate stringer -type State .
+
 /*
  * State of this particular node.
  */
@@ -70,24 +72,6 @@ const (
 	proposedJointConsensus
 	proposedFinalConsensus
 )
-
-// TODO this should use "stringer."
-func (r State) String() string {
-	switch r {
-	case Follower:
-		return "Follower"
-	case Candidate:
-		return "Candidate"
-	case Leader:
-		return "Leader"
-	case Stopping:
-		return "Stopping"
-	case Stopped:
-		return "Stopped"
-	default:
-		return ""
-	}
-}
 
 /*
 Service is an instance of code that implements the Raft protocol.
