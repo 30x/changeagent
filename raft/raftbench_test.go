@@ -1,54 +1,33 @@
 package raft
 
 import (
-	"fmt"
-	"testing"
 	"time"
 
 	"github.com/30x/changeagent/storage"
-	"github.com/golang/glog"
+
+	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/gomega"
 )
 
-func BenchmarkSlowAppends(b *testing.B) {
-	doAppendBenchmark(b, 1)
-}
+var _ = Describe("Simple Benchmarks", func() {
+	Measure("Appends", func(b Benchmarker) {
+		waitForLeader()
+		leader := getLeader()
+		Expect(leader).ShouldNot(BeNil())
 
-func BenchmarkMediumAppends(b *testing.B) {
-	doAppendBenchmark(b, 10)
-}
-
-func BenchmarkBatchedAppends(b *testing.B) {
-	doAppendBenchmark(b, 100)
-}
-
-func doAppendBenchmark(b *testing.B, waitFrequency int) {
-	waitForLeader()
-	leader := getLeader()
-	if leader == nil {
-		b.Fatal("No leaders found")
-	}
-	b.ResetTimer()
-
-	glog.V(2).Infof("Gonna benchmark %d iterations", b.N)
-	lastIndex, _ := leader.GetLastIndex()
-	for i := 0; i < b.N; i++ {
-		proposal := fmt.Sprintf("Benchmark entry %d", i)
+		lastIndex, _ := leader.GetLastIndex()
+		proposal := "Benchmark entry"
 		newEntry := storage.Entry{
 			Timestamp: time.Now(),
 			Data:      []byte(proposal),
 		}
-		newIndex, err := leader.Propose(newEntry)
-		if err != nil {
-			b.Fatalf("Error on proposal: %v", err)
-		}
-		if newIndex != (lastIndex + 1) {
-			b.Fatalf("Expected new index of %d rather than %d", lastIndex+1, newIndex)
-		}
-		lastIndex++
-		if (waitFrequency == 1) || ((i > 0) && ((i % waitFrequency) == 0)) {
-			//log.Debugf("Iteration %d. Waiting for changes up to %d", i, lastIndex)
-			leader.GetAppliedTracker().Wait(lastIndex)
-		}
-	}
-	glog.V(2).Info("Done.")
-}
+
+		b.Time("runtime", func() {
+			newIndex, err := leader.Propose(newEntry)
+			Expect(err).Should(Succeed())
+			Expect(newIndex).Should(Equal(lastIndex + 1))
+			waitForApply(newIndex, 3)
+			lastIndex++
+		})
+	}, 50)
+})
