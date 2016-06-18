@@ -4,7 +4,7 @@
 
 Election deadlock is possible, at least with two out of three nodes running.
   Only happened a few times.
-  
+
 Insert performance is inconsistent. It seems like many inserts take as long as the HB interval.
 
 ## High Priority
@@ -18,40 +18,18 @@ Finish membership change support:
   Test node catchup with a big database
   Test graceful stop of a node
 
-Support deletes!
-
 DNS SRV discovery
+  By default, look for _changeagent._tcp.YOUR-NAME-HERE. That will make this
+  a standard SRV record. Poll every five, or maybe one, minutes, and assume
+  that go will do caching. Lookup support is already in the "net" package.
 
-Simplified discovery:
-  Discovery service produces a list of IP:port combinations only.
-  Does the leader even care what is behind each IP:port?
-  Just talk to them, and treat each IP:port as a separate node.
-  An address change is the same as any other cluster change.
-  Problem: What if a whole bunch of nodes change at once?
-  Solution: Leader has to enforce changing one at a time.
-  
 Add a unique cluster ID
   Prevents configuration screw-ups
   Cluster ID generated first time leader sends a message, as an "init" message.
   Gets persisted on each node
   Sent on each request. Node rejects anything with a bad cluster ID.
 
-Prune changes from tenant-specific changes DB on every update, and eventually every delete.
-
-Create a lock manager. Lock on collection modifications. Prevent non-serializable behaviors as much
-as possible while maintaining weak guarantees in general:
-  Acquire locks at master on first API call and drop after commit.
-  Read-lock collection and tenant on modification of the collection
-  Write-lock collection and tenant on delete of collection (when we support that)
-  Read-lock collection entry on any read of a single entry
-  Write-lock collection entry on any write
-  No writes beyond that!
-
-Support API queries that filter by tenant ID and key.
-
 Read-only slaves.
-
-Local slaves for Node and Java with a local cache.
 
 TLS everywhere.
   Specify CA for trusted connections from server to server.
@@ -63,31 +41,17 @@ Test and understand ramifications of current cluster configuration changes.
 
 Come up with a graceful shutdown procedure for the leader.
 
-When catching up, don't send a huge number of requests all at once.
-
 ## Lower Priority
 
-Prune old data from the database.
-
-Queue locally if the leader is not available? Not sure about that one. Maybe as an option.
-
 Add API option to post without waiting for commit.
-
-Should tenant IDs be hierarchical?
-  (for instance, "coke/deployments" versus "pepsi/products"?
-
-Add more tests
-  Restart the leader after killing it
-  Kill a majority of nodes and verify leader fails
-  Restart and verify leader recovers
 
 Write a dump / load / recovery tool
 
 Experiment with heartbeat and election timeouts and make them configurable.
 
-Filter API responses to eliminate duplicate changes by key.
+# Archive Below
 
-Garbage-collect old data by key.
+things below are unformed thoughts and at some point will be deleted.
 
 ## Transaction Proposal
 
@@ -135,7 +99,7 @@ How about this for a proposal?
 1) Followers record transaction records but do not apply changes
 1) Followers apply changes to database only when commit record is received
 1) Followers assume all transactions are aborted when a new term starts
-  
+
 The last bit is important to handle the case in which the followers see transaction
 records, but never see a commit because a new leader was elected and the commit was never
 made part of the committed history.
@@ -145,13 +109,13 @@ be delivered to all followers, but that the client will see an error because the
 too long.
 
 In this proposal, followers need not worry about locking, since the leader takes care of all
-that, and we assume that all changes will be propagated in order. Followers, however, must 
+that, and we assume that all changes will be propagated in order. Followers, however, must
 save all transaction data and not apply any database changes until the commit happens.
 (This means that in the case of a simple database failure, the follower should stop processing,
 or even panic.)
 
 However, in order to ensure serializable ordering, the leader should impose a locking hierarchy
-on the transactions so that we do not have any ordering issues. 
+on the transactions so that we do not have any ordering issues.
 
 One way for the leader to do this would again be to store information about uncommitted transactions
 in memory (but with a write lock on the data) and apply them to the database on commit. If the write
@@ -176,7 +140,7 @@ Each node has a unique ID. (This may be stored in a separate file so that the Ro
 the same for every node.) The node generates the unique ID on startup.
 
 Each node contains an internal collection that lists all the nodes in the cluster. The collection entry
-includes the node's address, ID, and possibly some state information (such as whether it is caught up 
+includes the node's address, ID, and possibly some state information (such as whether it is caught up
 and part of the cluster, or still synchronizing). This collection is replicated just like everything else.
 
 Bootstrapping procedure:
@@ -188,13 +152,13 @@ an API and proposes a change. Upon election, node is now running.
 
 Leaving a node: There is an API call for that. It also proposes a change. Doesn't happen with no leader.
 
-Raft protocols: Raft has a much more complex protocol. Would be more robust to nodes leaving and entering 
-very quickly even with no leader available. 
+Raft protocols: Raft has a much more complex protocol. Would be more robust to nodes leaving and entering
+very quickly even with no leader available.
 
 ### "Raw" deployment
 
-When registering, each node must advertise an IP address that is reachable from all the other nodes. 
-The node must try to figure that out on its own. If it can't, then we need an option that will allow an 
+When registering, each node must advertise an IP address that is reachable from all the other nodes.
+The node must try to figure that out on its own. If it can't, then we need an option that will allow an
 administrator to set it. (This would be necessarily in a naked Docker deployment, in which both "real" IP
 and real port are not visible to the container.
 
@@ -210,7 +174,7 @@ as long as nodes persist their own unique ID.)
 Nodes must still use the collection of "peer" nodes that came from the leader, because otherwise we run the risk
 of electing multiple readers.
 
-However, again with K8s each node does not know its "real" IP and port. Instead, each node must use the K8s 
+However, again with K8s each node does not know its "real" IP and port. Instead, each node must use the K8s
 management APIs to discover the real IP and port to use to communicate with each node.
 
 In this case, we will need to add some metadata to the K8s API so that each node puts its unique ID in a place
@@ -239,7 +203,7 @@ Possibility:
 
 Leave this entirely to a separate tier of "checkpointer" servers.
 
-Each checkpointer simply reads the change log like any other consumer. It is free to run at its own 
+Each checkpointer simply reads the change log like any other consumer. It is free to run at its own
 pace, block, or whatever, without affecting the main message path. So far, so good.
 
 Each checkpointer watches changes, and at a certain point it goes back and re-reads the log
@@ -260,7 +224,7 @@ What happens if the checkpointers fall too far behind and changes are truncated 
 main database? Should checkpointers register somehow? Or do we just manage that
 operationally?
 
-How do we locate checkpoints? Do we end up with a separate checkpoint of checkpoints? 
+How do we locate checkpoints? Do we end up with a separate checkpoint of checkpoints?
 A checkpoint database built in to each server? Might make things much more efficient if we do.
 
 ## How to manage data integrity
