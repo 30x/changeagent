@@ -25,6 +25,6 @@ The target must return a status code in the "200" to indicate that the hook
 succeeded. Anything else will be interpreted as an error.
 */
 type WebHook struct {
-	URI     string   `json:"uri"`
-	Headers []Header `json:"headers,omitempty"`
+	URI     string            `json:"uri"`
+	Headers map[string]string `json:"headers,omitempty"`
 }

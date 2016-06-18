@@ -68,8 +68,8 @@ func invokeOne(
 	}
 	req.Header.Set("Content-Type", contentType)
 
-	for _, h := range hook.Headers {
-		req.Header.Set(h.Name, h.Value)
+	for k, v := range hook.Headers {
+		req.Header.Set(k, v)
 	}
 
 	resp, err := httpClient.Do(&req)

@@ -23,7 +23,7 @@ type RaftState struct {
 }
 
 func launchAgent(port int, dataDir string) (*os.Process, error) {
-	cmd := exec.Command("../agent/agent")
+	cmd := exec.Command("../changeagent")
 	args := []string{
 		"../agent/agent",
 		"-s", "./tmpdisco",

@@ -57,8 +57,8 @@ var _ = Describe("Hook invocation tests", func() {
 		hooks := []WebHook{
 			WebHook{
 				URI: uri,
-				Headers: []Header{
-					Header{Name: "X-Apigee-Testing", Value: "yes"},
+				Headers: map[string]string{
+					"X-Apigee-Testing": "yes",
 				},
 			},
 		}

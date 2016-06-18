@@ -127,7 +127,41 @@ Retrieve up to 10 changes including only ones that have the tag "testTag":
 
 # Web Hook Support
 
-TODO
+changeagent supports optional web hooks. These web hooks are designed to support
+use cases in which we wish to validate a set of changes before putting them
+in the change log. They can also be used to update another system, and ensure
+that a record is placed in the change log only if that update succeeds.
+
+In other words, changeagent supports an optional list of URIs that the leader will
+invoke before submitting any change to the distributed log.
+
+Register a single web hook at "localhost:9010":
+
+    curl http://localhost:9000/hooks \
+    -H "Content-Type: application/json" \
+    -d '[{"uri":"http://localhost:9010"}]'
+
+Once a web hook is registered, then the leader will invoke the specified URI
+before making any change. If the web hook returns anything other than a
+"20x" response, (i.e. anything >= 200 and < 300) then the change will fail.
+
+Web Hooks also support headers. For example, the hook below passes the
+"X-Apigee-Test" header on every request.
+
+    curl http://localhost:9000/hooks \
+    -H "Content-Type: application/json" \
+    -d [{"uri":"http://localhost:9010", "headers":{"X-Apigee-Test":"ing"}}]'
+
+Note that the data passed in to the "/hooks" URI is an array. That way the server
+can support more than one webhook. If more than one webhook is configured, then the
+leader will invoke all the webhooks, in parallel, before making any change. If
+any one webhook returns an error, then the change will be aborted.
+
+To change the webhook configuration, POST to "/hooks" again. To delete all
+webhooks, DELETE the same path.
+
+Webhook configuration is persisted across the cluster and is available on all
+nodes after a restart.
 
 # Building
 

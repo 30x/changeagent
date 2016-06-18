@@ -8,7 +8,7 @@ all: changeagent
 changeagent: $(ALLDEPS)
 	go build -o $@ ./agent
 
-test: agent
+test: changeagent
 	go test -v `glide nv`
 
 clean:

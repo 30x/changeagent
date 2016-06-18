@@ -176,7 +176,7 @@ func (r *Service) followerLoop(isCandidate bool, state *raftState) chan bool {
 
 func (r *Service) leaderLoop(state *raftState) chan bool {
 	// Get the list of nodes here from the current configuration.
-	nodes := r.getNodeConfig().GetUniqueNodes()
+	nodes := r.GetNodeConfig().GetUniqueNodes()
 	for _, node := range nodes {
 		state.peers[node] = startPeer(node, r, state.peerMatchChanges)
 		state.peerMatches[node] = 0
@@ -197,7 +197,7 @@ func (r *Service) leaderLoop(state *raftState) chan bool {
 	}
 
 	discoConfig := r.disco.GetCurrentConfig()
-	if !discoConfig.Current.Equal(r.getNodeConfig().Current) {
+	if !discoConfig.Current.Equal(r.GetNodeConfig().Current) {
 		err := r.processConfigChange(state)
 		if err != nil {
 			// Should we panic now? Set a state to retry?
@@ -257,7 +257,7 @@ func (r *Service) leaderLoop(state *raftState) chan bool {
 			// Got back a changed applied index from a peer. Decide if we have a commit and
 			// process it if we do.
 			state.peerMatches[peerMatch.address] = peerMatch.newMatch
-			newIndex := r.calculateCommitIndex(state, r.getNodeConfig())
+			newIndex := r.calculateCommitIndex(state, r.GetNodeConfig())
 			if r.setCommitIndex(newIndex) {
 				r.applyCommittedEntries(newIndex)
 				for _, p := range state.peers {
@@ -382,7 +382,7 @@ func (r *Service) updateConfigChange(commitIndex uint64, state *raftState) error
  * joint consensus.
  */
 func (r *Service) makeJointConsensus() *discovery.NodeConfig {
-	oldCfg := r.getNodeConfig()
+	oldCfg := r.GetNodeConfig()
 	newCfg := r.disco.GetCurrentConfig()
 	newCfg.Current.Old = oldCfg.Current.New
 	newCfg.Previous = oldCfg.Current
@@ -393,7 +393,7 @@ func (r *Service) makeJointConsensus() *discovery.NodeConfig {
  * Turn a joint consensus entry into a final entry.
  */
 func (r *Service) makeFinalConsensus() *discovery.NodeConfig {
-	oldCfg := r.getNodeConfig()
+	oldCfg := r.GetNodeConfig()
 	newCfg := discovery.NodeConfig{
 		Previous: oldCfg.Current,
 		Current: &discovery.NodeList{

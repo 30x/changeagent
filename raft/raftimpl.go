@@ -528,7 +528,7 @@ func (r *Service) UpdateWebHooks(webHooks []hooks.WebHook) (uint64, error) {
 	return r.Propose(entry)
 }
 
-func (r *Service) getNodeConfig() *discovery.NodeConfig {
+func (r *Service) GetNodeConfig() *discovery.NodeConfig {
 	return r.nodeConfig.Load().(*discovery.NodeConfig)
 }
 

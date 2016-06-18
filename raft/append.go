@@ -180,7 +180,7 @@ func (r *Service) appendEntries(entries []storage.Entry) error {
 		}
 		glog.V(2).Infof("Applying a new configuration %s", newCfg)
 
-		curCfg := r.getNodeConfig()
+		curCfg := r.GetNodeConfig()
 		newCfg.Previous = curCfg.Current
 		r.setNodeConfig(newCfg)
 		glog.Info("Applied a new node configuration from the master")

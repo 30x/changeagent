@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strconv"
 
+	"github.com/30x/changeagent/discovery"
 	"github.com/30x/changeagent/raft"
 )
 
@@ -27,8 +28,9 @@ RaftState represents the state of the Raft implementation and is used to generat
 a JSON response.
 */
 type RaftState struct {
-	State  string `json:"state"`
-	Leader string `json:"leader"`
+	State      string                `json:"state"`
+	Leader     string                `json:"leader"`
+	NodeConfig *discovery.NodeConfig `json:"nodeConfig"`
 }
 
 func (a *ChangeAgent) initDiagnosticAPI(prefix string) {
@@ -91,8 +93,9 @@ func (a *ChangeAgent) handleLeaderCall(resp http.ResponseWriter, req *http.Reque
 
 func (a *ChangeAgent) handleRaftInfo(resp http.ResponseWriter, req *http.Request) {
 	state := RaftState{
-		State:  a.GetRaftState().String(),
-		Leader: strconv.FormatUint(a.getLeaderID(), 10),
+		State:      a.GetRaftState().String(),
+		Leader:     strconv.FormatUint(a.getLeaderID(), 10),
+		NodeConfig: a.raft.GetNodeConfig(),
 	}
 
 	body, _ := json.Marshal(&state)

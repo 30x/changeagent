@@ -12,9 +12,9 @@ const (
 var _ = Describe("Hook Encoding Tests", func() {
 	var wh1 = WebHook{
 		URI: uri1,
-		Headers: []Header{
-			Header{Name: "foo", Value: "bar"},
-			Header{Name: "two", Value: "three"},
+		Headers: map[string]string{
+			"foo": "bar",
+			"two": "three",
 		},
 	}
 
@@ -27,8 +27,8 @@ var _ = Describe("Hook Encoding Tests", func() {
 		Expect(len(dec)).Should(Equal(1))
 		Expect(dec[0].URI).Should(Equal(uri1))
 		Expect(len(dec[0].Headers)).Should(Equal(2))
-		Expect(dec[0].Headers[0].Name).Should(Equal("foo"))
-		Expect(dec[0].Headers[1].Name).Should(Equal("two"))
+		Expect(dec[0].Headers["foo"]).Should(Equal("bar"))
+		Expect(dec[0].Headers["two"]).Should(Equal("three"))
 	})
 
 	It("Encode to JSON", func() {
@@ -41,7 +41,7 @@ var _ = Describe("Hook Encoding Tests", func() {
 		Expect(len(dec)).Should(Equal(1))
 		Expect(dec[0].URI).Should(Equal(uri1))
 		Expect(len(dec[0].Headers)).Should(Equal(2))
-		Expect(dec[0].Headers[0].Name).Should(Equal("foo"))
-		Expect(dec[0].Headers[1].Name).Should(Equal("two"))
+		Expect(dec[0].Headers["foo"]).Should(Equal("bar"))
+		Expect(dec[0].Headers["two"]).Should(Equal("three"))
 	})
 })

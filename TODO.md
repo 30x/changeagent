@@ -41,6 +41,9 @@ Test and understand ramifications of current cluster configuration changes.
 
 Come up with a graceful shutdown procedure for the leader.
 
+Think seriously about rolling back any change that does not happen within the
+commit timeout.
+
 ## Lower Priority
 
 Add API option to post without waiting for commit.
