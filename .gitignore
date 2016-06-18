@@ -1,6 +1,6 @@
 .DS_Store
 .vscode
-agent/agent
+changeagent
 loader/loader
 agent/Godeps/Readme
 agent/Godeps/_workspace

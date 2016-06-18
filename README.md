@@ -125,6 +125,10 @@ Retrieve up to 10 changes including only ones that have the tag "testTag":
     [{"_id":17,"_ts":1464805241291100178,
       "tags":["testTag","testTag2"],"data":{"Hello":"world","seq":12}}
 
+# Web Hook Support
+
+TODO
+
 # Building
 
 The product is built in Go, but it relies on the "glide" package management
@@ -173,12 +177,12 @@ In addition, there are a few other top-level targets:
 To run a standalone node, you will need to pass a port and a directory to
 store the data.
 
-The binary "agent" will have been built by "make" in the "agent" subdirectory.
+The binary "changeagent" will have been built by "make" in the "agent" subdirectory.
 
 For instance, here is a simple way to run on port 9000:
 
     mkdir data
-    ./agent/agent -p 9000 -d ./data -logtostderr
+    ./changeagent -p 9000 -d ./data -logtostderr
 
 ## Running a Cluster
 
@@ -191,14 +195,14 @@ For instance, create a file called "nodes" that contains the following:
     localhost:9001
     localhost:9002
 
-Then, start three "agent" binaries:
+Then, start three "changeagent" binaries:
 
     mkdir data1
     mkdir data2
     mkdir data3
-    ./agent/agent -p 9000 -d ./data1 -logtostderr -s nodes &
-    ./agent/agent -p 9001 -d ./data2 -logtostderr -s nodes &
-    ./agent/agent -p 9002 -d ./data3 -logtostderr -s nodes &
+    ./changeagent -p 9000 -d ./data1 -logtostderr -s nodes &
+    ./changeagent -p 9001 -d ./data2 -logtostderr -s nodes &
+    ./changeagent -p 9002 -d ./data3 -logtostderr -s nodes &
 
 After about 10 seconds, the three agents will agree on a leader, and you will
 be able to make API calls to any cluster node.

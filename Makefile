@@ -3,16 +3,13 @@ ALLDEPS = \
 	discovery/*.go storage/*.go raft/*.go agent/*.go \
 	hooks/*.go
 
-all: agent
+all: changeagent
 
-agent: agent/agent
-
-agent/agent: $(ALLDEPS)
-	(cd agent; go build)
+changeagent: $(ALLDEPS)
+	go build -o $@ ./agent
 
 test: agent
 	go test -v `glide nv`
 
 clean:
-	(cd agent; go clean)
-	rm -f agent/agent
+	rm -f changeagent
