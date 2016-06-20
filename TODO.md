@@ -2,12 +2,23 @@
 
 ## Bugs
 
+In stand-alone mode, membership change is triggered on every reboot with a
+new IP. This causes lack of consensus because we can't elect a leader
+because we're trying to form a cluster with our old self at a different
+IP and port.
+
 Election deadlock is possible, at least with two out of three nodes running.
   Only happened a few times.
 
 Insert performance is inconsistent. It seems like many inserts take as long as the HB interval.
 
 ## High Priority
+
+Return something at "end of stream." That way clients know when they need
+to ask for a snapshot. Also return a link to the previous chunk if they
+are not at the end of the stream.
+  Add index information to the Raft diagnostic stuff to make this stuff
+    easier as well.
 
 Finish membership change support:
   Test removal of a follower

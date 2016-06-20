@@ -64,13 +64,18 @@ const (
 	Stopped
 )
 
+// MembershipChangeMode is the state of the current membership change process
+type MembershipChangeMode int32
+
+//go:generate stringer -type MembershipChangeMode .
+
 /*
  * State of the current membership change process
  */
 const (
-	noChange = iota
-	proposedJointConsensus
-	proposedFinalConsensus
+	Stable MembershipChangeMode = iota
+	ProposedJointConsensus
+	ProposedFinalConsensus
 )
 
 /*
@@ -93,6 +98,7 @@ type Service struct {
 	voteCommands        chan voteCommand
 	appendCommands      chan appendCommand
 	proposals           chan proposalCommand
+	statusInquiries     chan chan<- ProtocolStatus
 	discoveredNodes     map[uint64]string
 	discoveredAddresses map[string]uint64
 	latch               sync.Mutex
@@ -105,6 +111,17 @@ type Service struct {
 	appliedTracker      *ChangeTracker
 	stateMachine        StateMachine
 	webHooks            atomic.Value
+}
+
+/*
+ProtocolStatus returns some of the diagnostic information from the raft engine.
+*/
+type ProtocolStatus struct {
+	// Status of the membership change process
+	ChangeMode MembershipChangeMode
+	// If this node is the leader, a map of the indices of each peer.
+	// Otherwise nil.
+	PeerIndices *map[string]uint64
 }
 
 type voteCommand struct {
@@ -149,6 +166,7 @@ func StartRaft(comm communication.Communication,
 		stopChan:            make(chan chan bool, 1),
 		voteCommands:        make(chan voteCommand, 1),
 		appendCommands:      make(chan appendCommand, 1),
+		statusInquiries:     make(chan chan<- ProtocolStatus, 1),
 		proposals:           make(chan proposalCommand, 100),
 		discoveredNodes:     make(map[uint64]string),
 		discoveredAddresses: make(map[string]uint64),
@@ -512,6 +530,23 @@ func (r *Service) setLastIndex(ix uint64, term uint64) {
 }
 
 /*
+GetFirstIndex returns the lowest index that exists in the local raft log.
+*/
+func (r *Service) GetFirstIndex() (uint64, error) {
+	return r.stor.GetFirstIndex()
+}
+
+/*
+GetRaftStatus returns some status information about the Raft engine that requires
+us to access internal state.
+*/
+func (r *Service) GetRaftStatus() ProtocolStatus {
+	ch := make(chan ProtocolStatus)
+	r.statusInquiries <- ch
+	return <-ch
+}
+
+/*
 UpdateWebHooks updates the configuration of web hooks for the cluster by
 propagating a special change record to all the nodes. A web hook is a
 particular web service URI that the leader will invoke before trying to commit any
@@ -528,6 +563,11 @@ func (r *Service) UpdateWebHooks(webHooks []hooks.WebHook) (uint64, error) {
 	return r.Propose(entry)
 }
 
+/*
+GetNodeConfig returns the current configuration of this raft node, which means
+the configuration that is currently running (as oppopsed to what
+has been proposed.
+*/
 func (r *Service) GetNodeConfig() *discovery.NodeConfig {
 	return r.nodeConfig.Load().(*discovery.NodeConfig)
 }

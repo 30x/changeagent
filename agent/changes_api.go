@@ -62,6 +62,7 @@ func (a *ChangeAgent) handlePostChanges(resp http.ResponseWriter, req *http.Requ
  * Result will be an array of objects, with metadata plus original JSON data.
  */
 func (a *ChangeAgent) handleGetChanges(resp http.ResponseWriter, req *http.Request) {
+	// TODO include a pointer to the next chunk, or something to indicate "that's all!"
 	qps := req.URL.Query()
 
 	limitStr := qps.Get("limit")

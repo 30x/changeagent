@@ -34,7 +34,7 @@ type raftState struct {
 	peerMatches        map[string]uint64
 	peerMatchChanges   chan peerMatchResult
 	proposedConfig     *discovery.NodeConfig
-	configChangeMode   int
+	configChangeMode   MembershipChangeMode
 	configChangeCommit uint64
 }
 
@@ -46,7 +46,7 @@ func (r *Service) mainLoop() {
 		peers:            make(map[string]*raftPeer),
 		peerMatches:      make(map[string]uint64),
 		peerMatchChanges: make(chan peerMatchResult, 1),
-		configChangeMode: noChange,
+		configChangeMode: Stable,
 	}
 
 	var stopDone chan bool
@@ -167,6 +167,9 @@ func (r *Service) followerLoop(isCandidate bool, state *raftState) chan bool {
 		case <-r.configChanges:
 			glog.V(2).Info("Node configuration changed. Waiting for a push from the leader.")
 
+		case si := <-r.statusInquiries:
+			returnStatus(si, state, false)
+
 		case stopDone := <-r.stopChan:
 			r.setState(Stopping)
 			return stopDone
@@ -278,6 +281,9 @@ func (r *Service) leaderLoop(state *raftState) chan bool {
 				glog.Errorf("Error processing configuration change: %v", err)
 			}
 
+		case si := <-r.statusInquiries:
+			returnStatus(si, state, true)
+
 		case stopDone := <-r.stopChan:
 			r.setState(Stopping)
 			stopPeers(state)
@@ -321,7 +327,7 @@ func (r *Service) processConfigChange(state *raftState) error {
 	// Persist the new config and start using it for subsequent communications
 	r.setNodeConfig(newCfg)
 	state.configChangeCommit = ix
-	state.configChangeMode = proposedJointConsensus
+	state.configChangeMode = ProposedJointConsensus
 
 	r.updatePeerList(newCfg, state)
 
@@ -334,7 +340,7 @@ func (r *Service) processConfigChange(state *raftState) error {
 func (r *Service) updateConfigChange(commitIndex uint64, state *raftState) error {
 	switch state.configChangeMode {
 
-	case proposedJointConsensus:
+	case ProposedJointConsensus:
 		if commitIndex < state.configChangeCommit {
 			return nil
 		}
@@ -360,16 +366,16 @@ func (r *Service) updateConfigChange(commitIndex uint64, state *raftState) error
 		// Don't use the new config yet -- wait for it to commit.
 		state.proposedConfig = newCfg
 		state.configChangeCommit = ix
-		state.configChangeMode = proposedFinalConsensus
+		state.configChangeMode = ProposedFinalConsensus
 
-	case proposedFinalConsensus:
+	case ProposedFinalConsensus:
 		if commitIndex < state.configChangeCommit {
 			return nil
 		}
 		glog.Info("Final consensus proposal successful. Configuration change complete.")
 		// Final consensus was reached. Now we can start using the new config exclusively.
 		r.setNodeConfig(state.proposedConfig)
-		state.configChangeMode = noChange
+		state.configChangeMode = Stable
 
 		r.updatePeerList(state.proposedConfig, state)
 
@@ -493,4 +499,18 @@ func (r *Service) getPartialCommitIndex(state *raftState, nodes []string) uint64
 	// Since indices are zero-based, this will return element N / 2 + 1
 	p := len(indices) / 2
 	return indices[p]
+}
+
+func returnStatus(ch chan<- ProtocolStatus, state *raftState, isLeader bool) {
+	s := ProtocolStatus{
+		ChangeMode: state.configChangeMode,
+	}
+	if isLeader {
+		pis := make(map[string]uint64)
+		for k, v := range state.peerMatches {
+			pis[k] = v
+		}
+		s.PeerIndices = &pis
+	}
+	ch <- s
 }

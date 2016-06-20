@@ -46,6 +46,8 @@ type Storage interface {
 	GetEntries(since uint64, max uint, filter func(*Entry) bool) ([]Entry, error)
 	// Return the highest index and term in the database
 	GetLastIndex() (uint64, uint64, error)
+	// Return the lowest index in the databsae
+	GetFirstIndex() (uint64, error)
 	// Return index and term of everything from index to the end
 	GetEntryTerms(index uint64) (map[uint64]uint64, error)
 	// Delete everything that is greater than or equal to the index

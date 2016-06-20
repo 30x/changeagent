@@ -319,7 +319,7 @@ func (s *rocksDBStorage) GetLastIndex() (uint64, uint64, error) {
 	return index, entry.Term, nil
 }
 
-func (s *rocksDBStorage) getFirstIndex() (uint64, error) {
+func (s *rocksDBStorage) GetFirstIndex() (uint64, error) {
 	it := C.rocksdb_create_iterator_cf(s.db, defaultReadOptions, s.entries)
 	defer C.rocksdb_iter_destroy(it)
 
@@ -443,7 +443,7 @@ func (s *rocksDBStorage) deleteEntry(ix uint64) error {
 
 // Truncate older entries.
 func (s *rocksDBStorage) Truncate(minEntries uint64, maxDur time.Duration) (uint64, error) {
-	min, err := s.getFirstIndex()
+	min, err := s.GetFirstIndex()
 	if err != nil {
 		return 0, err
 	}

@@ -21,6 +21,9 @@ const (
 	cpuURI        = baseURI + "/cpu"
 	raftStateURI  = raftURI + "/state"
 	raftLeaderURI = raftURI + "/leader"
+
+	indentPrefix = ""
+	indentSpace  = "  "
 )
 
 /*
@@ -28,9 +31,17 @@ RaftState represents the state of the Raft implementation and is used to generat
 a JSON response.
 */
 type RaftState struct {
-	State      string                `json:"state"`
-	Leader     string                `json:"leader"`
-	NodeConfig *discovery.NodeConfig `json:"nodeConfig"`
+	ID             string                `json:"id"`
+	State          string                `json:"state"`
+	Leader         string                `json:"leader"`
+	Term           uint64                `json:"term"`
+	NodeConfig     *discovery.NodeConfig `json:"nodeConfig"`
+	FirstIndex     uint64                `json:"firstIndex"`
+	LastIndex      uint64                `json:"lastIndex"`
+	AppliedIndex   uint64                `json:"appliedIndex"`
+	CommittedIndex uint64                `json:"committedIndex"`
+	ChangeState    string                `json:"configChangeState"`
+	PeerIndices    *map[string]uint64    `json:"peerIndices,omitempty"`
 }
 
 func (a *ChangeAgent) initDiagnosticAPI(prefix string) {
@@ -52,7 +63,7 @@ func (a *ChangeAgent) handleRootCall(resp http.ResponseWriter, req *http.Request
 	links["diagnostics"] = a.makeLink(req, "/diagnostics")
 	links["hooks"] = a.makeLink(req, "/hooks")
 
-	body, _ := json.Marshal(&links)
+	body, _ := json.MarshalIndent(&links, indentPrefix, indentSpace)
 
 	resp.Header().Set("Content-Type", jsonContent)
 	resp.Write(body)
@@ -69,7 +80,7 @@ func (a *ChangeAgent) handleDiagRootCall(resp http.ResponseWriter, req *http.Req
 	o["raft"] = a.makeLink(req, raftURI)
 	o["memory"] = a.makeLink(req, memURI)
 	o["cpu"] = a.makeLink(req, cpuURI)
-	body, _ := json.Marshal(&o)
+	body, _ := json.MarshalIndent(&o, indentPrefix, indentSpace)
 
 	resp.Header().Set("Content-Type", jsonContent)
 	resp.Write(body)
@@ -92,13 +103,24 @@ func (a *ChangeAgent) handleLeaderCall(resp http.ResponseWriter, req *http.Reque
 }
 
 func (a *ChangeAgent) handleRaftInfo(resp http.ResponseWriter, req *http.Request) {
+	status := a.raft.GetRaftStatus()
+	last, term := a.raft.GetLastIndex()
+	first, _ := a.raft.GetFirstIndex()
 	state := RaftState{
-		State:      a.GetRaftState().String(),
-		Leader:     strconv.FormatUint(a.getLeaderID(), 10),
-		NodeConfig: a.raft.GetNodeConfig(),
+		ID:             strconv.FormatUint(a.raft.MyID(), 10),
+		State:          a.GetRaftState().String(),
+		Leader:         strconv.FormatUint(a.getLeaderID(), 10),
+		Term:           term,
+		NodeConfig:     a.raft.GetNodeConfig(),
+		FirstIndex:     first,
+		LastIndex:      last,
+		AppliedIndex:   a.raft.GetLastApplied(),
+		CommittedIndex: a.raft.GetCommitIndex(),
+		ChangeState:    status.ChangeMode.String(),
+		PeerIndices:    status.PeerIndices,
 	}
 
-	body, _ := json.Marshal(&state)
+	body, _ := json.MarshalIndent(&state, indentPrefix, indentSpace)
 
 	resp.Header().Set("Content-Type", jsonContent)
 	resp.Write(body)
@@ -139,7 +161,7 @@ func handleMemoryCall(resp http.ResponseWriter, req *http.Request) {
 	s["mallocs"] = stats.Mallocs
 	s["frees"] = stats.Frees
 
-	body, _ := json.Marshal(&s)
+	body, _ := json.MarshalIndent(&s, indentPrefix, indentSpace)
 	resp.Header().Set("Content-Type", jsonContent)
 	resp.Write(body)
 }
@@ -151,7 +173,7 @@ func handleCPUCall(resp http.ResponseWriter, req *http.Request) {
 	s["numcgocall"] = strconv.FormatInt(runtime.NumCgoCall(), 10)
 	s["numgoroutine"] = strconv.Itoa(runtime.NumGoroutine())
 
-	body, _ := json.Marshal(&s)
+	body, _ := json.MarshalIndent(&s, indentPrefix, indentSpace)
 	resp.Header().Set("Content-Type", jsonContent)
 	resp.Write(body)
 }
