@@ -162,7 +162,7 @@ func makeTestRaft() *testImpl {
 	return &testImpl{}
 }
 
-func (r *testImpl) MyID() uint64 {
+func (r *testImpl) MyID() NodeID {
 	return 1
 }
 

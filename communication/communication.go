@@ -2,18 +2,22 @@ package communication
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/30x/changeagent/storage"
 )
 
 //go:generate protoc --go_out=. communication.proto
 
+// NodeID represents the unique ID of a single Raft node
+type NodeID uint64
+
 /*
 Raft is the interface that a Raft implementation must implement so that this
 module can call it back when it gets various events over the network.
 */
 type Raft interface {
-	MyID() uint64
+	MyID() NodeID
 	RequestVote(req VoteRequest) (VoteResponse, error)
 	Append(req AppendRequest) (AppendResponse, error)
 	Propose(e storage.Entry) (uint64, error)
@@ -25,7 +29,7 @@ the leader.
 */
 type VoteRequest struct {
 	Term         uint64
-	CandidateID  uint64
+	CandidateID  NodeID
 	LastLogIndex uint64
 	LastLogTerm  uint64
 }
@@ -34,7 +38,7 @@ type VoteRequest struct {
 A VoteResponse is the response to a VoteRequest.
 */
 type VoteResponse struct {
-	NodeID      uint64
+	NodeID      NodeID
 	NodeAddress string
 	Term        uint64
 	VoteGranted bool
@@ -47,7 +51,7 @@ a new record to the raft log of another node.
 */
 type AppendRequest struct {
 	Term         uint64
-	LeaderID     uint64
+	LeaderID     NodeID
 	PrevLogIndex uint64
 	PrevLogTerm  uint64
 	LeaderCommit uint64
@@ -124,7 +128,7 @@ type Communication interface {
 
 	// Discover may be called by any node to discover the unique ID of another
 	// node.
-	Discover(address string) (uint64, error)
+	Discover(address string) (NodeID, error)
 
 	// RequestVote is called by a candidate when it wishes to be elected.
 	// The response will be delivered asynchronously via a channel.
@@ -137,4 +141,8 @@ type Communication interface {
 	// Propose is called by a non-leader node to ask the leader to propose a new
 	// change to its followers. It blocks until it gets a response.
 	Propose(address string, e storage.Entry) (ProposalResponse, error)
+}
+
+func (n NodeID) String() string {
+	return strconv.FormatUint(uint64(n), 16)
 }

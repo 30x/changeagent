@@ -50,7 +50,7 @@ func (h *httpCommunication) SetRaft(raft Raft) {
 	h.raft = raft
 }
 
-func (h *httpCommunication) Discover(addr string) (uint64, error) {
+func (h *httpCommunication) Discover(addr string) (NodeID, error) {
 	uri := fmt.Sprintf("http://%s%s", addr, discoveryURI)
 
 	resp, err := httpClient.Get(uri)
@@ -74,7 +74,7 @@ func (h *httpCommunication) Discover(addr string) (uint64, error) {
 		return 0, err
 	}
 
-	return respPb.GetNodeId(), nil
+	return NodeID(respPb.GetNodeId()), nil
 }
 
 func (h *httpCommunication) RequestVote(addr string, req VoteRequest, ch chan<- VoteResponse) {
@@ -85,10 +85,10 @@ func (h *httpCommunication) sendVoteRequest(addr string, req VoteRequest, ch cha
 	uri := fmt.Sprintf("http://%s%s", addr, requestVoteURI)
 
 	reqPb := VoteRequestPb{
-		Term:         &req.Term,
-		CandidateId:  &req.CandidateID,
-		LastLogIndex: &req.LastLogIndex,
-		LastLogTerm:  &req.LastLogTerm,
+		Term:         proto.Uint64(req.Term),
+		CandidateId:  proto.Uint64(uint64(req.CandidateID)),
+		LastLogIndex: proto.Uint64(req.LastLogIndex),
+		LastLogTerm:  proto.Uint64(req.LastLogTerm),
 	}
 	reqBody, err := proto.Marshal(&reqPb)
 	if err != nil {
@@ -130,7 +130,7 @@ func (h *httpCommunication) sendVoteRequest(addr string, req VoteRequest, ch cha
 	}
 
 	voteResp := VoteResponse{
-		NodeID:      respPb.GetNodeId(),
+		NodeID:      NodeID(respPb.GetNodeId()),
 		NodeAddress: addr,
 		Term:        respPb.GetTerm(),
 		VoteGranted: respPb.GetVoteGranted(),
@@ -142,11 +142,11 @@ func (h *httpCommunication) Append(addr string, req AppendRequest) (AppendRespon
 	uri := fmt.Sprintf("http://%s%s", addr, appendURI)
 
 	reqPb := AppendRequestPb{
-		Term:         &req.Term,
-		LeaderId:     &req.LeaderID,
-		PrevLogIndex: &req.PrevLogIndex,
-		PrevLogTerm:  &req.PrevLogTerm,
-		LeaderCommit: &req.LeaderCommit,
+		Term:         proto.Uint64(req.Term),
+		LeaderId:     proto.Uint64(uint64(req.LeaderID)),
+		PrevLogIndex: proto.Uint64(req.PrevLogIndex),
+		PrevLogTerm:  proto.Uint64(req.PrevLogTerm),
+		LeaderCommit: proto.Uint64(req.LeaderCommit),
 	}
 	for _, e := range req.Entries {
 		ebytes, err := storage.EncodeEntry(&e)
@@ -258,7 +258,7 @@ func (h *httpCommunication) handleRequestVote(resp http.ResponseWriter, req *htt
 
 	voteReq := VoteRequest{
 		Term:         reqpb.GetTerm(),
-		CandidateID:  reqpb.GetCandidateId(),
+		CandidateID:  NodeID(reqpb.GetCandidateId()),
 		LastLogIndex: reqpb.GetLastLogIndex(),
 		LastLogTerm:  reqpb.GetLastLogTerm(),
 	}
@@ -271,9 +271,9 @@ func (h *httpCommunication) handleRequestVote(resp http.ResponseWriter, req *htt
 
 	nodeID := h.raft.MyID()
 	respPb := VoteResponsePb{
-		NodeId:      &nodeID,
-		Term:        &voteResp.Term,
-		VoteGranted: &voteResp.VoteGranted,
+		NodeId:      proto.Uint64(uint64(nodeID)),
+		Term:        proto.Uint64(voteResp.Term),
+		VoteGranted: proto.Bool(voteResp.VoteGranted),
 	}
 
 	respBody, err := proto.Marshal(&respPb)
@@ -313,7 +313,7 @@ func (h *httpCommunication) handleAppend(resp http.ResponseWriter, req *http.Req
 
 	apReq := AppendRequest{
 		Term:         reqpb.GetTerm(),
-		LeaderID:     reqpb.GetLeaderId(),
+		LeaderID:     NodeID(reqpb.GetLeaderId()),
 		PrevLogIndex: reqpb.GetPrevLogIndex(),
 		PrevLogTerm:  reqpb.GetPrevLogTerm(),
 		LeaderCommit: reqpb.GetLeaderCommit(),
@@ -409,7 +409,7 @@ func (h *httpCommunication) handleDiscovery(resp http.ResponseWriter, req *http.
 
 	nodeID := h.raft.MyID()
 	respPb := DiscoveryResponsePb{
-		NodeId: &nodeID,
+		NodeId: proto.Uint64(uint64(nodeID)),
 	}
 
 	respBody, err := proto.Marshal(&respPb)

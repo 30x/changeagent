@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strconv"
 
+	"github.com/30x/changeagent/communication"
 	"github.com/30x/changeagent/discovery"
 	"github.com/30x/changeagent/raft"
 )
@@ -87,9 +88,8 @@ func (a *ChangeAgent) handleDiagRootCall(resp http.ResponseWriter, req *http.Req
 }
 
 func (a *ChangeAgent) handleIDCall(resp http.ResponseWriter, req *http.Request) {
-	msg := fmt.Sprintf("%d\n", a.raft.MyID())
 	resp.Header().Set("Content-Type", plainTextContent)
-	resp.Write([]byte(msg))
+	resp.Write([]byte(a.raft.MyID().String()))
 }
 
 func (a *ChangeAgent) handleStateCall(resp http.ResponseWriter, req *http.Request) {
@@ -99,7 +99,7 @@ func (a *ChangeAgent) handleStateCall(resp http.ResponseWriter, req *http.Reques
 
 func (a *ChangeAgent) handleLeaderCall(resp http.ResponseWriter, req *http.Request) {
 	resp.Header().Set("Content-Type", plainTextContent)
-	resp.Write([]byte(fmt.Sprintf("%d", a.getLeaderID())))
+	resp.Write([]byte(a.getLeaderID().String()))
 }
 
 func (a *ChangeAgent) handleRaftInfo(resp http.ResponseWriter, req *http.Request) {
@@ -107,9 +107,9 @@ func (a *ChangeAgent) handleRaftInfo(resp http.ResponseWriter, req *http.Request
 	last, term := a.raft.GetLastIndex()
 	first, _ := a.raft.GetFirstIndex()
 	state := RaftState{
-		ID:             strconv.FormatUint(a.raft.MyID(), 10),
+		ID:             a.raft.MyID().String(),
 		State:          a.GetRaftState().String(),
-		Leader:         strconv.FormatUint(a.getLeaderID(), 10),
+		Leader:         a.getLeaderID().String(),
 		Term:           term,
 		NodeConfig:     a.raft.GetNodeConfig(),
 		FirstIndex:     first,
@@ -126,7 +126,7 @@ func (a *ChangeAgent) handleRaftInfo(resp http.ResponseWriter, req *http.Request
 	resp.Write(body)
 }
 
-func (a *ChangeAgent) getLeaderID() uint64 {
+func (a *ChangeAgent) getLeaderID() communication.NodeID {
 	if a.GetRaftState() == raft.Leader {
 		return a.raft.MyID()
 	}

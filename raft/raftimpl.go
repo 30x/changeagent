@@ -84,7 +84,7 @@ It relies on the Storage, Discovery, and Communication services to do
 its work, and invokes the StateMachine when changes are committed.
 */
 type Service struct {
-	id                  uint64
+	id                  communication.NodeID
 	localAddress        atomic.Value
 	state               int32
 	leaderID            uint64
@@ -99,8 +99,8 @@ type Service struct {
 	appendCommands      chan appendCommand
 	proposals           chan proposalCommand
 	statusInquiries     chan chan<- ProtocolStatus
-	discoveredNodes     map[uint64]string
-	discoveredAddresses map[string]uint64
+	discoveredNodes     map[communication.NodeID]string
+	discoveredAddresses map[string]communication.NodeID
 	latch               sync.Mutex
 	followerOnly        bool
 	currentTerm         uint64
@@ -168,8 +168,8 @@ func StartRaft(comm communication.Communication,
 		appendCommands:      make(chan appendCommand, 1),
 		statusInquiries:     make(chan chan<- ProtocolStatus, 1),
 		proposals:           make(chan proposalCommand, 100),
-		discoveredNodes:     make(map[uint64]string),
-		discoveredAddresses: make(map[string]uint64),
+		discoveredNodes:     make(map[communication.NodeID]string),
+		discoveredAddresses: make(map[string]communication.NodeID),
 		latch:               sync.Mutex{},
 		followerOnly:        false,
 		appliedTracker:      CreateTracker(),
@@ -189,8 +189,8 @@ func StartRaft(comm communication.Communication,
 			return nil, err
 		}
 	}
-	r.id = nodeID
-	glog.Infof("Node %d starting", r.id)
+	r.id = communication.NodeID(nodeID)
+	glog.Infof("Node %s starting", r.id)
 
 	err = r.loadCurrentConfig(disco, stor)
 	if err != nil {
@@ -376,7 +376,7 @@ func (r *Service) Propose(e storage.Entry) (uint64, error) {
 /*
 MyID returns the unique ID of this Raft node.
 */
-func (r *Service) MyID() uint64 {
+func (r *Service) MyID() communication.NodeID {
 	return r.id
 }
 
@@ -389,7 +389,7 @@ func (r *Service) GetState() State {
 }
 
 func (r *Service) setState(newState State) {
-	glog.V(2).Infof("Node %d: setting state to %d", r.id, newState)
+	glog.V(2).Infof("Node %s: setting state to %d", r.id, newState)
 	ns := int32(newState)
 	atomic.StoreInt32(&r.state, ns)
 }
@@ -398,17 +398,17 @@ func (r *Service) setState(newState State) {
 GetLeaderID returns the unique ID of the leader node, or zero if there is
 currently no known leader.
 */
-func (r *Service) GetLeaderID() uint64 {
-	return atomic.LoadUint64(&r.leaderID)
+func (r *Service) GetLeaderID() communication.NodeID {
+	return communication.NodeID(atomic.LoadUint64(&r.leaderID))
 }
 
-func (r *Service) setLeaderID(newID uint64) {
+func (r *Service) setLeaderID(newID communication.NodeID) {
 	if newID == 0 {
-		glog.V(2).Infof("Node %d: No leader present", r.id)
+		glog.V(2).Infof("Node %s: No leader present", r.id)
 	} else {
-		glog.V(2).Infof("Node %d: Node %d is now the leader", r.id, newID)
+		glog.V(2).Infof("Node %s: Node %d is now the leader", r.id, newID)
 	}
-	atomic.StoreUint64(&r.leaderID, newID)
+	atomic.StoreUint64(&r.leaderID, uint64(newID))
 }
 
 /*
@@ -585,7 +585,7 @@ func (r *Service) setNodeConfig(newCfg *discovery.NodeConfig) error {
 	return nil
 }
 
-func (r *Service) addDiscoveredNode(id uint64, addr string) {
+func (r *Service) addDiscoveredNode(id communication.NodeID, addr string) {
 	r.latch.Lock()
 	r.discoveredNodes[id] = addr
 	r.discoveredAddresses[addr] = id
@@ -595,13 +595,13 @@ func (r *Service) addDiscoveredNode(id uint64, addr string) {
 	}
 }
 
-func (r *Service) getNodeAddress(id uint64) string {
+func (r *Service) getNodeAddress(id communication.NodeID) string {
 	r.latch.Lock()
 	defer r.latch.Unlock()
 	return r.discoveredNodes[id]
 }
 
-func (r *Service) getNodeID(address string) uint64 {
+func (r *Service) getNodeID(address string) communication.NodeID {
 	r.latch.Lock()
 	defer r.latch.Unlock()
 	return r.discoveredAddresses[address]
@@ -649,16 +649,16 @@ func (r *Service) writeCurrentTerm(ct uint64) {
 	}
 }
 
-func (r *Service) readLastVote() uint64 {
+func (r *Service) readLastVote() communication.NodeID {
 	ct, err := r.stor.GetUintMetadata(VotedForKey)
 	if err != nil {
 		panic("Fatal error reading state from database")
 	}
-	return ct
+	return communication.NodeID(ct)
 }
 
-func (r *Service) writeLastVote(ct uint64) {
-	err := r.stor.SetUintMetadata(VotedForKey, ct)
+func (r *Service) writeLastVote(ct communication.NodeID) {
+	err := r.stor.SetUintMetadata(VotedForKey, uint64(ct))
 	if err != nil {
 		panic("Fatal error writing state to database")
 	}

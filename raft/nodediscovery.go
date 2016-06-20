@@ -22,7 +22,7 @@ const (
  */
 
 type nodeDiscovery struct {
-	discovered map[uint64]string
+	discovered map[communication.NodeID]string
 	disco      discovery.Discovery
 	comm       communication.Communication
 	raft       *Service
@@ -33,7 +33,7 @@ func startNodeDiscovery(disco discovery.Discovery,
 	comm communication.Communication,
 	raft *Service) *nodeDiscovery {
 	nd := nodeDiscovery{
-		discovered: make(map[uint64]string),
+		discovered: make(map[communication.NodeID]string),
 		disco:      disco,
 		comm:       comm,
 		raft:       raft,

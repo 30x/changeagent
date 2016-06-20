@@ -34,7 +34,7 @@ var _ = Describe("Diagnostic API test", func() {
 	It("Node ID", func() {
 		uri := listenURI + "/diagnostics/id"
 		idStr := testURI(uri)
-		id, err := strconv.ParseUint(strings.TrimSpace(idStr), 10, 64)
+		id, err := strconv.ParseUint(strings.TrimSpace(idStr), 16, 64)
 		Expect(err).Should(Succeed())
 		Expect(id).ShouldNot(BeZero())
 	})
@@ -42,7 +42,7 @@ var _ = Describe("Diagnostic API test", func() {
 	It("Raft Info", func() {
 		raft := getJSON("/diagnostics/raft")
 		Expect(raft["state"]).Should(Equal("Leader"))
-		id, err := strconv.ParseUint(strings.TrimSpace(raft["leader"].(string)), 10, 64)
+		id, err := strconv.ParseUint(strings.TrimSpace(raft["leader"].(string)), 16, 64)
 		Expect(err).Should(Succeed())
 		Expect(id).ShouldNot(BeZero())
 	})

@@ -11,7 +11,7 @@ import (
 )
 
 func (r *Service) handleFollowerVote(state *raftState, cmd voteCommand) bool {
-	glog.V(2).Infof("Node %d got vote request from %d at term %d",
+	glog.V(2).Infof("Node %s got vote request from %d at term %d",
 		r.id, cmd.vr.CandidateID, cmd.vr.Term)
 	currentTerm := r.GetCurrentTerm()
 
@@ -41,7 +41,7 @@ func (r *Service) handleFollowerVote(state *raftState, cmd voteCommand) bool {
 		cmd.vr.LastLogIndex >= commitIndex {
 		state.votedFor = cmd.vr.CandidateID
 		r.writeLastVote(cmd.vr.CandidateID)
-		glog.V(2).Infof("Node %d voting for candidate %d", r.id, cmd.vr.CandidateID)
+		glog.V(2).Infof("Node %s voting for candidate %d", r.id, cmd.vr.CandidateID)
 		resp.VoteGranted = true
 	} else {
 		resp.VoteGranted = false
@@ -83,7 +83,7 @@ func (r *Service) sendVotes(state *raftState, index uint64, rc chan<- voteResult
 	cfg := r.GetNodeConfig()
 	allNodes := cfg.GetUniqueNodes()
 	votes := 0
-	glog.V(2).Infof("Node %d sending vote request to %d nodes for term %d",
+	glog.V(2).Infof("Node %s sending vote request to %d nodes for term %d",
 		r.id, len(allNodes), currentTerm)
 
 	var responseChannels []chan communication.VoteResponse
@@ -113,7 +113,7 @@ func (r *Service) sendVotes(state *raftState, index uint64, rc chan<- voteResult
 
 	// Calculate whether we have enough votes. Take leader changes (joint consensus) into account.
 	granted := r.countVotes(responses, cfg)
-	glog.Infof("Node %d: election request complete for term %d: Granted = %v", r.id, currentTerm, granted)
+	glog.Infof("Node %s: election request complete for term %d: Granted = %v", r.id, currentTerm, granted)
 
 	finalResponse := voteResult{
 		index:  index,
@@ -129,13 +129,13 @@ func (r *Service) countVotes(responses []communication.VoteResponse, cfg *discov
 	// Map votes from peers
 	for _, resp := range responses {
 		if resp.Error != nil {
-			glog.V(2).Infof("Node %d: Error: %s", resp.NodeID, resp.Error)
+			glog.V(2).Infof("Node %s: Error: %s", resp.NodeID, resp.Error)
 			voteMap[resp.NodeAddress] = false
 		} else if resp.VoteGranted {
-			glog.V(2).Infof("Node %d: Voted yes", resp.NodeID)
+			glog.V(2).Infof("Node %s: Voted yes", resp.NodeID)
 			voteMap[resp.NodeAddress] = true
 		} else {
-			glog.V(2).Infof("Node %d: Voted no", resp.NodeID)
+			glog.V(2).Infof("Node %s: Voted no", resp.NodeID)
 			voteMap[resp.NodeAddress] = false
 		}
 	}

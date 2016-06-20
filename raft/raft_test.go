@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/30x/changeagent/communication"
 	"github.com/30x/changeagent/hooks"
 	"github.com/30x/changeagent/storage"
 	. "github.com/onsi/ginkgo"
@@ -138,7 +139,7 @@ var _ = Describe("Raft Tests", func() {
 	})
 })
 
-func stopOneNode(stopID int) (uint64, string, int) {
+func stopOneNode(stopID int) (communication.NodeID, string, int) {
 	savedID := testRafts[stopID].id
 	savedPath := testRafts[stopID].stor.GetDataPath()
 	_, savedPortStr, _ := net.SplitHostPort(testListener[stopID].Addr().String())
