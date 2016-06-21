@@ -13,10 +13,21 @@ import (
 /*
 CreateStaticDiscovery returns an instance of the service that only contains
 the list of nodes specified. Each string in the "nodes" array must be a
-"hostname:port" string.
+"hostname:port" string. The node list may still be changed (and we use this
+for testing purposes).
 */
 func CreateStaticDiscovery(nodes []string) Discovery {
-	ret := createImpl(nodes, nil)
+	ret := createImpl(nodes, nil, false)
+	return ret
+}
+
+/*
+CreateStandaloneDiscovery returns an instance of the service that has only one
+node. Furthermore, "IsStandalone" will return true, indicating that this is the
+only node that will ever exist.
+*/
+func CreateStandaloneDiscovery(node string) Discovery {
+	ret := createImpl([]string{node}, nil, true)
 	return ret
 }
 
@@ -43,7 +54,7 @@ func ReadDiscoveryFile(fileName string, updateInterval time.Duration) (Discovery
 		stopChan: make(chan bool, 1),
 	}
 
-	ret := createImpl(nodes, &rdr)
+	ret := createImpl(nodes, &rdr, false)
 	rdr.d = ret
 
 	rdr.start(info.ModTime())
@@ -68,6 +79,10 @@ func (r *fileReader) stop() {
 	r.stopChan <- true
 }
 
+func (r *fileReader) isStandalone() bool {
+	return false
+}
+
 func (r *fileReader) readLoop(startModTime time.Time) {
 	ticker := time.NewTicker(r.interval)
 	sentError := false
@@ -79,11 +94,11 @@ func (r *fileReader) readLoop(startModTime time.Time) {
 			info, err := os.Stat(r.fileName)
 			if err == nil {
 				if info.ModTime() != lastMod {
-					newNodes, err := readFile(r.fileName)
+					newNodes, e := readFile(r.fileName)
 					if err == nil {
 						r.d.updateNodes(newNodes)
 					} else if !sentError {
-						glog.Errorf("Error reading discovery file for changes: %v", err)
+						glog.Errorf("Error reading discovery file for changes: %v", e)
 						sentError = true
 					}
 					lastMod = info.ModTime()

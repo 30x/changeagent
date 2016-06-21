@@ -2,15 +2,15 @@
 
 ## Bugs
 
-In stand-alone mode, membership change is triggered on every reboot with a
-new IP. This causes lack of consensus because we can't elect a leader
-because we're trying to form a cluster with our old self at a different
-IP and port.
+Probably need to be able to query by timestamp because we won't always know
+when to start.
 
 Election deadlock is possible, at least with two out of three nodes running.
   Only happened a few times.
 
 Insert performance is inconsistent. It seems like many inserts take as long as the HB interval.
+
+tests for having no servers in the discovery file, then adding them later.
 
 ## High Priority
 

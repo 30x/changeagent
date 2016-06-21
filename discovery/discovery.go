@@ -47,6 +47,14 @@ type Discovery interface {
 	GetCurrentConfig() *NodeConfig
 
 	/*
+	 * If this method returns true, then the implementation only supports a single
+	 * stand-alone node. In that case, configuration changes will never be delivered.
+	 * This will only be true if the service has a single node and it will never
+	 * have anything other than a single node.
+	 */
+	IsStandalone() bool
+
+	/*
 	 * Return a channel that will be notified whenever the configuration changes.
 	 */
 	Watch() <-chan bool

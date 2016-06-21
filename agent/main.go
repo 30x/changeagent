@@ -50,7 +50,7 @@ func runAgentMain() int {
 	var disco discovery.Discovery
 	var err error
 	if discoveryFile == "" {
-		disco = discovery.CreateStaticDiscovery([]string{fmt.Sprintf("localhost:%d", port)})
+		disco = discovery.CreateStandaloneDiscovery(fmt.Sprintf("localhost:%d", port))
 	} else {
 		disco, err = discovery.ReadDiscoveryFile(discoveryFile, defaultConfigScan)
 		if err != nil {

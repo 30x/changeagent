@@ -19,6 +19,7 @@ var _ = Describe("Static Discovery", func() {
 		cfg := d.GetCurrentConfig()
 		Expect(cfg.Previous).Should(BeNil())
 		Expect(cfg.Current.Old).Should(BeNil())
+		Expect(d.IsStandalone()).Should(BeFalse())
 
 		n := cfg.Current.New
 
@@ -38,6 +39,7 @@ var _ = Describe("Static Discovery", func() {
 		cfg := d.GetCurrentConfig()
 		Expect(cfg.Previous).Should(BeNil())
 		Expect(cfg.Current.Old).Should(BeNil())
+		Expect(d.IsStandalone()).Should(BeFalse())
 
 		n := cfg.Current.New
 		fmt.Fprintf(GinkgoWriter, "Nodes: %v\n", n)
@@ -46,6 +48,22 @@ var _ = Describe("Static Discovery", func() {
 		Expect(n[0]).Should(Equal("one"))
 		Expect(n[1]).Should(Equal("two"))
 		Expect(n[2]).Should(Equal("three"))
+	})
+
+	It("Standalone Discovery", func() {
+		d := CreateStandaloneDiscovery("one")
+		defer d.Close()
+
+		cfg := d.GetCurrentConfig()
+		Expect(cfg.Previous).Should(BeNil())
+		Expect(cfg.Current.Old).Should(BeNil())
+		Expect(d.IsStandalone()).Should(BeTrue())
+
+		n := cfg.Current.New
+		fmt.Fprintf(GinkgoWriter, "Nodes: %v\n", n)
+
+		Expect(len(n)).Should(Equal(1))
+		Expect(n[0]).Should(Equal("one"))
 	})
 
 	It("Changes", func() {
@@ -70,6 +88,7 @@ var _ = Describe("Static Discovery", func() {
 
 		n := d.GetCurrentConfig().Current.New
 		Expect(len(n)).Should(Equal(4))
+		Expect(d.IsStandalone()).Should(BeFalse())
 		Expect(n[0]).Should(Equal("one"))
 		Expect(n[1]).Should(Equal("two"))
 		Expect(n[2]).Should(Equal("three"))

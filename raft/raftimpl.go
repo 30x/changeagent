@@ -230,8 +230,8 @@ func (r *Service) loadCurrentConfig(disco discovery.Discovery, stor storage.Stor
 		return err
 	}
 
-	if buf == nil {
-		glog.Info("Loading configuration from the discovery file for the first time")
+	if buf == nil || disco.IsStandalone() {
+		glog.Info("Loading node configuration for the first time")
 		cfg := disco.GetCurrentConfig()
 		var storBuf []byte
 		storBuf, err = discovery.EncodeConfig(cfg)

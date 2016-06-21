@@ -10,6 +10,7 @@ type discoService struct {
 	latch       *sync.Mutex
 	nodes       []string
 	spi         discoverySpi
+	standalone  bool
 	watcherChan chan chan bool
 	changeChan  chan []string
 	stopChan    chan chan bool
@@ -22,11 +23,12 @@ type discoverySpi interface {
 /*
  * SPIs must call this to create the thing that they return from their "create" methods.
  */
-func createImpl(nodes []string, spi discoverySpi) *discoService {
+func createImpl(nodes []string, spi discoverySpi, standalone bool) *discoService {
 	disco := &discoService{
 		latch:       &sync.Mutex{},
 		nodes:       nodes,
 		spi:         spi,
+		standalone:  standalone,
 		stopChan:    make(chan chan bool, 1),
 		watcherChan: make(chan chan bool),
 		changeChan:  make(chan []string, 1),
@@ -90,6 +92,10 @@ func (d *discoService) Watch() <-chan bool {
 
 func (d *discoService) updateNodes(newNodes []string) {
 	d.changeChan <- newNodes
+}
+
+func (d *discoService) IsStandalone() bool {
+	return d.standalone
 }
 
 func (d *discoService) Close() {
