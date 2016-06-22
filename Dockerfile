@@ -46,7 +46,7 @@ COPY ./metadata/apigee-file.yaml /
 RUN \
     (cd /go/src/github.com/30x/changeagent; glide install) \
  && (cd /go/src/github.com/30x/changeagent; make clean all) \
- && cp /go/src/github.com/30x/changeagent/agent/agent /agent \
+ && cp /go/src/github.com/30x/changeagent/changeagent / \
  && mkdir -p /var/changeagent/data \
  && mkdir -p /etc/changeagent
 
@@ -56,4 +56,4 @@ VOLUME /var/changeagent/data /etc/changeagent
 
 ENV LD_LIBRARY_PATH=/usr/local/lib
 
-ENTRYPOINT ["/agent", "-logtostderr", "-p", "8080", "-d", "/var/changeagent/data"]
+ENTRYPOINT ["/changeagent", "-logtostderr", "-p", "8080", "-d", "/var/changeagent/data"]
