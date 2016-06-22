@@ -30,7 +30,7 @@ var _ = Describe("Changes API Test", func() {
 
 		// Upon return, change should immediately be represented at the leader
 		respExpected :=
-			fmt.Sprintf("[{\"_id\":%d,\"_ts\":[0-9]+,\"data\":{\"hello\":\"world!\",\"foo\":123}}]", lastNewChange)
+			fmt.Sprintf("^{\"changes\":[{\"_id\":%d,\"_ts\":[0-9]+,\"data\":{\"hello\":\"world!\",\"foo\":123}}]", lastNewChange)
 		peerChanges := getChanges(lastNewChange-1, 100, 0, nil)
 		Expect(peerChanges).Should(MatchRegexp(respExpected))
 
@@ -53,7 +53,7 @@ var _ = Describe("Changes API Test", func() {
 
 	It("POST empty change", func() {
 		peerChanges := getChanges(lastNewChange, 100, 0, nil)
-		Expect(strings.TrimSpace(string(peerChanges))).Should(Equal("[]"))
+		Expect(strings.TrimSpace(string(peerChanges))).Should(MatchRegexp("^{\"changes\":\\[\\]"))
 	})
 
 	It("POST with tag", func() {
@@ -62,7 +62,7 @@ var _ = Describe("Changes API Test", func() {
 
 		// Response comes back just this one with the tags in it
 		respExpected :=
-			fmt.Sprintf("[{\"_id\":%d,\"_ts\":[0-9]+,\"tags\":\\[\"tagone\"\\],\"data\":{\"hello\":\"world!\",\"count\":1}}]", lastNewChange)
+			fmt.Sprintf("^{\"changes\":[{\"_id\":%d,\"_ts\":[0-9]+,\"tags\":\\[\"tagone\"\\],\"data\":{\"hello\":\"world!\",\"count\":1}}]", lastNewChange)
 		tagChanges := getChanges(lastNewChange-1, 1, 0, nil)
 		Expect(tagChanges).Should(MatchRegexp(respExpected))
 
@@ -72,7 +72,7 @@ var _ = Describe("Changes API Test", func() {
 
 		// If we look for non-matching tags when we should get back nothing
 		tagChanges = getChanges(0, 100, 0, []string{"tagone", "tagtwo"})
-		Expect(tagChanges).Should(BeEquivalentTo("[]"))
+		Expect(tagChanges).Should(MatchRegexp("^{\"changes\":\\[\\]"))
 	})
 
 	It("POST with two tags", func() {
@@ -81,7 +81,7 @@ var _ = Describe("Changes API Test", func() {
 
 		// Response comes back just this one with the tags in it
 		respExpected :=
-			fmt.Sprintf("[{\"_id\":%d,\"_ts\":[0-9]+,\"tags\":\\[\"tagone\",\"tagtwo\"\\],\"data\":{\"hello\":\"world!\",\"count\":1}}]", lastNewChange)
+			fmt.Sprintf("^{\"changes\":[{\"_id\":%d,\"_ts\":[0-9]+,\"tags\":\\[\"tagone\",\"tagtwo\"\\],\"data\":{\"hello\":\"world!\",\"count\":1}}]", lastNewChange)
 		tagChanges := getChanges(lastNewChange-1, 1, 0, nil)
 		Expect(tagChanges).Should(MatchRegexp(respExpected))
 
@@ -91,14 +91,14 @@ var _ = Describe("Changes API Test", func() {
 
 		// If we look for non-matching tags when we should get back nothing
 		tagChanges = getChanges(0, 100, 0, []string{"tagthree"})
-		Expect(tagChanges).Should(BeEquivalentTo("[]"))
+		Expect(tagChanges).Should(MatchRegexp("^{\"changes\":\\[\\]"))
 	})
 
 	It("Post and retrieve multiple", func() {
 		changes := postChanges(2, nil)
 
 		templ :=
-			"[{\"_id\":%d,\"_ts\":[0-9]+,\"data\":{\"hello\":\"world!\",\"count\":1}}," +
+			"^{\"changes\":[{\"_id\":%d,\"_ts\":[0-9]+,\"data\":{\"hello\":\"world!\",\"count\":1}}," +
 				"{\"_id\":%d,\"_ts\":[0-9]+,\"data\":{\"hello\":\"world!\",\"count\":2}}]"
 		respExpected := fmt.Sprintf(templ, lastNewChange-1, lastNewChange)
 		peerChanges := getChanges(changes[0]-1, 100, 0, nil)
@@ -110,42 +110,37 @@ var _ = Describe("Changes API Test", func() {
 		changes := postChanges(3, nil)
 
 		respBody := getChanges(0, 100, 0, nil)
-		var results []JSONData
+		var results ChangeList
 		err := json.Unmarshal(respBody, &results)
 		Expect(err).Should(Succeed())
-		Expect(len(results)).Should(BeNumerically(">=", 3))
+		Expect(len(results.Changes)).Should(BeNumerically(">=", 3))
 
 		// Test various permutations of offset and limit now.
 		respBody = getChanges(changes[0]-1, 1, 0, nil)
 		err = json.Unmarshal(respBody, &results)
 		Expect(err).Should(Succeed())
-		Expect(len(results)).Should(Equal(1))
-		Expect(results[0].ID).Should(Equal(changes[0]))
+		Expect(len(results.Changes)).Should(Equal(1))
+		Expect(results.Changes[0].ID).Should(Equal(changes[0]))
 
 		respBody = getChanges(changes[0]-1, 2, 0, nil)
 		err = json.Unmarshal(respBody, &results)
 		Expect(err).Should(Succeed())
-		Expect(len(results)).Should(Equal(2))
-		Expect(results[0].ID).Should(Equal(changes[0]))
-		Expect(results[1].ID).Should(Equal(changes[1]))
+		Expect(len(results.Changes)).Should(Equal(2))
+		Expect(results.Changes[0].ID).Should(Equal(changes[0]))
+		Expect(results.Changes[1].ID).Should(Equal(changes[1]))
 	})
 
 	It("Blocking retrieval", func() {
-		respBody := getChanges(lastNewChange, 100, 0, nil)
-		var results []JSONData
-		err := json.Unmarshal(respBody, &results)
-		Expect(err).Should(Succeed())
-		Expect(len(results)).Should(Equal(0))
+		results := getParsedChanges(lastNewChange, 100, 0, nil)
+		Expect(len(results.Changes)).Should(Equal(0))
 
 		ch := make(chan uint64, 1)
 
 		go func() {
 			ch <- 0
-			newResp := getChanges(lastNewChange, 100, 5, nil)
-			var newResults []JSONData
-			json.Unmarshal(newResp, &newResults)
-			if len(newResults) == 1 {
-				ch <- newResults[0].ID
+			newResults := getParsedChanges(lastNewChange, 100, 5, nil)
+			if len(newResults.Changes) == 1 {
+				ch <- newResults.Changes[0].ID
 			} else {
 				ch <- 0
 			}
@@ -156,8 +151,8 @@ var _ = Describe("Changes API Test", func() {
 		request := "{\"hello\": \"world!\", \"foo\": 9999}"
 		resp := postChange(request)
 
-		var postResult JSONData
-		err = json.Unmarshal([]byte(resp), &postResult)
+		var postResult Change
+		err := json.Unmarshal([]byte(resp), &postResult)
 		Expect(err).Should(Succeed())
 		lastNewChange = postResult.ID
 
@@ -165,21 +160,16 @@ var _ = Describe("Changes API Test", func() {
 	})
 
 	It("Blocking retrieval with tag", func() {
-		respBody := getChanges(lastNewChange, 100, 0, nil)
-		var results []JSONData
-		err := json.Unmarshal(respBody, &results)
-		Expect(err).Should(Succeed())
-		Expect(len(results)).Should(Equal(0))
+		results := getParsedChanges(lastNewChange, 100, 0, nil)
+		Expect(len(results.Changes)).Should(Equal(0))
 
 		ch := make(chan uint64, 1)
 
 		go func() {
 			ch <- 0
-			newResp := getChanges(lastNewChange, 100, 5, []string{"block"})
-			var newResults []JSONData
-			json.Unmarshal(newResp, &newResults)
-			if len(newResults) == 1 {
-				ch <- newResults[0].ID
+			newResults := getParsedChanges(lastNewChange, 100, 5, []string{"block"})
+			if len(newResults.Changes) == 1 {
+				ch <- newResults.Changes[0].ID
 			} else {
 				ch <- 0
 			}
@@ -190,8 +180,8 @@ var _ = Describe("Changes API Test", func() {
 		request := "{\"tags\":[\"block\"],\"data\":{\"hello\": \"world!\", \"foo\": 9999}}"
 		resp := postChange(request)
 
-		var postResult JSONData
-		err = json.Unmarshal([]byte(resp), &postResult)
+		var postResult Change
+		err := json.Unmarshal([]byte(resp), &postResult)
 		Expect(err).Should(Succeed())
 		lastNewChange = postResult.ID
 
@@ -199,21 +189,16 @@ var _ = Describe("Changes API Test", func() {
 	})
 
 	It("Blocking retrieval after two changes", func() {
-		respBody := getChanges(lastNewChange, 100, 0, nil)
-		var results []JSONData
-		err := json.Unmarshal(respBody, &results)
-		Expect(err).Should(Succeed())
-		Expect(len(results)).Should(Equal(0))
+		results := getParsedChanges(lastNewChange, 100, 0, nil)
+		Expect(len(results.Changes)).Should(Equal(0))
 
 		ch := make(chan uint64, 1)
 
 		go func() {
 			ch <- 0
-			newResp := getChanges(lastNewChange+1, 100, 10, nil)
-			var newResults []JSONData
-			json.Unmarshal(newResp, &newResults)
-			if len(newResults) == 1 {
-				ch <- newResults[0].ID
+			newResults := getParsedChanges(lastNewChange+1, 100, 10, nil)
+			if len(newResults.Changes) == 1 {
+				ch <- newResults.Changes[0].ID
 			} else {
 				ch <- 0
 			}
@@ -224,8 +209,8 @@ var _ = Describe("Changes API Test", func() {
 		request := "{\"hello\": \"world!\", \"foo\": 9999}"
 		resp := postChange(request)
 
-		var postResult JSONData
-		err = json.Unmarshal([]byte(resp), &postResult)
+		var postResult Change
+		err := json.Unmarshal([]byte(resp), &postResult)
 		Expect(err).Should(Succeed())
 		lastNewChange = postResult.ID
 
@@ -242,21 +227,16 @@ var _ = Describe("Changes API Test", func() {
 	})
 
 	It("Blocking retrieval with tag two changes", func() {
-		respBody := getChanges(lastNewChange, 100, 0, nil)
-		var results []JSONData
-		err := json.Unmarshal(respBody, &results)
-		Expect(err).Should(Succeed())
-		Expect(len(results)).Should(Equal(0))
+		results := getParsedChanges(lastNewChange, 100, 0, nil)
+		Expect(len(results.Changes)).Should(Equal(0))
 
 		ch := make(chan uint64, 1)
 
 		go func() {
 			ch <- 0
-			newResp := getChanges(lastNewChange, 100, 10, []string{"block"})
-			var newResults []JSONData
-			json.Unmarshal(newResp, &newResults)
-			if len(newResults) == 1 {
-				ch <- newResults[0].ID
+			newResults := getParsedChanges(lastNewChange, 100, 10, []string{"block"})
+			if len(newResults.Changes) == 1 {
+				ch <- newResults.Changes[0].ID
 			} else {
 				ch <- 0
 			}
@@ -267,8 +247,8 @@ var _ = Describe("Changes API Test", func() {
 		request := "{\"tags\":[\"keepblocking\"],\"data\":{\"hello\": \"world!\", \"foo\": 9999}}"
 		resp := postChange(request)
 
-		var postResult JSONData
-		err = json.Unmarshal([]byte(resp), &postResult)
+		var postResult Change
+		err := json.Unmarshal([]byte(resp), &postResult)
 		Expect(err).Should(Succeed())
 		lastNewChange = postResult.ID
 
@@ -286,21 +266,16 @@ var _ = Describe("Changes API Test", func() {
 	})
 
 	It("Blocking retrieval with tag more changes", func() {
-		respBody := getChanges(lastNewChange, 100, 0, nil)
-		var results []JSONData
-		err := json.Unmarshal(respBody, &results)
-		Expect(err).Should(Succeed())
-		Expect(len(results)).Should(Equal(0))
+		results := getParsedChanges(lastNewChange, 100, 0, nil)
+		Expect(len(results.Changes)).Should(Equal(0))
 
 		ch := make(chan uint64, 1)
 
 		go func() {
 			ch <- 0
-			newResp := getChanges(lastNewChange, 100, 10, []string{"block"})
-			var newResults []JSONData
-			json.Unmarshal(newResp, &newResults)
-			if len(newResults) == 1 {
-				ch <- newResults[0].ID
+			newResults := getParsedChanges(lastNewChange, 100, 10, []string{"block"})
+			if len(newResults.Changes) == 1 {
+				ch <- newResults.Changes[0].ID
 			} else {
 				ch <- 0
 			}
@@ -308,13 +283,13 @@ var _ = Describe("Changes API Test", func() {
 
 		<-ch
 		time.Sleep(250 * time.Millisecond)
-		var postResult JSONData
+		var postResult Change
 
 		for c := 0; c < 5; c++ {
 			request := "{\"tags\":[\"keepblocking\"],\"data\":{\"hello\": \"world!\", \"foo\": 9999}}"
 			resp := postChange(request)
 
-			err = json.Unmarshal([]byte(resp), &postResult)
+			err := json.Unmarshal([]byte(resp), &postResult)
 			Expect(err).Should(Succeed())
 			lastNewChange = postResult.ID
 
@@ -325,7 +300,7 @@ var _ = Describe("Changes API Test", func() {
 		request := "{\"tags\":[\"block\"],\"data\":{\"hello\": \"world!\", \"foo\": 9999}}"
 		resp := postChange(request)
 
-		err = json.Unmarshal([]byte(resp), &postResult)
+		err := json.Unmarshal([]byte(resp), &postResult)
 		Expect(err).Should(Succeed())
 		lastNewChange = postResult.ID
 
@@ -333,20 +308,15 @@ var _ = Describe("Changes API Test", func() {
 	})
 
 	It("Blocking retrieval after abnormal change", func() {
-		respBody := getChanges(lastNewChange, 100, 0, nil)
-		var results []JSONData
-		err := json.Unmarshal(respBody, &results)
-		Expect(err).Should(Succeed())
-		Expect(len(results)).Should(Equal(0))
+		results := getParsedChanges(lastNewChange, 100, 0, nil)
+		Expect(len(results.Changes)).Should(Equal(0))
 
 		ch := make(chan uint64, 1)
 
 		go func() {
-			newResp := getChanges(lastNewChange, 100, 5, nil)
-			var newResults []JSONData
-			json.Unmarshal(newResp, &newResults)
-			if len(newResults) == 1 {
-				ch <- newResults[0].ID
+			newResults := getParsedChanges(lastNewChange, 100, 5, nil)
+			if len(newResults.Changes) == 1 {
+				ch <- newResults.Changes[0].ID
 			} else {
 				ch <- 0
 			}
@@ -356,12 +326,29 @@ var _ = Describe("Changes API Test", func() {
 		time.Sleep(500 * time.Millisecond)
 		resp := postChange(request)
 
-		var postResult JSONData
-		err = json.Unmarshal([]byte(resp), &postResult)
+		var postResult Change
+		err := json.Unmarshal([]byte(resp), &postResult)
 		Expect(err).Should(Succeed())
 		lastNewChange = postResult.ID
 
 		Eventually(ch).Should(Receive(Equal(postResult.ID)))
+	})
+
+	It("AtStart and AtEnd Flags", func() {
+		allChanges := getParsedChanges(0, 1000, 0, nil)
+		Expect(len(allChanges.Changes)).Should(BeNumerically(">", 1))
+		Expect(allChanges.AtStart).Should(BeTrue())
+		Expect(allChanges.AtEnd).Should(BeTrue())
+
+		startChanges := getParsedChanges(0, 1, 0, nil)
+		Expect(len(startChanges.Changes)).Should(Equal(1))
+		Expect(startChanges.AtStart).Should(BeTrue())
+		Expect(startChanges.AtEnd).Should(BeFalse())
+
+		endChanges := getParsedChanges(allChanges.Changes[0].ID, 1000, 0, nil)
+		Expect(len(endChanges.Changes)).Should(BeNumerically(">", 1))
+		Expect(endChanges.AtStart).Should(BeFalse())
+		Expect(endChanges.AtEnd).Should(BeTrue())
 	})
 })
 
@@ -428,4 +415,12 @@ func getChanges(since uint64, limit int, block int, tags []string) []byte {
 	resp := string(respBody)
 	fmt.Fprintf(GinkgoWriter, "Got GET response %s\n", resp)
 	return respBody
+}
+
+func getParsedChanges(since uint64, limit int, block int, tags []string) ChangeList {
+	bod := getChanges(since, limit, block, tags)
+	var cl ChangeList
+	err := json.Unmarshal(bod, &cl)
+	Expect(err).Should(Succeed())
+	return cl
 }

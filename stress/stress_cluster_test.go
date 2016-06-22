@@ -19,8 +19,12 @@ const (
 	BatchSize   = 10
 )
 
-type WriteResponse struct {
+type StressChange struct {
 	Id uint64 `json:"_id"`
+}
+
+type WriteResponse struct {
+	Changes []StressChange `json:"changes"`
 }
 
 type CollectionResponse struct {
@@ -196,7 +200,7 @@ func sendBatch(writePort int, count int, anno string) (uint64, uint64) {
 
 		Expect(resp.StatusCode).Should(BeEquivalentTo(200))
 
-		var writeResp WriteResponse
+		var writeResp StressChange
 		err = json.Unmarshal(bodyBytes, &writeResp)
 		Expect(err).Should(Succeed())
 
@@ -219,12 +223,12 @@ func fetchChanges(readPort int, since uint64) []uint64 {
 	body, err := ioutil.ReadAll(resp.Body)
 	Expect(err).Should(Succeed())
 
-	var entries []WriteResponse
+	var entries WriteResponse
 	err = json.Unmarshal(body, &entries)
 	Expect(err).Should(Succeed())
 
-	ret := make([]uint64, len(entries))
-	for i, entry := range entries {
+	ret := make([]uint64, len(entries.Changes))
+	for i, entry := range entries.Changes {
 		ret[i] = entry.Id
 	}
 

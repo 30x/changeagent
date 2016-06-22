@@ -131,7 +131,7 @@ var _ = Describe("JSON encoding tests", func() {
 		}
 
 		out := &bytes.Buffer{}
-		err = marshalChanges(cl, out)
+		err = marshalChanges(cl, false, false, out)
 		Expect(err).Should(Succeed())
 
 		outStr :=
@@ -143,11 +143,11 @@ var _ = Describe("JSON encoding tests", func() {
 		cl := []storage.Entry{}
 
 		out := &bytes.Buffer{}
-		err := marshalChanges(cl, out)
+		err := marshalChanges(cl, false, false, out)
 		Expect(err).Should(Succeed())
 
-		outStr := []byte("[]")
-		Expect(out.String()).Should(BeEquivalentTo(outStr))
+		outStr := "^{\"changes\":\\[\\]"
+		Expect(out.String()).Should(MatchRegexp(outStr))
 	})
 
 	It("Test marshal error", func() {

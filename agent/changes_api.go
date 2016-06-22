@@ -62,7 +62,6 @@ func (a *ChangeAgent) handlePostChanges(resp http.ResponseWriter, req *http.Requ
  * Result will be an array of objects, with metadata plus original JSON data.
  */
 func (a *ChangeAgent) handleGetChanges(resp http.ResponseWriter, req *http.Request) {
-	// TODO include a pointer to the next chunk, or something to indicate "that's all!"
 	qps := req.URL.Query()
 
 	limitStr := qps.Get("limit")
@@ -99,10 +98,19 @@ func (a *ChangeAgent) handleGetChanges(resp http.ResponseWriter, req *http.Reque
 
 	tags := qps["tag"]
 
-	entries, lastFullChange, err := a.fetchEntries(since, limit, tags, resp)
+	// Fetch more than we need so we can see if we're at the beginning or end
+	fetchLimit := limit + 1
+	fetchSince := since
+	if fetchSince > 0 {
+		fetchSince--
+		fetchLimit++
+	}
+
+	entries, lastFullChange, err := a.fetchEntries(fetchSince, fetchLimit, tags, resp)
 	if err != nil {
 		return
 	}
+	entries, atStart, atEnd := pruneChanges(entries, since, limit)
 
 	if (len(entries) == 0) && (block > 0) {
 		now := time.Now()
@@ -114,17 +122,18 @@ func (a *ChangeAgent) handleGetChanges(resp http.ResponseWriter, req *http.Reque
 			waitRemaining := waitEnd.Sub(now)
 			glog.V(2).Infof("Waiting %d milliseconds for the next change after %d", waitRemaining, waitFor)
 			a.raft.GetAppliedTracker().TimedWait(waitFor, waitRemaining)
-			entries, _, err = a.fetchEntries(waitFor-1, limit, tags, resp)
+			entries, _, err = a.fetchEntries(waitFor-1, fetchLimit, tags, resp)
 			if err != nil {
 				return
 			}
+			entries, atStart, atEnd = pruneChanges(entries, since, limit)
 			glog.V(2).Infof("Got %d changes after blocking", len(entries))
 			now = time.Now()
 		}
 	}
 
 	resp.Header().Set("Content-Type", jsonContent)
-	marshalChanges(entries, resp)
+	marshalChanges(entries, atStart, atEnd, resp)
 }
 
 func (a *ChangeAgent) fetchEntries(
@@ -183,4 +192,33 @@ func (a *ChangeAgent) handleGetChange(resp http.ResponseWriter, req *http.Reques
 		resp.Header().Set("Content-Type", jsonContent)
 		marshalJSON(*entry, resp)
 	}
+}
+
+/*
+Given a list of changes, prune it so that the actual result matches "since"
+and "limit." The list may include entries before "since" and after "limit,"
+and we use those entries to understand whether we are at the start and / or end
+of the list.
+*/
+func pruneChanges(entries []storage.Entry, since uint64, limit uint) ([]storage.Entry, bool, bool) {
+	pruned := entries
+	atStart := true
+	atEnd := true
+
+	if len(entries) > 0 && entries[0].Index <= since {
+		// There was an entry before "since", so we're not at the start
+		pruned = entries[1:]
+		atStart = false
+	}
+
+	if len(pruned) > int(limit) {
+		// There was an entry after "limit," so we're not at the end
+		pruned = pruned[:len(pruned)-1]
+		atEnd = false
+	}
+
+	glog.V(2).Infof("pruneChanges(%d, %d, %d): %d %v %v",
+		len(entries), since, limit, len(pruned), atStart, atEnd)
+
+	return pruned, atStart, atEnd
 }

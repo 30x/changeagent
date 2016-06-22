@@ -89,29 +89,31 @@ hold the actual change data:
 Retrieve the first 100 changes since the beginning of time:
 
     curl http://localhost:9000/changes
-    [{"_id": 2,"_ts": 1464804748947570788,"data": {"Hello": "world"}}]
+    {"changes":[{"_id": 2,"_ts": 1464804748947570788,"data": {"Hello": "world"}}],"atStart":true,"atEnd":true}
 
 ... now we'll post a few more changes ...
 
 Retrieve only the changes since change 12:
 
     curl http://localhost:9000/changes?since=12
-    [{"_id":13,"_ts":1464805001822543303,"data":{"Hello":"world","seq":10}},
+    {"changes":[{"_id":13,"_ts":1464805001822543303,"data":{"Hello":"world","seq":10}},
     {"_id":14,"_ts":1464805003646294078,"data":{"Hello":"world","seq":11}},
-    {"_id":15,"_ts":1464805005509406435,"data":{"Hello":"world","seq":12}}]
+    {"_id":15,"_ts":1464805005509406435,"data":{"Hello":"world","seq":12}}],
+    "atStart":false,"atEnd":true}
 
 Retrieve the changes since change 15, and wait for up to 120 seconds for a
 new change to be posted. (And while this API call is running, post a new change
 by POSTing to the "/changes" URI:
 
     $ curl "http://localhost:9000/changes?since=15&block=120"
-    [{"_id":16,"_ts":1464805113553316620,"data":{"Hello":"World","seq":13}}]
+    {"changes":[{"_id":16,"_ts":1464805113553316620,"data":{"Hello":"World","seq":13}}],
+    "atStart":false,"atEnd":true}
 
 Now ask again for the changes since change 16, but this time don't post anything
 new:
 
     $ curl "http://localhost:9000/changes?since=16&block=5"
-    []
+    {"changes":[],"atStart":false,"atEnd":true}
 
 Post a change that includes two tags:
 
@@ -122,8 +124,9 @@ Post a change that includes two tags:
 Retrieve up to 10 changes including only ones that have the tag "testTag":
 
     curl "http://localhost:9000/changes?limit=10&tag=testTag"
-    [{"_id":17,"_ts":1464805241291100178,
-      "tags":["testTag","testTag2"],"data":{"Hello":"world","seq":12}}
+    {"changes":[{"_id":17,"_ts":1464805241291100178,
+      "tags":["testTag","testTag2"],"data":{"Hello":"world","seq":12}}],
+      "atStart":true,"atEnd":true}
 
 # Web Hook Support
 

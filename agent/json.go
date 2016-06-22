@@ -12,13 +12,23 @@ import (
 var defaultTime = time.Time{}
 
 /*
-JSONData represents a single change represented as JSON.
+Change represents a single change represented as JSON.
 */
-type JSONData struct {
+type Change struct {
 	ID        uint64          `json:"_id,omitempty"`
 	Timestamp int64           `json:"_ts,omitempty"`
 	Tags      []string        `json:"tags,omitempty"`
 	Data      json.RawMessage `json:"data,omitempty"`
+}
+
+/*
+ChangeList represents a list of changes returned from an API call, plus
+information about the position of changes on the list.
+*/
+type ChangeList struct {
+	Changes []Change `json:"changes"`
+	AtStart bool     `json:"atStart"`
+	AtEnd   bool     `json:"atEnd"`
 }
 
 /*
@@ -42,7 +52,7 @@ func unmarshalJSON(in io.Reader) (storage.Entry, error) {
 		return storage.Entry{}, err
 	}
 
-	var fullData JSONData
+	var fullData Change
 	err = json.Unmarshal(body, &fullData)
 
 	if err != nil || (fullData.Data == nil) && (fullData.ID == 0) && (fullData.Timestamp == 0) {
@@ -87,19 +97,22 @@ func marshalJSON(entry storage.Entry, out io.Writer) error {
 /*
  * Same as above but marshal a whole array of changes.
  */
-func marshalChanges(changes []storage.Entry, out io.Writer) error {
-	if len(changes) == 0 {
-		out.Write([]byte("[]"))
-		return nil
+func marshalChanges(changes []storage.Entry, atStart, atEnd bool, out io.Writer) error {
+	cl := ChangeList{
+		Changes: convertChanges(changes),
+		AtStart: atStart,
+		AtEnd:   atEnd,
 	}
-	changeList := convertChanges(changes)
 	enc := json.NewEncoder(out)
-	err := enc.Encode(changeList)
+	err := enc.Encode(&cl)
 	return err
 }
 
-func convertChanges(changes []storage.Entry) []JSONData {
-	var changeList []JSONData
+func convertChanges(changes []storage.Entry) []Change {
+	if len(changes) == 0 {
+		return []Change{}
+	}
+	var changeList []Change
 	for _, change := range changes {
 		cd := convertData(change)
 		changeList = append(changeList, *cd)
@@ -119,8 +132,8 @@ func marshalError(result error) string {
 	return string(outBody)
 }
 
-func convertData(entry storage.Entry) *JSONData {
-	ret := JSONData{
+func convertData(entry storage.Entry) *Change {
+	ret := Change{
 		ID:   entry.Index,
 		Tags: entry.Tags,
 		Data: entry.Data,
