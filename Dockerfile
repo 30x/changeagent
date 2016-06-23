@@ -38,7 +38,7 @@
 # this should be a persistent volume.
 
 # This image has Git, Glide, and rocksdb pre-built for us.
-FROM  gbrail/go-rocksdb:4.2.1
+FROM  gbrail/go-rocksdb:1.6-4.2
 
 COPY . /go/src/github.com/30x/changeagent
 COPY ./metadata/apigee-file.yaml /
