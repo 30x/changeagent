@@ -1,7 +1,0 @@
-This Dockerfile creates an image that includes everything that
-changeagent needs to run except for itself:
-
-* go language support (so we can build during "docker build")
-* RocksDB 4.2, as a shared library for easy building
-* snappy, used by RocksDB
-* glide, for a consistent go build.
