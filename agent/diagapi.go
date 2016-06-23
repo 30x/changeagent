@@ -167,11 +167,11 @@ func handleMemoryCall(resp http.ResponseWriter, req *http.Request) {
 }
 
 func handleCPUCall(resp http.ResponseWriter, req *http.Request) {
-	s := make(map[string]string)
-	s["gomaxprocs"] = strconv.Itoa(runtime.GOMAXPROCS(-1))
-	s["numcpu"] = strconv.Itoa(runtime.NumCPU())
-	s["numcgocall"] = strconv.FormatInt(runtime.NumCgoCall(), 10)
-	s["numgoroutine"] = strconv.Itoa(runtime.NumGoroutine())
+	s := make(map[string]int64)
+	s["gomaxprocs"] = int64(runtime.GOMAXPROCS(-1))
+	s["numcpu"] = int64(runtime.NumCPU())
+	s["numcgocall"] = runtime.NumCgoCall()
+	s["numgoroutine"] = int64(runtime.NumGoroutine())
 
 	body, _ := json.MarshalIndent(&s, indentPrefix, indentSpace)
 	resp.Header().Set("Content-Type", jsonContent)
