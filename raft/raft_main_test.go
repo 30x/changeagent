@@ -10,6 +10,7 @@ import (
 	"path"
 	"testing"
 
+	"github.com/30x/changeagent/common"
 	"github.com/30x/changeagent/communication"
 	"github.com/30x/changeagent/storage"
 	. "github.com/onsi/ginkgo"
@@ -30,7 +31,7 @@ var unitTestListener *net.TCPListener
 var anyPort net.TCPAddr
 var webHookListener *net.TCPListener
 var webHookAddr string
-var unitTestID communication.NodeID
+var unitTestID common.NodeID
 
 func TestRaft(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -153,7 +154,7 @@ func cleanRaft(raft *Service, l *net.TCPListener) {
 type dummyStateMachine struct {
 }
 
-func (d *dummyStateMachine) Commit(e *storage.Entry) error {
+func (d *dummyStateMachine) Commit(e *common.Entry) error {
 	return nil
 }
 

@@ -8,7 +8,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/30x/changeagent/storage"
+	"github.com/30x/changeagent/common"
+	"github.com/30x/changeagent/protobufs"
 	"github.com/golang/glog"
 	"github.com/golang/protobuf/proto"
 )
@@ -50,7 +51,7 @@ func (h *httpCommunication) SetRaft(raft Raft) {
 	h.raft = raft
 }
 
-func (h *httpCommunication) Discover(addr string) (NodeID, error) {
+func (h *httpCommunication) Discover(addr string) (common.NodeID, error) {
 	uri := fmt.Sprintf("http://%s%s", addr, discoveryURI)
 
 	resp, err := httpClient.Get(uri)
@@ -68,13 +69,13 @@ func (h *httpCommunication) Discover(addr string) (NodeID, error) {
 		return 0, err
 	}
 
-	var respPb DiscoveryResponsePb
+	var respPb protobufs.DiscoveryResponsePb
 	err = proto.Unmarshal(respBody, &respPb)
 	if err != nil {
 		return 0, err
 	}
 
-	return NodeID(respPb.GetNodeId()), nil
+	return common.NodeID(respPb.GetNodeId()), nil
 }
 
 func (h *httpCommunication) RequestVote(addr string, req VoteRequest, ch chan<- VoteResponse) {
@@ -84,7 +85,7 @@ func (h *httpCommunication) RequestVote(addr string, req VoteRequest, ch chan<- 
 func (h *httpCommunication) sendVoteRequest(addr string, req VoteRequest, ch chan<- VoteResponse) {
 	uri := fmt.Sprintf("http://%s%s", addr, requestVoteURI)
 
-	reqPb := VoteRequestPb{
+	reqPb := protobufs.VoteRequestPb{
 		Term:         proto.Uint64(req.Term),
 		CandidateId:  proto.Uint64(uint64(req.CandidateID)),
 		LastLogIndex: proto.Uint64(req.LastLogIndex),
@@ -122,7 +123,7 @@ func (h *httpCommunication) sendVoteRequest(addr string, req VoteRequest, ch cha
 		return
 	}
 
-	var respPb VoteResponsePb
+	var respPb protobufs.VoteResponsePb
 	err = proto.Unmarshal(respBody, &respPb)
 	if err != nil {
 		vr := VoteResponse{Error: err}
@@ -131,7 +132,7 @@ func (h *httpCommunication) sendVoteRequest(addr string, req VoteRequest, ch cha
 	}
 
 	voteResp := VoteResponse{
-		NodeID:      NodeID(respPb.GetNodeId()),
+		NodeID:      common.NodeID(respPb.GetNodeId()),
 		NodeAddress: addr,
 		Term:        respPb.GetTerm(),
 		VoteGranted: respPb.GetVoteGranted(),
@@ -142,7 +143,7 @@ func (h *httpCommunication) sendVoteRequest(addr string, req VoteRequest, ch cha
 func (h *httpCommunication) Append(addr string, req AppendRequest) (AppendResponse, error) {
 	uri := fmt.Sprintf("http://%s%s", addr, appendURI)
 
-	reqPb := AppendRequestPb{
+	reqPb := protobufs.AppendRequestPb{
 		Term:         proto.Uint64(req.Term),
 		LeaderId:     proto.Uint64(uint64(req.LeaderID)),
 		PrevLogIndex: proto.Uint64(req.PrevLogIndex),
@@ -150,11 +151,8 @@ func (h *httpCommunication) Append(addr string, req AppendRequest) (AppendRespon
 		LeaderCommit: proto.Uint64(req.LeaderCommit),
 	}
 	for _, e := range req.Entries {
-		ebytes, err := storage.EncodeEntry(&e)
-		if err != nil {
-			return DefaultAppendResponse, err
-		}
-		reqPb.Entries = append(reqPb.Entries, ebytes)
+		pb := e.EncodePb()
+		reqPb.Entries = append(reqPb.Entries, &pb)
 	}
 
 	reqBody, err := proto.Marshal(&reqPb)
@@ -178,7 +176,7 @@ func (h *httpCommunication) Append(addr string, req AppendRequest) (AppendRespon
 		return DefaultAppendResponse, err
 	}
 
-	var respPb AppendResponsePb
+	var respPb protobufs.AppendResponsePb
 	err = proto.Unmarshal(respBody, &respPb)
 	if err != nil {
 		return DefaultAppendResponse, err
@@ -192,13 +190,10 @@ func (h *httpCommunication) Append(addr string, req AppendRequest) (AppendRespon
 	return appResp, nil
 }
 
-func (h *httpCommunication) Propose(addr string, e storage.Entry) (ProposalResponse, error) {
+func (h *httpCommunication) Propose(addr string, e *common.Entry) (ProposalResponse, error) {
 	uri := fmt.Sprintf("http://%s%s", addr, proposeURI)
 
-	reqBody, err := storage.EncodeEntry(&e)
-	if err != nil {
-		return DefaultProposalResponse, err
-	}
+	reqBody := e.Encode()
 
 	resp, err := httpClient.Post(uri, ContentType, bytes.NewReader(reqBody))
 	if err != nil {
@@ -216,7 +211,7 @@ func (h *httpCommunication) Propose(addr string, e storage.Entry) (ProposalRespo
 		return DefaultProposalResponse, err
 	}
 
-	var respPb ProposalResponsePb
+	var respPb protobufs.ProposalResponsePb
 	err = proto.Unmarshal(respBody, &respPb)
 	if err != nil {
 		return DefaultProposalResponse, err
@@ -250,7 +245,7 @@ func (h *httpCommunication) handleRequestVote(resp http.ResponseWriter, req *htt
 		return
 	}
 
-	var reqpb VoteRequestPb
+	var reqpb protobufs.VoteRequestPb
 	err = proto.Unmarshal(body, &reqpb)
 	if err != nil {
 		resp.WriteHeader(http.StatusBadRequest)
@@ -259,10 +254,10 @@ func (h *httpCommunication) handleRequestVote(resp http.ResponseWriter, req *htt
 
 	voteReq := VoteRequest{
 		Term:         reqpb.GetTerm(),
-		CandidateID:  NodeID(reqpb.GetCandidateId()),
+		CandidateID:  common.NodeID(reqpb.GetCandidateId()),
 		LastLogIndex: reqpb.GetLastLogIndex(),
 		LastLogTerm:  reqpb.GetLastLogTerm(),
-		ClusterID:    NodeID(reqpb.GetClusterId()),
+		ClusterID:    common.NodeID(reqpb.GetClusterId()),
 	}
 
 	voteResp, err := h.raft.RequestVote(voteReq)
@@ -272,7 +267,7 @@ func (h *httpCommunication) handleRequestVote(resp http.ResponseWriter, req *htt
 	}
 
 	nodeID := h.raft.MyID()
-	respPb := VoteResponsePb{
+	respPb := protobufs.VoteResponsePb{
 		NodeId:      proto.Uint64(uint64(nodeID)),
 		Term:        proto.Uint64(voteResp.Term),
 		VoteGranted: proto.Bool(voteResp.VoteGranted),
@@ -306,7 +301,7 @@ func (h *httpCommunication) handleAppend(resp http.ResponseWriter, req *http.Req
 		return
 	}
 
-	var reqpb AppendRequestPb
+	var reqpb protobufs.AppendRequestPb
 	err = proto.Unmarshal(body, &reqpb)
 	if err != nil {
 		resp.WriteHeader(http.StatusBadRequest)
@@ -315,19 +310,13 @@ func (h *httpCommunication) handleAppend(resp http.ResponseWriter, req *http.Req
 
 	apReq := AppendRequest{
 		Term:         reqpb.GetTerm(),
-		LeaderID:     NodeID(reqpb.GetLeaderId()),
+		LeaderID:     common.NodeID(reqpb.GetLeaderId()),
 		PrevLogIndex: reqpb.GetPrevLogIndex(),
 		PrevLogTerm:  reqpb.GetPrevLogTerm(),
 		LeaderCommit: reqpb.GetLeaderCommit(),
 	}
 	for _, e := range reqpb.GetEntries() {
-		var newEntry *storage.Entry
-		newEntry, err = storage.DecodeEntry(e)
-		if err != nil {
-			resp.WriteHeader(http.StatusBadRequest)
-			return
-		}
-
+		newEntry := common.DecodeEntryFromPb(*e)
 		apReq.Entries = append(apReq.Entries, *newEntry)
 	}
 
@@ -337,7 +326,7 @@ func (h *httpCommunication) handleAppend(resp http.ResponseWriter, req *http.Req
 		return
 	}
 
-	respPb := AppendResponsePb{
+	respPb := protobufs.AppendResponsePb{
 		Term:    &appResp.Term,
 		Success: &appResp.Success,
 	}
@@ -370,20 +359,20 @@ func (h *httpCommunication) handlePropose(resp http.ResponseWriter, req *http.Re
 		return
 	}
 
-	newEntry, err := storage.DecodeEntry(body)
+	newEntry, err := common.DecodeEntry(body)
 	if err != nil {
 		resp.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
-	newIndex, err := h.raft.Propose(*newEntry)
+	newIndex, err := h.raft.Propose(newEntry)
 	if err != nil {
 		glog.V(1).Infof("Error in proposal: %s", err)
 		resp.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
-	respPb := ProposalResponsePb{
+	respPb := protobufs.ProposalResponsePb{
 		NewIndex: &newIndex,
 	}
 	if err != nil {
@@ -410,7 +399,7 @@ func (h *httpCommunication) handleDiscovery(resp http.ResponseWriter, req *http.
 	}
 
 	nodeID := h.raft.MyID()
-	respPb := DiscoveryResponsePb{
+	respPb := protobufs.DiscoveryResponsePb{
 		NodeId: proto.Uint64(uint64(nodeID)),
 	}
 

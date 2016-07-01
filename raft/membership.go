@@ -3,8 +3,7 @@ package raft
 import (
 	"fmt"
 
-	"github.com/30x/changeagent/communication"
-	"github.com/30x/changeagent/storage"
+	"github.com/30x/changeagent/common"
 	"github.com/golang/glog"
 )
 
@@ -43,7 +42,7 @@ func (r *Service) InitializeCluster(addr string) error {
 	if err != nil {
 		return err
 	}
-	r.setClusterID(communication.NodeID(id))
+	r.setClusterID(common.NodeID(id))
 
 	cfg := &NodeList{
 		Current: []Node{{Address: addr, NodeID: r.id}},
@@ -87,13 +86,13 @@ func (r *Service) AddNode(addr string) error {
 	}
 	newCfg.Next = append(newCfg.Next, newNode)
 
-	proposedEntry := storage.Entry{
+	proposedEntry := common.Entry{
 		Type: MembershipChange,
 		Data: newCfg.encode(),
 	}
 
 	glog.V(2).Infof("Proposing joint configuration: %s", newCfg)
-	ix, err := r.Propose(proposedEntry)
+	ix, err := r.Propose(&proposedEntry)
 	if err != nil {
 		return err
 	}
@@ -108,13 +107,13 @@ func (r *Service) AddNode(addr string) error {
 		Current: newCfg.Next,
 	}
 
-	proposedEntry = storage.Entry{
+	proposedEntry = common.Entry{
 		Type: MembershipChange,
 		Data: finalCfg.encode(),
 	}
 
 	glog.V(2).Infof("Proposing final configuration: %s", newCfg)
-	ix, err = r.Propose(proposedEntry)
+	ix, err = r.Propose(&proposedEntry)
 	if err != nil {
 		return err
 	}
@@ -128,7 +127,7 @@ func (r *Service) AddNode(addr string) error {
 	return nil
 }
 
-func (r *Service) applyMembershipChange(e *storage.Entry) {
+func (r *Service) applyMembershipChange(e *common.Entry) {
 	newCfg, err := decodeNodeList(e.Data)
 	if err != nil {
 		glog.Errorf("Received an invalid membership list: %s", err)

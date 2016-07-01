@@ -3,6 +3,7 @@ package storage
 import (
 	"time"
 
+	"github.com/30x/changeagent/common"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )
@@ -97,7 +98,7 @@ func entriesTest(stor Storage) {
 	Expect(max).Should(BeEquivalentTo(0))
 	Expect(term).Should(BeEquivalentTo(0))
 
-	entry1 := &Entry{
+	entry1 := &common.Entry{
 		Index:     1,
 		Term:      1,
 		Timestamp: time.Now(),
@@ -106,7 +107,7 @@ func entriesTest(stor Storage) {
 	err = stor.AppendEntry(entry1)
 	Expect(err).Should(Succeed())
 
-	entry2 := &Entry{
+	entry2 := &common.Entry{
 		Index:     2,
 		Term:      1,
 		Timestamp: time.Now(),
@@ -153,7 +154,7 @@ func entriesTest(stor Storage) {
 	err = stor.DeleteEntriesAfter(1)
 	Expect(err).Should(Succeed())
 
-	entry3 := &Entry{
+	entry3 := &common.Entry{
 		Index:     3,
 		Term:      1,
 		Timestamp: time.Now(),
@@ -167,7 +168,7 @@ func entriesTest(stor Storage) {
 	compareEntries(re, entry3)
 }
 
-func compareEntries(e1 *Entry, e2 *Entry) {
+func compareEntries(e1 *common.Entry, e2 *common.Entry) {
 	Expect(e1.Index).Should(Equal(e2.Index))
 	Expect(e1.Term).Should(Equal(e2.Term))
 	Expect(e1.Timestamp).Should(Equal(e2.Timestamp))
@@ -175,6 +176,6 @@ func compareEntries(e1 *Entry, e2 *Entry) {
 	Expect(e1.Data).Should(Equal(e2.Data))
 }
 
-func everTrue(e *Entry) bool {
+func everTrue(e *common.Entry) bool {
 	return true
 }

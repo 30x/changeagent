@@ -5,6 +5,7 @@
 package raft
 
 import (
+	"github.com/30x/changeagent/common"
 	"github.com/30x/changeagent/communication"
 	"github.com/golang/glog"
 )
@@ -121,7 +122,7 @@ func (r *Service) sendVotes(state *raftState, index uint64, rc chan<- voteResult
 
 func (r *Service) countVotes(responses []communication.VoteResponse, cfg *NodeList) bool {
 	// Sort votes into a map so that we can process the rest.
-	voteMap := make(map[communication.NodeID]bool)
+	voteMap := make(map[common.NodeID]bool)
 
 	// Map votes from peers
 	for _, resp := range responses {
@@ -150,7 +151,7 @@ func (r *Service) countVotes(responses []communication.VoteResponse, cfg *NodeLi
 	return countNodeListVotes(voteMap, cfg.Current)
 }
 
-func countNodeListVotes(voteMap map[communication.NodeID]bool, nodes []Node) bool {
+func countNodeListVotes(voteMap map[common.NodeID]bool, nodes []Node) bool {
 	votes := 0
 
 	for _, node := range nodes {

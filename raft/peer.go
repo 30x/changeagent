@@ -9,8 +9,8 @@ package raft
 import (
 	"time"
 
+	"github.com/30x/changeagent/common"
 	"github.com/30x/changeagent/communication"
-	"github.com/30x/changeagent/storage"
 	"github.com/golang/glog"
 )
 
@@ -212,7 +212,7 @@ func (p *raftPeer) sendUpdates(desired uint64, next uint64, rc chan rpcResponse)
 
 	// Get all the entries from (start - 1).
 	allEntries, err := p.r.stor.GetEntries(start, uint(desired-start),
-		func(e *storage.Entry) bool { return true })
+		func(e *common.Entry) bool { return true })
 	if err != nil {
 		glog.V(2).Infof("Error getting entries for peer at %s: %v", p.node, err)
 		return err
@@ -220,7 +220,7 @@ func (p *raftPeer) sendUpdates(desired uint64, next uint64, rc chan rpcResponse)
 	glog.V(2).Infof("Got %d updates", len(allEntries))
 
 	var lastIndex, lastTerm uint64
-	var sendEntries []storage.Entry
+	var sendEntries []common.Entry
 
 	// Unless we are starting from 0, the first entry in the list just tells us what the
 	// lastIndex and lastTerm should be. The rest are the entries that we actually

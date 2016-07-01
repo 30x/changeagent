@@ -1,10 +1,10 @@
 hash: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
-updated: 2016-06-08T16:28:28.55377887-07:00
+updated: 2016-07-01T14:58:11.1986357-07:00
 imports:
 - name: github.com/golang/glog
   version: 23def4e6c14b4da8ac2ed8007337bc5eb5007998
 - name: github.com/golang/protobuf
-  version: 7cc19b78d562895b13596ddce7aafb59dd789318
+  version: 8616e8ee5e20a1704615e6c8d7afcdac06087a67
   subpackages:
   - /proto
 - name: github.com/gorilla/context

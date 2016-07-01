@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/30x/changeagent/communication"
+	"github.com/30x/changeagent/common"
 	"github.com/golang/glog"
 )
 
@@ -21,16 +21,16 @@ type voteResult struct {
 }
 
 type peerMatchResult struct {
-	nodeID   communication.NodeID
+	nodeID   common.NodeID
 	newMatch uint64
 }
 
 type raftState struct {
-	votedFor         communication.NodeID
+	votedFor         common.NodeID
 	voteIndex        uint64 // Keep track of the voting channel in case something takes a long time
 	voteResults      chan voteResult
-	peers            map[communication.NodeID]*raftPeer
-	peerMatches      map[communication.NodeID]uint64
+	peers            map[common.NodeID]*raftPeer
+	peerMatches      map[common.NodeID]uint64
 	peerMatchChanges chan peerMatchResult
 }
 
@@ -39,8 +39,8 @@ func (r *Service) mainLoop() {
 		voteIndex:        0,
 		voteResults:      make(chan voteResult, 1),
 		votedFor:         r.readLastVote(),
-		peers:            make(map[communication.NodeID]*raftPeer),
-		peerMatches:      make(map[communication.NodeID]uint64),
+		peers:            make(map[common.NodeID]*raftPeer),
+		peerMatches:      make(map[common.NodeID]uint64),
 		peerMatchChanges: make(chan peerMatchResult, 1),
 	}
 
@@ -131,7 +131,7 @@ func (r *Service) followerLoop(isCandidate bool, state *raftState) chan bool {
 					glog.V(2).Infof("Forwarding proposal to leader node %s", leader.NodeID)
 					pr := proposalResult{}
 
-					fr, err := r.comm.Propose(leader.Address, prop.entry)
+					fr, err := r.comm.Propose(leader.Address, &prop.entry)
 					if err != nil {
 						pr.err = err
 					} else if fr.Error != nil {
@@ -279,7 +279,7 @@ func stopPeers(state *raftState) {
  */
 func (r *Service) updatePeerList(state *raftState) {
 	cfg := r.GetNodeConfig()
-	foundNodes := make(map[communication.NodeID]bool)
+	foundNodes := make(map[common.NodeID]bool)
 	nodes := cfg.getUniqueNodes()
 
 	// Add any missing nodes
@@ -369,7 +369,7 @@ func (r *Service) getPartialCommitIndex(state *raftState, nodes []Node) uint64 {
 func returnStatus(ch chan<- ProtocolStatus, state *raftState, isLeader bool) {
 	s := ProtocolStatus{}
 	if isLeader {
-		pis := make(map[communication.NodeID]uint64)
+		pis := make(map[common.NodeID]uint64)
 		for k, v := range state.peerMatches {
 			pis[k] = v
 		}

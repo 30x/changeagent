@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/30x/changeagent/common"
 	"github.com/30x/changeagent/communication"
-	"github.com/30x/changeagent/storage"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )
@@ -42,16 +42,16 @@ var _ = Describe("Raft Unit Tests", func() {
 			PrevLogIndex: 0,
 			PrevLogTerm:  0,
 			LeaderCommit: 1,
-			Entries: []storage.Entry{
-				storage.Entry{
+			Entries: []common.Entry{
+				common.Entry{
 					Index: 1,
 					Term:  1,
 				},
-				storage.Entry{
+				common.Entry{
 					Index: 2,
 					Term:  2,
 				},
-				storage.Entry{
+				common.Entry{
 					Index: 3,
 					Term:  2,
 				},
@@ -178,12 +178,12 @@ var _ = Describe("Raft Unit Tests", func() {
 			LeaderID:     1,
 			PrevLogIndex: 3,
 			PrevLogTerm:  2,
-			Entries: []storage.Entry{
-				storage.Entry{
+			Entries: []common.Entry{
+				common.Entry{
 					Term:  2,
 					Index: 4,
 				},
-				storage.Entry{
+				common.Entry{
 					Term:  2,
 					Index: 5,
 				},
@@ -210,8 +210,8 @@ var _ = Describe("Raft Unit Tests", func() {
 			LeaderID:     1,
 			PrevLogIndex: 3,
 			PrevLogTerm:  2,
-			Entries: []storage.Entry{
-				storage.Entry{
+			Entries: []common.Entry{
+				common.Entry{
 					Term:  3,
 					Index: 4,
 				},
@@ -236,12 +236,12 @@ var _ = Describe("Raft Unit Tests", func() {
 			LeaderID:     1,
 			PrevLogIndex: 3,
 			PrevLogTerm:  2,
-			Entries: []storage.Entry{
-				storage.Entry{
+			Entries: []common.Entry{
+				common.Entry{
 					Term:  3,
 					Index: 5,
 				},
-				storage.Entry{
+				common.Entry{
 					Term:  3,
 					Index: 6,
 				},
@@ -277,8 +277,8 @@ var _ = Describe("Raft Unit Tests", func() {
 			Term:         3,
 			LeaderID:     1,
 			LeaderCommit: 5,
-			Entries: []storage.Entry{
-				storage.Entry{
+			Entries: []common.Entry{
+				common.Entry{
 					Term:  3,
 					Index: 7,
 				},
@@ -293,8 +293,8 @@ var _ = Describe("Raft Unit Tests", func() {
 			Term:         3,
 			LeaderID:     1,
 			LeaderCommit: 99,
-			Entries: []storage.Entry{
-				storage.Entry{
+			Entries: []common.Entry{
+				common.Entry{
 					Term:  3,
 					Index: 8,
 				},
@@ -317,7 +317,7 @@ var _ = Describe("Raft Unit Tests", func() {
 		cfg := NodeList{
 			Current: makeNodeList([]uint64{1, 2, 3, 4, 5}),
 		}
-		matches := map[communication.NodeID]uint64{
+		matches := map[common.NodeID]uint64{
 			2: 0,
 			3: 0,
 			4: 0,
@@ -334,7 +334,7 @@ var _ = Describe("Raft Unit Tests", func() {
 		cfg := NodeList{
 			Current: makeNodeList([]uint64{1, 2, 3, 4, 5}),
 		}
-		matches := map[communication.NodeID]uint64{
+		matches := map[common.NodeID]uint64{
 			2: lastIndex,
 			3: 1,
 			4: 1,
@@ -355,7 +355,7 @@ var _ = Describe("Raft Unit Tests", func() {
 		cfg := NodeList{
 			Current: makeNodeList([]uint64{1, 2, 3, 4, 5}),
 		}
-		matches := map[communication.NodeID]uint64{
+		matches := map[common.NodeID]uint64{
 			2: lastIndex,
 			3: lastIndex,
 			4: lastIndex,
@@ -376,7 +376,7 @@ var _ = Describe("Raft Unit Tests", func() {
 		cfg := NodeList{
 			Current: makeNodeList([]uint64{1, 2, 3, 4}),
 		}
-		matches := map[communication.NodeID]uint64{
+		matches := map[common.NodeID]uint64{
 			2: lastIndex - 2,
 			3: lastIndex - 1,
 			4: lastIndex,
@@ -396,7 +396,7 @@ var _ = Describe("Raft Unit Tests", func() {
 		cfg := NodeList{
 			Current: makeNodeList([]uint64{1, 2, 3, 4, 5}),
 		}
-		matches := map[communication.NodeID]uint64{
+		matches := map[common.NodeID]uint64{
 			2: 1,
 			3: lastIndex,
 			4: lastIndex - 1,
@@ -422,7 +422,7 @@ var _ = Describe("Raft Unit Tests", func() {
 		li, _ := unitTestRaft.GetLastIndex()
 		fmt.Fprintf(GinkgoWriter, "Joint consensus. lastIndex = %d last applied = %d\n",
 			lastIndex, li)
-		matches := map[communication.NodeID]uint64{
+		matches := map[common.NodeID]uint64{
 			2: lastIndex - 2,
 			3: lastIndex,
 			4: lastIndex - 1,
@@ -446,7 +446,7 @@ var _ = Describe("Raft Unit Tests", func() {
 			Current: makeNodeList([]uint64{1, 2, 3, 4, 5, 6}),
 			Next:    makeNodeList([]uint64{1, 2, 3}),
 		}
-		matches := map[communication.NodeID]uint64{
+		matches := map[common.NodeID]uint64{
 			2: 1,
 			3: lastIndex,
 			4: lastIndex,
@@ -601,7 +601,7 @@ func makeNodeList(ids []uint64) []Node {
 	nn := make([]Node, len(ids))
 	for i := range ids {
 		n := Node{
-			NodeID:  communication.NodeID(ids[i]),
+			NodeID:  common.NodeID(ids[i]),
 			Address: strconv.FormatUint(ids[i], 10),
 		}
 		nn[i] = n

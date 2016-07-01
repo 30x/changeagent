@@ -3,7 +3,8 @@ package raft
 import (
 	"fmt"
 
-	"github.com/30x/changeagent/communication"
+	"github.com/30x/changeagent/common"
+	"github.com/30x/changeagent/protobufs"
 	"github.com/golang/protobuf/proto"
 )
 
@@ -14,7 +15,7 @@ A Node represents a single node in the cluster. It has a unique ID as well
 as a network address.
 */
 type Node struct {
-	NodeID  communication.NodeID
+	NodeID  common.NodeID
 	Address string
 }
 
@@ -33,7 +34,7 @@ type NodeList struct {
 }
 
 func decodeNodeList(buf []byte) (*NodeList, error) {
-	var nl NodeListPb
+	var nl protobufs.NodeListPb
 	err := proto.Unmarshal(buf, &nl)
 	if err != nil {
 		return nil, err
@@ -42,14 +43,14 @@ func decodeNodeList(buf []byte) (*NodeList, error) {
 	l := NodeList{}
 	for _, pn := range nl.GetCurrent() {
 		n := Node{
-			NodeID:  communication.NodeID(pn.GetNodeId()),
+			NodeID:  common.NodeID(pn.GetNodeId()),
 			Address: pn.GetAddress(),
 		}
 		l.Current = append(l.Current, n)
 	}
 	for _, pn := range nl.GetNext() {
 		n := Node{
-			NodeID:  communication.NodeID(pn.GetNodeId()),
+			NodeID:  common.NodeID(pn.GetNodeId()),
 			Address: pn.GetAddress(),
 		}
 		l.Next = append(l.Next, n)
@@ -59,7 +60,7 @@ func decodeNodeList(buf []byte) (*NodeList, error) {
 
 func (nl *NodeList) getUniqueNodes() []Node {
 	var l []Node
-	ids := make(map[communication.NodeID]bool)
+	ids := make(map[common.NodeID]bool)
 	for _, n := range nl.Current {
 		if !ids[n.NodeID] {
 			l = append(l, n)
@@ -75,7 +76,7 @@ func (nl *NodeList) getUniqueNodes() []Node {
 	return l
 }
 
-func (nl *NodeList) getNode(id communication.NodeID) *Node {
+func (nl *NodeList) getNode(id common.NodeID) *Node {
 	for _, n := range nl.Current {
 		if n.NodeID == id {
 			return &n
@@ -90,16 +91,16 @@ func (nl *NodeList) getNode(id communication.NodeID) *Node {
 }
 
 func (nl *NodeList) encode() []byte {
-	np := NodeListPb{}
+	np := protobufs.NodeListPb{}
 	for _, n := range nl.Current {
-		pn := NodePb{
+		pn := protobufs.NodePb{
 			NodeId:  proto.Uint64(uint64(n.NodeID)),
 			Address: proto.String(n.Address),
 		}
 		np.Current = append(np.Current, &pn)
 	}
 	for _, n := range nl.Next {
-		pn := NodePb{
+		pn := protobufs.NodePb{
 			NodeId:  proto.Uint64(uint64(n.NodeID)),
 			Address: proto.String(n.Address),
 		}

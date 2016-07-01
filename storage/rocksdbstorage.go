@@ -15,6 +15,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/30x/changeagent/common"
 	"github.com/golang/glog"
 )
 
@@ -237,7 +238,7 @@ func (s *rocksDBStorage) SetMetadata(key string, val []byte) error {
 
 // Methods for the Raft index
 
-func (s *rocksDBStorage) AppendEntry(entry *Entry) error {
+func (s *rocksDBStorage) AppendEntry(entry *common.Entry) error {
 	keyPtr, keyLen := uintToKey(EntryKey, entry.Index)
 	defer freePtr(keyPtr)
 
@@ -249,7 +250,7 @@ func (s *rocksDBStorage) AppendEntry(entry *Entry) error {
 }
 
 // Get term and data for entry. Return term 0 if not found.
-func (s *rocksDBStorage) GetEntry(index uint64) (*Entry, error) {
+func (s *rocksDBStorage) GetEntry(index uint64) (*common.Entry, error) {
 	keyPtr, keyLen := uintToKey(EntryKey, index)
 	defer freePtr(keyPtr)
 
@@ -265,11 +266,13 @@ func (s *rocksDBStorage) GetEntry(index uint64) (*Entry, error) {
 	return ptrToEntry(valPtr, valLen)
 }
 
-func (s *rocksDBStorage) GetEntries(since uint64, max uint, filter func(*Entry) bool) ([]Entry, error) {
+func (s *rocksDBStorage) GetEntries(
+	since uint64, max uint, filter func(*common.Entry) bool) ([]common.Entry, error) {
+
 	it := C.rocksdb_create_iterator_cf(s.db, defaultReadOptions, s.entries)
 	defer C.rocksdb_iter_destroy(it)
 
-	var entries []Entry
+	var entries []common.Entry
 	var count uint
 
 	firstKeyPtr, firstKeyLen := uintToKey(EntryKey, since+1)
@@ -345,7 +348,7 @@ func (s *rocksDBStorage) GetFirstIndex() (uint64, error) {
  * to data returned by RocksDB. Assumes that the iterator is valid at this
  * position!
  */
-func readIterPosition(it *C.rocksdb_iterator_t) (uint64, int, *Entry, error) {
+func readIterPosition(it *C.rocksdb_iterator_t) (uint64, int, *common.Entry, error) {
 	var keyLen C.size_t
 	keyPtr := C.rocksdb_iter_key(it, &keyLen)
 

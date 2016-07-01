@@ -1,9 +1,7 @@
 package storage
 
 import (
-	"bytes"
 	"testing/quick"
-	"time"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -21,16 +19,6 @@ var _ = Describe("Conversion", func() {
 		s := testStringKey(1, "foo")
 		Expect(s).Should(BeTrue())
 		err := quick.Check(testStringKey, nil)
-		Expect(err).Should(Succeed())
-	})
-
-	It("Entry", func() {
-		s := testEntry(123, time.Now().UnixNano(), "", []byte("Hello!"))
-		Expect(s).Should(BeTrue())
-		s = testEntry(123, time.Now().UnixNano(), "baz", []byte("Hello!"))
-		Expect(s).Should(BeTrue())
-
-		err := quick.Check(testEntry, nil)
 		Expect(err).Should(Succeed())
 	})
 
@@ -58,51 +46,6 @@ var _ = Describe("Conversion", func() {
 
 		err := quick.Check(testMetadataIndexCompare, nil)
 		Expect(err).Should(Succeed())
-	})
-
-	It("Entry string", func() {
-		tst := time.Now()
-		e := &Entry{
-			Index:     22,
-			Term:      1,
-			Timestamp: tst,
-			Data:      []byte("Foo!"),
-			Tags:      []string{"one", "two"},
-		}
-		s := e.String()
-		Expect(s).Should(ContainSubstring("Index: 22"))
-	})
-
-	It("Entry Tags", func() {
-		e1 := &Entry{
-			Index: 1,
-			Term:  1,
-		}
-		e2 := &Entry{
-			Index: 1,
-			Term:  1,
-			Tags:  []string{"one"},
-		}
-		e3 := &Entry{
-			Index: 1,
-			Term:  1,
-			Tags:  []string{"one", "two"},
-		}
-
-		Expect(e1.MatchesTags([]string{})).Should(BeTrue())
-		Expect(e1.MatchesTags([]string{"one"})).Should(BeFalse())
-		Expect(e1.MatchesTags([]string{"one", "two"})).Should(BeFalse())
-		Expect(e1.MatchesTags([]string{"one", "two", "three"})).Should(BeFalse())
-
-		Expect(e2.MatchesTags([]string{})).Should(BeTrue())
-		Expect(e2.MatchesTags([]string{"one"})).Should(BeTrue())
-		Expect(e2.MatchesTags([]string{"one", "two"})).Should(BeFalse())
-		Expect(e2.MatchesTags([]string{"one", "two", "three"})).Should(BeFalse())
-
-		Expect(e3.MatchesTags([]string{})).Should(BeTrue())
-		Expect(e3.MatchesTags([]string{"one"})).Should(BeTrue())
-		Expect(e3.MatchesTags([]string{"one", "two"})).Should(BeTrue())
-		Expect(e3.MatchesTags([]string{"one", "two", "three"})).Should(BeFalse())
 	})
 })
 
@@ -133,26 +76,6 @@ func testStringKey(kt int, key string) bool {
 	Expect(err).Should(Succeed())
 	Expect(newType).Should(Equal(kt))
 	Expect(newKey).Should(Equal(key))
-	return true
-}
-
-func testEntry(term uint64, ts int64, key string, data []byte) bool {
-	tst := time.Unix(0, ts)
-	e := &Entry{
-		Term:      term,
-		Timestamp: tst,
-		Data:      data,
-		Tags:      []string{"one", "two"},
-	}
-	bb, len := entryToPtr(e)
-	defer freePtr(bb)
-
-	re, err := ptrToEntry(bb, len)
-	Expect(err).Should(Succeed())
-	Expect(re.Term).Should(Equal(e.Term))
-	Expect(re.Timestamp).Should(Equal(e.Timestamp))
-	Expect(re.Tags).Should(Equal(e.Tags))
-	Expect(bytes.Equal(re.Data, data)).Should(BeTrue())
 	return true
 }
 

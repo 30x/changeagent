@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/30x/changeagent/storage"
+	"github.com/30x/changeagent/common"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )
@@ -21,7 +21,7 @@ const (
 	debugEnabled = false
 )
 
-var expectedEntries []storage.Entry
+var expectedEntries []common.Entry
 var expectedLock = sync.Mutex{}
 
 var testListener *net.TCPListener
@@ -108,7 +108,7 @@ var _ = Describe("Communication", func() {
 			Term:     2,
 			LeaderID: 1,
 		}
-		e := storage.Entry{
+		e := common.Entry{
 			Index:     1,
 			Term:      2,
 			Timestamp: time.Now(),
@@ -116,7 +116,7 @@ var _ = Describe("Communication", func() {
 			Data:      []byte("Hello!"),
 		}
 		ar.Entries = append(ar.Entries, e)
-		e2 := storage.Entry{
+		e2 := common.Entry{
 			Index:     2,
 			Term:      3,
 			Timestamp: time.Now(),
@@ -137,7 +137,7 @@ var _ = Describe("Communication", func() {
 	})
 
 	It("Propose", func() {
-		e3 := storage.Entry{
+		e3 := common.Entry{
 			Timestamp: time.Now(),
 			Index:     3,
 			Term:      3,
@@ -145,11 +145,11 @@ var _ = Describe("Communication", func() {
 		}
 
 		expectedLock.Lock()
-		expectedEntries = make([]storage.Entry, 1)
+		expectedEntries = make([]common.Entry, 1)
 		expectedEntries[0] = e3
 		expectedLock.Unlock()
 
-		presp, err := comm.Propose(address, e3)
+		presp, err := comm.Propose(address, &e3)
 		Expect(err).Should(Succeed())
 		Expect(presp.Error).Should(Succeed())
 		Expect(presp.NewIndex).ShouldNot(BeZero())
@@ -163,7 +163,7 @@ func makeTestRaft() *testImpl {
 	return &testImpl{}
 }
 
-func (r *testImpl) MyID() NodeID {
+func (r *testImpl) MyID() common.NodeID {
 	return 1
 }
 
@@ -205,7 +205,7 @@ func (r *testImpl) Append(req AppendRequest) (AppendResponse, error) {
 	return vr, nil
 }
 
-func (r *testImpl) Propose(e storage.Entry) (uint64, error) {
+func (r *testImpl) Propose(e *common.Entry) (uint64, error) {
 	expectedLock.Lock()
 	defer expectedLock.Unlock()
 

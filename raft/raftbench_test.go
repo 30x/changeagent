@@ -3,8 +3,7 @@ package raft
 import (
 	"time"
 
-	"github.com/30x/changeagent/storage"
-
+	"github.com/30x/changeagent/common"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )
@@ -17,13 +16,13 @@ var _ = Describe("Simple Benchmarks", func() {
 
 		lastIndex, _ := leader.GetLastIndex()
 		proposal := "Benchmark entry"
-		newEntry := storage.Entry{
+		newEntry := common.Entry{
 			Timestamp: time.Now(),
 			Data:      []byte(proposal),
 		}
 
 		b.Time("runtime", func() {
-			newIndex, err := leader.Propose(newEntry)
+			newIndex, err := leader.Propose(&newEntry)
 			Expect(err).Should(Succeed())
 			Expect(newIndex).Should(Equal(lastIndex + 1))
 			waitForApply(newIndex, 3)

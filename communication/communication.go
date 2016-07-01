@@ -2,25 +2,19 @@ package communication
 
 import (
 	"fmt"
-	"strconv"
 
-	"github.com/30x/changeagent/storage"
+	"github.com/30x/changeagent/common"
 )
-
-//go:generate protoc --go_out=. communication.proto
-
-// NodeID represents the unique ID of a single Raft node
-type NodeID uint64
 
 /*
 Raft is the interface that a Raft implementation must implement so that this
 module can call it back when it gets various events over the network.
 */
 type Raft interface {
-	MyID() NodeID
+	MyID() common.NodeID
 	RequestVote(req VoteRequest) (VoteResponse, error)
 	Append(req AppendRequest) (AppendResponse, error)
-	Propose(e storage.Entry) (uint64, error)
+	Propose(e *common.Entry) (uint64, error)
 }
 
 /*
@@ -29,17 +23,17 @@ the leader.
 */
 type VoteRequest struct {
 	Term         uint64
-	CandidateID  NodeID
+	CandidateID  common.NodeID
 	LastLogIndex uint64
 	LastLogTerm  uint64
-	ClusterID    NodeID
+	ClusterID    common.NodeID
 }
 
 /*
 A VoteResponse is the response to a VoteRequest.
 */
 type VoteResponse struct {
-	NodeID      NodeID
+	NodeID      common.NodeID
 	NodeAddress string
 	Term        uint64
 	VoteGranted bool
@@ -52,11 +46,11 @@ a new record to the raft log of another node.
 */
 type AppendRequest struct {
 	Term         uint64
-	LeaderID     NodeID
+	LeaderID     common.NodeID
 	PrevLogIndex uint64
 	PrevLogTerm  uint64
 	LeaderCommit uint64
-	Entries      []storage.Entry
+	Entries      []common.Entry
 }
 
 func (a *AppendRequest) String() string {
@@ -129,7 +123,7 @@ type Communication interface {
 
 	// Discover may be called by any node to discover the unique ID of another
 	// node.
-	Discover(address string) (NodeID, error)
+	Discover(address string) (common.NodeID, error)
 
 	// RequestVote is called by a candidate when it wishes to be elected.
 	// The response will be delivered asynchronously via a channel.
@@ -141,9 +135,5 @@ type Communication interface {
 
 	// Propose is called by a non-leader node to ask the leader to propose a new
 	// change to its followers. It blocks until it gets a response.
-	Propose(address string, e storage.Entry) (ProposalResponse, error)
-}
-
-func (n NodeID) String() string {
-	return strconv.FormatUint(uint64(n), 16)
+	Propose(address string, e *common.Entry) (ProposalResponse, error)
 }

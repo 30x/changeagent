@@ -5,9 +5,9 @@
 package raft
 
 import (
+	"github.com/30x/changeagent/common"
 	"github.com/30x/changeagent/communication"
 	"github.com/30x/changeagent/hooks"
-	"github.com/30x/changeagent/storage"
 	"github.com/golang/glog"
 )
 
@@ -116,7 +116,7 @@ func (r *Service) sendAppend(address string, ar communication.AppendRequest) (bo
 	return false, err
 }
 
-func (r *Service) appendEntries(entries []storage.Entry) error {
+func (r *Service) appendEntries(entries []common.Entry) error {
 	// 5.3: If an existing entry conflicts with a new one (same index
 	// but different terms), delete the existing entry and all that
 	// follow it
@@ -141,7 +141,7 @@ func (r *Service) appendEntries(entries []storage.Entry) error {
 		}
 	}
 
-	var configChange *storage.Entry
+	var configChange *common.Entry
 
 	for i, e := range entries {
 		// Append any new entries not already in the log
@@ -181,14 +181,14 @@ func (r *Service) appendEntries(entries []storage.Entry) error {
 	return nil
 }
 
-func (r *Service) invokeWebHooks(newEntry *storage.Entry) error {
+func (r *Service) invokeWebHooks(newEntry *common.Entry) error {
 	cfg := r.GetWebHooks()
 	glog.V(2).Infof("Invoking %d web hooks", len(cfg))
 	// TODO pass the content type from somewhere?
 	return hooks.Invoke(cfg, newEntry.Data, jsonContent)
 }
 
-func (r *Service) makeProposal(newEntry *storage.Entry, state *raftState) (uint64, error) {
+func (r *Service) makeProposal(newEntry *common.Entry, state *raftState) (uint64, error) {
 	// If command received from client: append entry to local log,
 	// respond after entry applied to state machine (§5.3)
 	newIndex, _ := r.GetLastIndex()
@@ -199,7 +199,7 @@ func (r *Service) makeProposal(newEntry *storage.Entry, state *raftState) (uint6
 		glog.V(2).Infof("Appending data for index %d term %d", newIndex, term)
 		newEntry.Index = newIndex
 		newEntry.Term = term
-		err := r.appendEntries([]storage.Entry{*newEntry})
+		err := r.appendEntries([]common.Entry{*newEntry})
 		if err != nil {
 			return 0, err
 		}

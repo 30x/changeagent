@@ -8,9 +8,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/30x/changeagent/communication"
+	"github.com/30x/changeagent/common"
 	"github.com/30x/changeagent/hooks"
-	"github.com/30x/changeagent/storage"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )
@@ -30,11 +29,11 @@ var _ = Describe("Raft Tests", func() {
 	})
 
 	It("Append to Non-Leader", func() {
-		entry := storage.Entry{
+		entry := common.Entry{
 			Data:      []byte("Non-Leader Append"),
 			Timestamp: time.Now(),
 		}
-		ix, err := getNonLeader().Propose(entry)
+		ix, err := getNonLeader().Propose(&entry)
 		Expect(err).Should(Succeed())
 		waitForApply(ix, 3)
 	})
@@ -50,11 +49,11 @@ var _ = Describe("Raft Tests", func() {
 		Expect(err).Should(Succeed())
 		waitForApply(ix, 3)
 
-		entry := storage.Entry{
+		entry := common.Entry{
 			Data:      []byte("FailMe"),
 			Timestamp: time.Now(),
 		}
-		ix, err = getLeader().Propose(entry)
+		ix, err = getLeader().Propose(&entry)
 		Expect(err).ShouldNot(Succeed())
 		waitForApply(ix, 3)
 
@@ -140,7 +139,7 @@ var _ = Describe("Raft Tests", func() {
 	})
 })
 
-func stopOneNode(stopID int) (communication.NodeID, string, int) {
+func stopOneNode(stopID int) (common.NodeID, string, int) {
 	savedID := testRafts[stopID].id
 	savedPath := testRafts[stopID].stor.GetDataPath()
 	_, savedPortStr, _ := net.SplitHostPort(testListener[stopID].Addr().String())
@@ -174,11 +173,11 @@ func appendAndVerify(msg string, expectedCount int) uint64 {
 	leader := getLeader()
 	Expect(leader).ShouldNot(BeNil())
 	lastIndex, _ := leader.GetLastIndex()
-	newEntry := storage.Entry{
+	newEntry := common.Entry{
 		Data:      data,
 		Timestamp: time.Now(),
 	}
-	index, err := leader.Propose(newEntry)
+	index, err := leader.Propose(&newEntry)
 	Expect(err).Should(Succeed())
 	Expect(index).Should(Equal(lastIndex + 1))
 	fmt.Fprintf(GinkgoWriter, "Wrote data at index %d\n", lastIndex+1)

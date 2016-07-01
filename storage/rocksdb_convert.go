@@ -12,6 +12,8 @@ import (
 	"errors"
 	"fmt"
 	"unsafe"
+
+	"github.com/30x/changeagent/common"
 )
 
 /* These have to match constants in leveldb_native.h */
@@ -112,21 +114,17 @@ func keyToString(ptr unsafe.Pointer, len C.size_t) (int, string, error) {
 /*
  * Given an entire entry, format the data into an entire record.
  */
-func entryToPtr(entry *Entry) (unsafe.Pointer, C.size_t) {
-	marsh, err := EncodeEntry(entry)
-	if err != nil {
-		panic(err.Error())
-	}
+func entryToPtr(entry *common.Entry) (unsafe.Pointer, C.size_t) {
+	marsh := entry.Encode()
 	pfx := keyPrefix(EntryValue)
 	bytes := append(pfx, marsh...)
-
 	return bytesToPtr(bytes)
 }
 
 /*
  * Given a pointer to an entry record, return the actual Entry
  */
-func ptrToEntry(ptr unsafe.Pointer, len C.size_t) (*Entry, error) {
+func ptrToEntry(ptr unsafe.Pointer, len C.size_t) (*common.Entry, error) {
 	if len < 0 {
 		return nil, errors.New("Invalid entry: invalid")
 	}
@@ -140,7 +138,7 @@ func ptrToEntry(ptr unsafe.Pointer, len C.size_t) (*Entry, error) {
 		return nil, fmt.Errorf("Invalid entry type %d", kt)
 	}
 
-	return DecodeEntry(bytes[1:])
+	return common.DecodeEntry(bytes[1:])
 }
 
 func freeString(c *C.char) {

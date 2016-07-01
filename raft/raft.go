@@ -1,8 +1,6 @@
 package raft
 
-import (
-	"github.com/30x/changeagent/storage"
-)
+import "github.com/30x/changeagent/common"
 
 /*
 A StateMachine is an interface that is notified whenever a new change is committed
@@ -12,5 +10,5 @@ Users of this module may implement this interface so that they can take action
 when a change is committed. For instance, they can update a database.
 */
 type StateMachine interface {
-	Commit(entry *storage.Entry) error
+	Commit(entry *common.Entry) error
 }

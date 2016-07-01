@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/30x/changeagent/common"
 	"github.com/30x/changeagent/communication"
 	"github.com/30x/changeagent/hooks"
 	"github.com/30x/changeagent/storage"
@@ -85,7 +86,7 @@ It relies on the Storage, Discovery, and Communication services to do
 its work, and invokes the StateMachine when changes are committed.
 */
 type Service struct {
-	id                   communication.NodeID
+	id                   common.NodeID
 	clusterID            uint64
 	localAddress         atomic.Value
 	state                int32
@@ -118,7 +119,7 @@ ProtocolStatus returns some of the diagnostic information from the raft engine.
 type ProtocolStatus struct {
 	// If this node is the leader, a map of the indices of each peer.
 	// Otherwise nil.
-	PeerIndices *map[communication.NodeID]uint64
+	PeerIndices *map[common.NodeID]uint64
 }
 
 type voteCommand struct {
@@ -137,7 +138,7 @@ type proposalResult struct {
 }
 
 type proposalCommand struct {
-	entry storage.Entry
+	entry common.Entry
 	rc    chan proposalResult
 }
 
@@ -211,7 +212,7 @@ func StartRaft(
 	return r, nil
 }
 
-func (r *Service) loadNodeID(key string, stor storage.Storage, create bool) (communication.NodeID, error) {
+func (r *Service) loadNodeID(key string, stor storage.Storage, create bool) (common.NodeID, error) {
 	id, err := stor.GetUintMetadata(key)
 	if err != nil {
 		return 0, err
@@ -224,7 +225,7 @@ func (r *Service) loadNodeID(key string, stor storage.Storage, create bool) (com
 			return 0, err
 		}
 	}
-	return communication.NodeID(id), nil
+	return common.NodeID(id), nil
 }
 
 func (r *Service) loadCurrentConfig(stor storage.Storage) error {
@@ -348,14 +349,14 @@ Propose is called by anyone who wants to propose a new change. It will return
 with the change number of the new change. However, that change number will
 not necessarily have been committed yet.
 */
-func (r *Service) Propose(e storage.Entry) (uint64, error) {
+func (r *Service) Propose(e *common.Entry) (uint64, error) {
 	if r.GetState() == Stopping || r.GetState() == Stopped {
 		return 0, errors.New("Raft is stopped")
 	}
 
 	rc := make(chan proposalResult, 1)
 	cmd := proposalCommand{
-		entry: e,
+		entry: *e,
 		rc:    rc,
 	}
 
@@ -370,7 +371,7 @@ func (r *Service) Propose(e storage.Entry) (uint64, error) {
 /*
 MyID returns the unique ID of this Raft node.
 */
-func (r *Service) MyID() communication.NodeID {
+func (r *Service) MyID() common.NodeID {
 	return r.id
 }
 
@@ -392,7 +393,7 @@ func (r *Service) setState(newState State) {
 GetLeaderID returns the unique ID of the leader node, or zero if there is
 currently no known leader.
 */
-func (r *Service) GetLeaderID() communication.NodeID {
+func (r *Service) GetLeaderID() common.NodeID {
 	leader := r.getLeader()
 	if leader == nil {
 		return 0
@@ -413,7 +414,7 @@ func (r *Service) setLeader(newLeader *Node) {
 	r.leader.Store(newLeader)
 }
 
-func (r *Service) getNode(id communication.NodeID) *Node {
+func (r *Service) getNode(id common.NodeID) *Node {
 	cfg := r.GetNodeConfig()
 	if cfg == nil {
 		return nil
@@ -426,11 +427,11 @@ GetClusterID returns the unique identifier of the cluster where this instance
 of the service runs. If the node is not in a cluster, then the cluster ID
 will be zero.
 */
-func (r *Service) GetClusterID() communication.NodeID {
-	return communication.NodeID(atomic.LoadUint64(&r.clusterID))
+func (r *Service) GetClusterID() common.NodeID {
+	return common.NodeID(atomic.LoadUint64(&r.clusterID))
 }
 
-func (r *Service) setClusterID(id communication.NodeID) {
+func (r *Service) setClusterID(id common.NodeID) {
 	atomic.StoreUint64(&r.clusterID, uint64(id))
 }
 
@@ -528,7 +529,7 @@ func (r *Service) setLastApplied(t uint64) {
 	r.appliedTracker.Update(t)
 }
 
-func (r *Service) applyWebHookChange(entry *storage.Entry) {
+func (r *Service) applyWebHookChange(entry *common.Entry) {
 	hooks, err := hooks.DecodeHooksJSON(entry.Data)
 	if err != nil {
 		glog.Errorf("Error receiving web hook change data")
@@ -593,12 +594,12 @@ new change -- if any one of the hooks fails, the leader will not make the change
 func (r *Service) UpdateWebHooks(webHooks []hooks.WebHook) (uint64, error) {
 	glog.V(2).Infof("Starting update to %d web hooks", len(webHooks))
 	json := hooks.EncodeHooksJSON(webHooks)
-	entry := storage.Entry{
+	entry := common.Entry{
 		Type:      WebHookChange,
 		Timestamp: time.Now(),
 		Data:      json,
 	}
-	return r.Propose(entry)
+	return r.Propose(&entry)
 }
 
 /*
@@ -662,15 +663,15 @@ func (r *Service) writeCurrentTerm(ct uint64) {
 	}
 }
 
-func (r *Service) readLastVote() communication.NodeID {
+func (r *Service) readLastVote() common.NodeID {
 	ct, err := r.stor.GetUintMetadata(VotedForKey)
 	if err != nil {
 		panic("Fatal error reading state from database")
 	}
-	return communication.NodeID(ct)
+	return common.NodeID(ct)
 }
 
-func (r *Service) writeLastVote(ct communication.NodeID) {
+func (r *Service) writeLastVote(ct common.NodeID) {
 	err := r.stor.SetUintMetadata(VotedForKey, uint64(ct))
 	if err != nil {
 		panic("Fatal error writing state to database")

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/30x/changeagent/common"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )
@@ -87,7 +88,7 @@ func fillRecords(s Storage, startIndex uint64, count int, rt time.Time) {
 	ix := startIndex
 	for i := 0; i < count; i++ {
 		//fmt.Fprintf(GinkgoWriter, "Inserting %d\n", ix)
-		e := Entry{
+		e := common.Entry{
 			Index:     ix,
 			Timestamp: rt,
 			Data:      []byte("Truncation test"),
