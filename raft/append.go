@@ -141,13 +141,6 @@ func (r *Service) appendEntries(entries []storage.Entry) error {
 		}
 	}
 
-	// Note: What happens if we just deleted the most recent version of the config? Should we backtrack
-	// to the version before that?
-	// The only reason that would happen is if a new leader was elected before consensus was reached.
-	// If that is the case, then the new leader should re-publish the new new config once it has
-	// realized from the discovery service that things have changed. So that should take care of this.
-	// But we'll have to test it.
-
 	var configChange *storage.Entry
 
 	for i, e := range entries {

@@ -82,9 +82,11 @@ var _ = BeforeSuite(func() {
 
 	err = raft1.AddNode(addrs[1])
 	Expect(err).Should(Succeed())
+	assertOneLeader()
 
 	err = raft1.AddNode(addrs[2])
 	Expect(err).Should(Succeed())
+	assertOneLeader()
 })
 
 func startListener() (*net.TCPListener, string) {

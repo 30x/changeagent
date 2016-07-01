@@ -11,7 +11,7 @@ import (
 
 var _ = Describe("Simple Benchmarks", func() {
 	Measure("Appends", func(b Benchmarker) {
-		waitForLeader()
+		assertOneLeader()
 		leader := getLeader()
 		Expect(leader).ShouldNot(BeNil())
 

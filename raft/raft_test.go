@@ -76,7 +76,7 @@ var _ = Describe("Raft Tests", func() {
 			}
 		}
 
-		fmt.Fprintf(GinkgoWriter, "Stopping leader node %d\n", testRafts[leaderIndex].id)
+		fmt.Fprintf(GinkgoWriter, "Stopping leader node %s\n", testRafts[leaderIndex].id)
 		savedID, savedPath, savedPort := stopOneNode(leaderIndex)
 		time.Sleep(time.Second)
 
@@ -124,7 +124,7 @@ var _ = Describe("Raft Tests", func() {
 	It("Add Node", func() {
 		appendAndVerify("Before leadership change", 3)
 
-		listener, _ := startListener()
+		listener, addr := startListener()
 		newRaft, err := startRaft(listener, path.Join(DataDir, "test4"))
 		Expect(err).Should(Succeed())
 		testListener = append(testListener, listener)
@@ -132,7 +132,8 @@ var _ = Describe("Raft Tests", func() {
 
 		time.Sleep(time.Second)
 		fmt.Fprintf(GinkgoWriter, "Adding new configuration for node 4\n")
-		//testDiscovery.AddNode(addr)
+		err = getLeader().AddNode(addr)
+		Expect(err).Should(Succeed())
 		time.Sleep(time.Second)
 		assertOneLeader()
 		appendAndVerify("New leader elected. Yay!", 4)
@@ -164,22 +165,8 @@ func restartOneNode(ix int, savedPath string, savedPort int) error {
 	return nil
 }
 
-func waitForLeader() int {
-	time.Sleep(time.Second)
-	for i := 0; i < 40; i++ {
-		_, leaders := countRafts()
-		if leaders == 0 {
-			time.Sleep(time.Second)
-		} else {
-			return leaders
-		}
-	}
-	return 0
-}
-
 func assertOneLeader() {
-	leaders := waitForLeader()
-	Expect(leaders).Should(Equal(1))
+	Eventually(countLeaders(), testTimeout, pollInterval).Should(Equal(1))
 }
 
 func appendAndVerify(msg string, expectedCount int) uint64 {
@@ -218,7 +205,7 @@ func countRafts() (int, int) {
 
 	for _, r := range testRafts {
 		switch r.GetState() {
-		case Follower:
+		case Follower, Standalone:
 			followers++
 		case Leader:
 			leaders++
@@ -226,6 +213,11 @@ func countRafts() (int, int) {
 	}
 
 	return followers, leaders
+}
+
+func countLeaders() int {
+	_, leaders := countRafts()
+	return leaders
 }
 
 func getLeader() *Service {

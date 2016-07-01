@@ -26,13 +26,12 @@ type peerMatchResult struct {
 }
 
 type raftState struct {
-	votedFor           communication.NodeID
-	voteIndex          uint64 // Keep track of the voting channel in case something takes a long time
-	voteResults        chan voteResult
-	peers              map[communication.NodeID]*raftPeer
-	peerMatches        map[communication.NodeID]uint64
-	peerMatchChanges   chan peerMatchResult
-	configChangeCommit uint64
+	votedFor         communication.NodeID
+	voteIndex        uint64 // Keep track of the voting channel in case something takes a long time
+	voteResults      chan voteResult
+	peers            map[communication.NodeID]*raftPeer
+	peerMatches      map[communication.NodeID]uint64
+	peerMatchChanges chan peerMatchResult
 }
 
 func (r *Service) mainLoop() {
@@ -159,7 +158,7 @@ func (r *Service) followerLoop(isCandidate bool, state *raftState) chan bool {
 			}
 
 		case <-r.configChanges:
-			glog.Info("Follower ignoring a request to process a configuration change")
+			glog.V(2).Info("Follower ignoring a request to process a configuration change")
 
 		case si := <-r.statusInquiries:
 			returnStatus(si, state, false)
