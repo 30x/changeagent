@@ -2,20 +2,21 @@ package communication;
 
 message VoteRequestPb {
   required uint64 term = 1;
-  required uint64 candidateId = 2;
+  required fixed64 candidateId = 2;
   required uint64 lastLogIndex = 3;
   required uint64 lastLogTerm = 4;
+  required fixed64 clusterId = 5;
 }
 
 message VoteResponsePb {
-  required uint64 nodeId = 1;
+  required fixed64 nodeId = 1;
   required uint64 term = 2;
   required bool voteGranted = 3;
 }
 
 message AppendRequestPb {
   required uint64 term = 1;
-  required uint64 leaderId = 2;
+  required fixed64 leaderId = 2;
   required uint64 prevLogIndex = 3;
   required uint64 prevLogTerm = 4;
   required uint64 leaderCommit = 5;
@@ -33,5 +34,5 @@ message ProposalResponsePb {
 }
 
 message DiscoveryResponsePb {
-  required uint64 nodeId = 1;
+  required fixed64 nodeId = 1;
 }

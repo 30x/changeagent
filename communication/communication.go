@@ -32,6 +32,7 @@ type VoteRequest struct {
 	CandidateID  NodeID
 	LastLogIndex uint64
 	LastLogTerm  uint64
+	ClusterID    NodeID
 }
 
 /*

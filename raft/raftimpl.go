@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/30x/changeagent/communication"
-	"github.com/30x/changeagent/discovery"
 	"github.com/30x/changeagent/hooks"
 	"github.com/30x/changeagent/storage"
 	"github.com/golang/glog"
@@ -25,6 +24,7 @@ const (
 	CurrentTermKey = "currentTerm"
 	VotedForKey    = "votedFor"
 	LocalIDKey     = "localID"
+	ClusterIDKey   = "clusterID"
 	LastAppliedKey = "lastApplied"
 	NodeConfig     = "nodeConfig"
 	WebHooks       = "webHooks"
@@ -60,6 +60,7 @@ const (
 	Follower State = iota
 	Candidate
 	Leader
+	Standalone
 	Stopping
 	Stopped
 )
@@ -84,44 +85,40 @@ It relies on the Storage, Discovery, and Communication services to do
 its work, and invokes the StateMachine when changes are committed.
 */
 type Service struct {
-	id                  communication.NodeID
-	localAddress        atomic.Value
-	state               int32
-	leaderID            uint64
-	comm                communication.Communication
-	disco               discovery.Discovery
-	nodeDisco           *nodeDiscovery
-	nodeConfig          atomic.Value
-	configChanges       <-chan bool
-	stor                storage.Storage
-	stopChan            chan chan bool
-	voteCommands        chan voteCommand
-	appendCommands      chan appendCommand
-	proposals           chan proposalCommand
-	statusInquiries     chan chan<- ProtocolStatus
-	discoveredNodes     map[communication.NodeID]string
-	discoveredAddresses map[string]communication.NodeID
-	latch               sync.Mutex
-	followerOnly        bool
-	currentTerm         uint64
-	commitIndex         uint64
-	lastApplied         uint64
-	lastIndex           uint64
-	lastTerm            uint64
-	appliedTracker      *ChangeTracker
-	stateMachine        StateMachine
-	webHooks            atomic.Value
+	id                   communication.NodeID
+	clusterID            uint64
+	localAddress         atomic.Value
+	state                int32
+	leader               atomic.Value
+	comm                 communication.Communication
+	nodeConfig           atomic.Value
+	stor                 storage.Storage
+	stopChan             chan chan bool
+	voteCommands         chan voteCommand
+	appendCommands       chan appendCommand
+	proposals            chan proposalCommand
+	statusInquiries      chan chan<- ProtocolStatus
+	configChanges        chan bool
+	latch                sync.Mutex
+	followerOnly         bool
+	currentTerm          uint64
+	commitIndex          uint64
+	lastApplied          uint64
+	lastIndex            uint64
+	lastTerm             uint64
+	membershipChangeMode int32
+	appliedTracker       *ChangeTracker
+	stateMachine         StateMachine
+	webHooks             atomic.Value
 }
 
 /*
 ProtocolStatus returns some of the diagnostic information from the raft engine.
 */
 type ProtocolStatus struct {
-	// Status of the membership change process
-	ChangeMode MembershipChangeMode
 	// If this node is the leader, a map of the indices of each peer.
 	// Otherwise nil.
-	PeerIndices *map[string]uint64
+	PeerIndices *map[communication.NodeID]uint64
 }
 
 type voteCommand struct {
@@ -152,47 +149,46 @@ StartRaft starts an instance of the raft implementation running.
 It will start at least one goroutine for its implementation of the protocol,
 and others to communicate with other nodes.
 */
-func StartRaft(comm communication.Communication,
-	disco discovery.Discovery,
+func StartRaft(
+	comm communication.Communication,
 	stor storage.Storage,
 	state StateMachine) (*Service, error) {
 	r := &Service{
-		state:               int32(Follower),
-		comm:                comm,
-		localAddress:        atomic.Value{},
-		nodeConfig:          atomic.Value{},
-		stor:                stor,
-		disco:               disco,
-		stopChan:            make(chan chan bool, 1),
-		voteCommands:        make(chan voteCommand, 1),
-		appendCommands:      make(chan appendCommand, 1),
-		statusInquiries:     make(chan chan<- ProtocolStatus, 1),
-		proposals:           make(chan proposalCommand, 100),
-		discoveredNodes:     make(map[communication.NodeID]string),
-		discoveredAddresses: make(map[string]communication.NodeID),
-		latch:               sync.Mutex{},
-		followerOnly:        false,
-		appliedTracker:      CreateTracker(),
-		stateMachine:        state,
-		webHooks:            atomic.Value{},
+		state:                int32(Follower),
+		comm:                 comm,
+		leader:               atomic.Value{},
+		localAddress:         atomic.Value{},
+		nodeConfig:           atomic.Value{},
+		stor:                 stor,
+		stopChan:             make(chan chan bool, 1),
+		voteCommands:         make(chan voteCommand, 1),
+		appendCommands:       make(chan appendCommand, 1),
+		statusInquiries:      make(chan chan<- ProtocolStatus, 1),
+		proposals:            make(chan proposalCommand, 100),
+		configChanges:        make(chan bool, 1),
+		latch:                sync.Mutex{},
+		followerOnly:         false,
+		appliedTracker:       CreateTracker(),
+		stateMachine:         state,
+		membershipChangeMode: int32(Stable),
+		webHooks:             atomic.Value{},
 	}
 
-	nodeID, err := stor.GetUintMetadata(LocalIDKey)
+	var err error
+
+	r.id, err = r.loadNodeID(LocalIDKey, stor, true)
 	if err != nil {
 		return nil, err
 	}
-	if nodeID == 0 {
-		// Generate a random node ID
-		nodeID = uint64(randomInt64())
-		err = stor.SetUintMetadata(LocalIDKey, nodeID)
-		if err != nil {
-			return nil, err
-		}
+	clusterID, err := r.loadNodeID(ClusterIDKey, stor, false)
+	if err != nil {
+		return nil, err
 	}
-	r.id = communication.NodeID(nodeID)
-	glog.Infof("Node %s starting", r.id)
+	r.setClusterID(clusterID)
 
-	err = r.loadCurrentConfig(disco, stor)
+	glog.Infof("Node %s starting in cluster %s", r.id, clusterID)
+
+	err = r.loadCurrentConfig(stor)
 	if err != nil {
 		return nil, err
 	}
@@ -210,43 +206,42 @@ func StartRaft(comm communication.Communication,
 	r.commitIndex = r.readLastCommit()
 	r.lastApplied = r.readLastApplied()
 
-	if len(disco.GetCurrentConfig().Current.New) == 1 {
-		glog.Info("Only one node. Starting in leader mode.\n")
-		r.state = int32(Leader)
-	}
-
-	r.configChanges = disco.Watch()
-
-	r.nodeDisco = startNodeDiscovery(disco, comm, r)
-
 	go r.mainLoop()
 
 	return r, nil
 }
 
-func (r *Service) loadCurrentConfig(disco discovery.Discovery, stor storage.Storage) error {
+func (r *Service) loadNodeID(key string, stor storage.Storage, create bool) (communication.NodeID, error) {
+	id, err := stor.GetUintMetadata(key)
+	if err != nil {
+		return 0, err
+	}
+	if id == 0 && create {
+		// Generate a random node ID
+		id = uint64(randomInt64())
+		err = stor.SetUintMetadata(key, id)
+		if err != nil {
+			return 0, err
+		}
+	}
+	return communication.NodeID(id), nil
+}
+
+func (r *Service) loadCurrentConfig(stor storage.Storage) error {
 	buf, err := stor.GetMetadata(NodeConfig)
 	if err != nil {
 		return err
 	}
 
-	if buf == nil || disco.IsStandalone() {
-		glog.Info("Loading node configuration for the first time")
-		cfg := disco.GetCurrentConfig()
-		var storBuf []byte
-		storBuf, err = discovery.EncodeConfig(cfg)
-		if err != nil {
-			return err
-		}
-		err = stor.SetMetadata(NodeConfig, storBuf)
-		if err != nil {
-			return err
-		}
-		r.nodeConfig.Store(cfg)
+	if buf == nil {
+		glog.Info("No configuration detected: starting in standalone mode")
+		r.setState(Standalone)
+		emptyCfg := NodeList{}
+		r.nodeConfig.Store(&emptyCfg)
 		return nil
 	}
 
-	cfg, err := discovery.DecodeConfig(buf)
+	cfg, err := decodeNodeList(buf)
 	if err != nil {
 		return err
 	}
@@ -284,7 +279,6 @@ func (r *Service) Close() {
 		<-done
 	}
 	r.appliedTracker.Close()
-	r.nodeDisco.stop()
 }
 
 func (r *Service) cleanup() {
@@ -389,7 +383,7 @@ func (r *Service) GetState() State {
 }
 
 func (r *Service) setState(newState State) {
-	glog.V(2).Infof("Node %s: setting state to %d", r.id, newState)
+	glog.V(2).Infof("Node %s: setting state to %s", r.id, newState)
 	ns := int32(newState)
 	atomic.StoreInt32(&r.state, ns)
 }
@@ -399,16 +393,57 @@ GetLeaderID returns the unique ID of the leader node, or zero if there is
 currently no known leader.
 */
 func (r *Service) GetLeaderID() communication.NodeID {
-	return communication.NodeID(atomic.LoadUint64(&r.leaderID))
+	leader := r.getLeader()
+	if leader == nil {
+		return 0
+	}
+	return leader.NodeID
 }
 
-func (r *Service) setLeaderID(newID communication.NodeID) {
-	if newID == 0 {
+func (r *Service) getLeader() *Node {
+	return r.leader.Load().(*Node)
+}
+
+func (r *Service) setLeader(newLeader *Node) {
+	if newLeader == nil {
 		glog.V(2).Infof("Node %s: No leader present", r.id)
 	} else {
-		glog.V(2).Infof("Node %s: Node %d is now the leader", r.id, newID)
+		glog.V(2).Infof("Node %s: Node %d is now the leader", r.id, newLeader.NodeID)
 	}
-	atomic.StoreUint64(&r.leaderID, uint64(newID))
+	r.leader.Store(newLeader)
+}
+
+func (r *Service) getNode(id communication.NodeID) *Node {
+	cfg := r.GetNodeConfig()
+	if cfg == nil {
+		return nil
+	}
+	return cfg.getNode(id)
+}
+
+/*
+GetClusterID returns the unique identifier of the cluster where this instance
+of the service runs. If the node is not in a cluster, then the cluster ID
+will be zero.
+*/
+func (r *Service) GetClusterID() communication.NodeID {
+	return communication.NodeID(atomic.LoadUint64(&r.clusterID))
+}
+
+func (r *Service) setClusterID(id communication.NodeID) {
+	atomic.StoreUint64(&r.clusterID, uint64(id))
+}
+
+/*
+GetMembershipChangeMode gives us the status of the current process of
+changing cluster membership.
+*/
+func (r *Service) GetMembershipChangeMode() MembershipChangeMode {
+	return MembershipChangeMode(atomic.LoadInt32(&r.membershipChangeMode))
+}
+
+func (r *Service) setMembershipChangeMode(mode MembershipChangeMode) {
+	atomic.StoreInt32(&r.membershipChangeMode, int32(mode))
 }
 
 /*
@@ -469,6 +504,9 @@ func (r *Service) setLastApplied(t uint64) {
 	switch t := entry.Type; {
 	case t == WebHookChange:
 		r.applyWebHookChange(entry)
+
+	case t == MembershipChange:
+		r.applyMembershipChange(entry)
 
 	case t >= 0:
 		// Only pass positive (or zero) entry types to the state machine.
@@ -568,43 +606,18 @@ GetNodeConfig returns the current configuration of this raft node, which means
 the configuration that is currently running (as oppopsed to what
 has been proposed.
 */
-func (r *Service) GetNodeConfig() *discovery.NodeConfig {
-	return r.nodeConfig.Load().(*discovery.NodeConfig)
+func (r *Service) GetNodeConfig() *NodeList {
+	return r.nodeConfig.Load().(*NodeList)
 }
 
-func (r *Service) setNodeConfig(newCfg *discovery.NodeConfig) error {
-	encoded, err := discovery.EncodeConfig(newCfg)
-	if err != nil {
-		return err
-	}
-	err = r.stor.SetMetadata(NodeConfig, encoded)
+func (r *Service) setNodeConfig(newCfg *NodeList) error {
+	encoded := newCfg.encode()
+	err := r.stor.SetMetadata(NodeConfig, encoded)
 	if err != nil {
 		return err
 	}
 	r.nodeConfig.Store(newCfg)
 	return nil
-}
-
-func (r *Service) addDiscoveredNode(id communication.NodeID, addr string) {
-	r.latch.Lock()
-	r.discoveredNodes[id] = addr
-	r.discoveredAddresses[addr] = id
-	r.latch.Unlock()
-	if id == r.id {
-		r.localAddress.Store(&addr)
-	}
-}
-
-func (r *Service) getNodeAddress(id communication.NodeID) string {
-	r.latch.Lock()
-	defer r.latch.Unlock()
-	return r.discoveredNodes[id]
-}
-
-func (r *Service) getNodeID(address string) communication.NodeID {
-	r.latch.Lock()
-	defer r.latch.Unlock()
-	return r.discoveredAddresses[address]
 }
 
 func (r *Service) getLocalAddress() string {

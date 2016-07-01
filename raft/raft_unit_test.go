@@ -3,9 +3,9 @@ package raft
 import (
 	"errors"
 	"fmt"
+	"strconv"
 
 	"github.com/30x/changeagent/communication"
-	"github.com/30x/changeagent/discovery"
 	"github.com/30x/changeagent/storage"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -314,42 +314,36 @@ var _ = Describe("Raft Unit Tests", func() {
 	 */
 
 	It("No Commit Too Old", func() {
-		cur := discovery.NodeList{
-			New: []string{"nodeSelf", "node1", "node2", "node3", "node4"},
+		cfg := NodeList{
+			Current: makeNodeList([]uint64{1, 2, 3, 4, 5}),
 		}
-		cfg := &discovery.NodeConfig{
-			Current: &cur,
-		}
-		matches := map[string]uint64{
-			"node1": 0,
-			"node2": 0,
-			"node3": 0,
-			"node4": 0,
+		matches := map[communication.NodeID]uint64{
+			2: 0,
+			3: 0,
+			4: 0,
+			5: 0,
 		}
 		state := &raftState{
 			peerMatches: matches,
 		}
-		newIndex := unitTestRaft.calculateCommitIndex(state, cfg)
+		newIndex := unitTestRaft.calculateCommitIndex(state, &cfg)
 		Expect(newIndex).Should(BeEquivalentTo(unitTestRaft.GetCommitIndex()))
 	})
 
 	It("No commit No Consensus", func() {
-		cur := discovery.NodeList{
-			New: []string{"nodeSelf", "node1", "node2", "node3", "node4"},
+		cfg := NodeList{
+			Current: makeNodeList([]uint64{1, 2, 3, 4, 5}),
 		}
-		cfg := &discovery.NodeConfig{
-			Current: &cur,
-		}
-		matches := map[string]uint64{
-			"node1": lastIndex,
-			"node2": 1,
-			"node3": 1,
-			"node4": 1,
+		matches := map[communication.NodeID]uint64{
+			2: lastIndex,
+			3: 1,
+			4: 1,
+			5: 1,
 		}
 		state := &raftState{
 			peerMatches: matches,
 		}
-		newIndex := unitTestRaft.calculateCommitIndex(state, cfg)
+		newIndex := unitTestRaft.calculateCommitIndex(state, &cfg)
 		Expect(newIndex).Should(BeEquivalentTo(unitTestRaft.GetCommitIndex()))
 	})
 
@@ -358,22 +352,19 @@ var _ = Describe("Raft Unit Tests", func() {
 		defer unitTestRaft.setCommitIndex(oldIndex)
 		unitTestRaft.setCommitIndex(lastIndex - 2)
 
-		cur := discovery.NodeList{
-			New: []string{"nodeSelf", "node1", "node2", "node3", "node4"},
+		cfg := NodeList{
+			Current: makeNodeList([]uint64{1, 2, 3, 4, 5}),
 		}
-		cfg := &discovery.NodeConfig{
-			Current: &cur,
-		}
-		matches := map[string]uint64{
-			"node1": lastIndex,
-			"node2": lastIndex,
-			"node3": lastIndex,
-			"node4": 1,
+		matches := map[communication.NodeID]uint64{
+			2: lastIndex,
+			3: lastIndex,
+			4: lastIndex,
+			5: 1,
 		}
 		state := &raftState{
 			peerMatches: matches,
 		}
-		newIndex := unitTestRaft.calculateCommitIndex(state, cfg)
+		newIndex := unitTestRaft.calculateCommitIndex(state, &cfg)
 		Expect(newIndex).Should(BeEquivalentTo(lastIndex))
 	})
 
@@ -382,21 +373,18 @@ var _ = Describe("Raft Unit Tests", func() {
 		defer unitTestRaft.setCommitIndex(oldIndex)
 		unitTestRaft.setCommitIndex(lastIndex - 2)
 
-		cur := discovery.NodeList{
-			New: []string{"nodeSelf", "node1", "node2", "node3"},
+		cfg := NodeList{
+			Current: makeNodeList([]uint64{1, 2, 3, 4}),
 		}
-		cfg := &discovery.NodeConfig{
-			Current: &cur,
-		}
-		matches := map[string]uint64{
-			"node1": lastIndex - 2,
-			"node2": lastIndex - 1,
-			"node3": lastIndex,
+		matches := map[communication.NodeID]uint64{
+			2: lastIndex - 2,
+			3: lastIndex - 1,
+			4: lastIndex,
 		}
 		state := &raftState{
 			peerMatches: matches,
 		}
-		newIndex := unitTestRaft.calculateCommitIndex(state, cfg)
+		newIndex := unitTestRaft.calculateCommitIndex(state, &cfg)
 		Expect(newIndex).Should(BeEquivalentTo(lastIndex - 2))
 	})
 
@@ -405,22 +393,19 @@ var _ = Describe("Raft Unit Tests", func() {
 		defer unitTestRaft.setCommitIndex(oldIndex)
 		unitTestRaft.setCommitIndex(lastIndex - 2)
 
-		cur := discovery.NodeList{
-			New: []string{"nodeSelf", "node1", "node2", "node3", "node4"},
+		cfg := NodeList{
+			Current: makeNodeList([]uint64{1, 2, 3, 4, 5}),
 		}
-		cfg := &discovery.NodeConfig{
-			Current: &cur,
-		}
-		matches := map[string]uint64{
-			"node1": 1,
-			"node2": lastIndex,
-			"node3": lastIndex - 1,
-			"node4": lastIndex - 1,
+		matches := map[communication.NodeID]uint64{
+			2: 1,
+			3: lastIndex,
+			4: lastIndex - 1,
+			5: lastIndex - 1,
 		}
 		state := &raftState{
 			peerMatches: matches,
 		}
-		newIndex := unitTestRaft.calculateCommitIndex(state, cfg)
+		newIndex := unitTestRaft.calculateCommitIndex(state, &cfg)
 		Expect(newIndex).Should(BeEquivalentTo(lastIndex - 1))
 	})
 
@@ -429,28 +414,25 @@ var _ = Describe("Raft Unit Tests", func() {
 		defer unitTestRaft.setCommitIndex(oldIndex)
 		unitTestRaft.setCommitIndex(lastIndex - 2)
 
-		cur := discovery.NodeList{
-			New: []string{"nodeSelf", "node1", "node2", "node3", "node4", "node5"},
-			Old: []string{"nodeSelf", "node1", "node2"},
-		}
-		cfg := &discovery.NodeConfig{
-			Current: &cur,
+		cfg := NodeList{
+			Current: makeNodeList([]uint64{1, 2, 3, 4, 5, 6}),
+			Next:    makeNodeList([]uint64{1, 2, 3}),
 		}
 
 		li, _ := unitTestRaft.GetLastIndex()
 		fmt.Fprintf(GinkgoWriter, "Joint consensus. lastIndex = %d last applied = %d\n",
 			lastIndex, li)
-		matches := map[string]uint64{
-			"node1": lastIndex - 2,
-			"node2": lastIndex,
-			"node3": lastIndex - 1,
-			"node4": lastIndex - 1,
-			"node5": lastIndex - 1,
+		matches := map[communication.NodeID]uint64{
+			2: lastIndex - 2,
+			3: lastIndex,
+			4: lastIndex - 1,
+			5: lastIndex - 1,
+			6: lastIndex - 1,
 		}
 		state := &raftState{
 			peerMatches: matches,
 		}
-		newIndex := unitTestRaft.calculateCommitIndex(state, cfg)
+		newIndex := unitTestRaft.calculateCommitIndex(state, &cfg)
 		fmt.Fprintf(GinkgoWriter, "Joint consensus. result = %d\n", newIndex)
 		Expect(newIndex).Should(BeEquivalentTo(lastIndex - 2))
 	})
@@ -460,24 +442,21 @@ var _ = Describe("Raft Unit Tests", func() {
 		defer unitTestRaft.setCommitIndex(oldIndex)
 		unitTestRaft.setCommitIndex(lastIndex - 2)
 
-		cur := discovery.NodeList{
-			New: []string{"nodeSelf", "node1", "node2", "node3", "node4", "node5"},
-			Old: []string{"nodeSelf", "node1", "node2"},
+		cfg := NodeList{
+			Current: makeNodeList([]uint64{1, 2, 3, 4, 5, 6}),
+			Next:    makeNodeList([]uint64{1, 2, 3}),
 		}
-		cfg := &discovery.NodeConfig{
-			Current: &cur,
-		}
-		matches := map[string]uint64{
-			"node1": 1,
-			"node2": lastIndex,
-			"node3": lastIndex,
-			"node4": lastIndex,
-			"node5": lastIndex - 1,
+		matches := map[communication.NodeID]uint64{
+			2: 1,
+			3: lastIndex,
+			4: lastIndex,
+			5: lastIndex,
+			6: lastIndex - 1,
 		}
 		state := &raftState{
 			peerMatches: matches,
 		}
-		newIndex := unitTestRaft.calculateCommitIndex(state, cfg)
+		newIndex := unitTestRaft.calculateCommitIndex(state, &cfg)
 		Expect(newIndex).Should(BeEquivalentTo(lastIndex - 2))
 	})
 
@@ -486,49 +465,43 @@ var _ = Describe("Raft Unit Tests", func() {
 	 */
 
 	It("Vote several nodes", func() {
-		cur := discovery.NodeList{
-			New: []string{unitTestAddr, "node1", "node2"},
-		}
-		cfg := &discovery.NodeConfig{
-			Current: &cur,
+		cfg := &NodeList{
+			Current: makeNodeList([]uint64{uint64(unitTestID), 2, 3}),
 		}
 
 		// Majority of nodes, plus ourselves, voted yes.
 		responses := []communication.VoteResponse{
-			{NodeAddress: "node1", VoteGranted: true},
-			{NodeAddress: "node2", VoteGranted: true},
+			{NodeID: 2, VoteGranted: true},
+			{NodeID: 3, VoteGranted: true},
 		}
 		granted := unitTestRaft.countVotes(responses, cfg)
 		Expect(granted).Should(BeTrue())
 
 		responses = []communication.VoteResponse{
-			{NodeAddress: "node1", VoteGranted: true},
-			{NodeAddress: "node2", VoteGranted: false},
+			{NodeID: 2, VoteGranted: true},
+			{NodeID: 3, VoteGranted: false},
 		}
 		granted = unitTestRaft.countVotes(responses, cfg)
 		Expect(granted).Should(BeTrue())
 
 		responses = []communication.VoteResponse{
-			{NodeAddress: "node1", VoteGranted: false},
-			{NodeAddress: "node2", VoteGranted: false},
+			{NodeID: 2, VoteGranted: false},
+			{NodeID: 3, VoteGranted: false},
 		}
 		granted = unitTestRaft.countVotes(responses, cfg)
 		Expect(granted).Should(BeFalse())
 
 		responses = []communication.VoteResponse{
-			{NodeAddress: "node1", Error: errors.New("Pow")},
-			{NodeAddress: "node2", VoteGranted: false},
+			{NodeID: 2, Error: errors.New("Pow")},
+			{NodeID: 3, VoteGranted: false},
 		}
 		granted = unitTestRaft.countVotes(responses, cfg)
 		Expect(granted).Should(BeFalse())
 	})
 
 	It("Vote one node", func() {
-		cur := discovery.NodeList{
-			New: []string{unitTestAddr},
-		}
-		cfg := &discovery.NodeConfig{
-			Current: &cur,
+		cfg := &NodeList{
+			Current: makeNodeList([]uint64{uint64(unitTestID)}),
 		}
 
 		responses := []communication.VoteResponse{}
@@ -537,65 +510,59 @@ var _ = Describe("Raft Unit Tests", func() {
 	})
 
 	It("Vote even nodes", func() {
-		cur := discovery.NodeList{
-			New: []string{unitTestAddr, "node1", "node2", "node3"},
-		}
-		cfg := &discovery.NodeConfig{
-			Current: &cur,
+		cfg := &NodeList{
+			Current: makeNodeList([]uint64{uint64(unitTestID), 2, 3, 4}),
 		}
 
 		responses := []communication.VoteResponse{
-			{NodeAddress: "node1", VoteGranted: true},
-			{NodeAddress: "node2", VoteGranted: true},
-			{NodeAddress: "node3", VoteGranted: true},
+			{NodeID: 2, VoteGranted: true},
+			{NodeID: 3, VoteGranted: true},
+			{NodeID: 4, VoteGranted: true},
 		}
 		granted := unitTestRaft.countVotes(responses, cfg)
 		Expect(granted).Should(BeTrue())
 
 		responses = []communication.VoteResponse{
-			{NodeAddress: "node1", VoteGranted: true},
-			{NodeAddress: "node2", VoteGranted: false},
-			{NodeAddress: "node3", VoteGranted: true},
+			{NodeID: 2, VoteGranted: true},
+			{NodeID: 3, VoteGranted: false},
+			{NodeID: 4, VoteGranted: true},
 		}
 		granted = unitTestRaft.countVotes(responses, cfg)
 		Expect(granted).Should(BeTrue())
 
 		responses = []communication.VoteResponse{
-			{NodeAddress: "node1", VoteGranted: true},
-			{NodeAddress: "node2", VoteGranted: false},
-			{NodeAddress: "node3", VoteGranted: false},
+			{NodeID: 2, VoteGranted: true},
+			{NodeID: 3, VoteGranted: false},
+			{NodeID: 4, VoteGranted: false},
 		}
 		granted = unitTestRaft.countVotes(responses, cfg)
 		Expect(granted).Should(BeFalse())
 	})
 
 	It("Vote joint consensus", func() {
-		cur := discovery.NodeList{
-			New: []string{unitTestAddr, "node1", "node2", "node3", "node4", "node5"},
-			Old: []string{unitTestAddr, "node1", "node2"},
-		}
-		cfg := &discovery.NodeConfig{
-			Current: &cur,
+		cfg := &NodeList{
+			Current: makeNodeList([]uint64{uint64(unitTestID), 2, 3, 4, 5, 6}),
+			Next:    makeNodeList([]uint64{uint64(unitTestID), 2, 3}),
 		}
 
 		// Consensus from both clusters
 		responses := []communication.VoteResponse{
-			{NodeAddress: "node1", VoteGranted: true},
-			{NodeAddress: "node2", VoteGranted: true},
-			{NodeAddress: "node3", VoteGranted: true},
-			{NodeAddress: "node4", VoteGranted: true},
-			{NodeAddress: "node5", VoteGranted: true},
+			{NodeID: 2, VoteGranted: true},
+			{NodeID: 3, VoteGranted: true},
+			{NodeID: 4, VoteGranted: true},
+			{NodeID: 5, VoteGranted: true},
+			{NodeID: 6, VoteGranted: true},
 		}
 		granted := unitTestRaft.countVotes(responses, cfg)
 		Expect(granted).Should(BeTrue())
 
 		// Consensus from old but not new
 		responses = []communication.VoteResponse{
-			{NodeAddress: "node1", VoteGranted: true},
-			{NodeAddress: "node2", VoteGranted: true},
-			{NodeAddress: "node3", VoteGranted: false},
-			{NodeAddress: "node4", VoteGranted: false},
-			{NodeAddress: "node5", VoteGranted: false},
+			{NodeID: 2, VoteGranted: true},
+			{NodeID: 3, VoteGranted: true},
+			{NodeID: 4, VoteGranted: false},
+			{NodeID: 5, VoteGranted: false},
+			{NodeID: 6, VoteGranted: false},
 		}
 		granted = unitTestRaft.countVotes(responses, cfg)
 		Expect(granted).Should(BeFalse())
@@ -603,32 +570,41 @@ var _ = Describe("Raft Unit Tests", func() {
 
 	It("Vote joint consensus no leader", func() {
 		// Simulate a situation where we're the leader and we're leaving
-		cur := discovery.NodeList{
-			Old: []string{unitTestAddr, "node1", "node2", "node3", "node4"},
-			New: []string{"node1", "node2", "node3"},
-		}
-		cfg := &discovery.NodeConfig{
-			Current: &cur,
+		cfg := &NodeList{
+			Current: makeNodeList([]uint64{uint64(unitTestID), 2, 3, 4, 5}),
+			Next:    makeNodeList([]uint64{2, 3, 4}),
 		}
 
 		// Consensus from both clusters
 		responses := []communication.VoteResponse{
-			{NodeAddress: "node1", VoteGranted: true},
-			{NodeAddress: "node2", VoteGranted: true},
-			{NodeAddress: "node3", VoteGranted: true},
-			{NodeAddress: "node4", VoteGranted: true},
+			{NodeID: 2, VoteGranted: true},
+			{NodeID: 3, VoteGranted: true},
+			{NodeID: 4, VoteGranted: true},
+			{NodeID: 5, VoteGranted: true},
 		}
 		granted := unitTestRaft.countVotes(responses, cfg)
 		Expect(granted).Should(BeTrue())
 
 		// Old config had consensus but not new config
 		responses = []communication.VoteResponse{
-			{NodeAddress: "node1", VoteGranted: false},
-			{NodeAddress: "node2", VoteGranted: false},
-			{NodeAddress: "node3", VoteGranted: true},
-			{NodeAddress: "node4", VoteGranted: true},
+			{NodeID: 2, VoteGranted: false},
+			{NodeID: 3, VoteGranted: false},
+			{NodeID: 4, VoteGranted: true},
+			{NodeID: 5, VoteGranted: true},
 		}
 		granted = unitTestRaft.countVotes(responses, cfg)
 		Expect(granted).Should(BeFalse())
 	})
 })
+
+func makeNodeList(ids []uint64) []Node {
+	nn := make([]Node, len(ids))
+	for i := range ids {
+		n := Node{
+			NodeID:  communication.NodeID(ids[i]),
+			Address: strconv.FormatUint(ids[i], 10),
+		}
+		nn[i] = n
+	}
+	return nn
+}

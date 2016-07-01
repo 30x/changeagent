@@ -1,0 +1,11 @@
+package raft;
+
+message NodePb {
+  required fixed64 nodeId = 1;
+  required string address = 2;
+}
+
+message NodeListPb {
+  repeated NodePb current = 1;
+  repeated NodePb next = 2;
+}

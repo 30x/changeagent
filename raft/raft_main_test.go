@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	"github.com/30x/changeagent/communication"
-	"github.com/30x/changeagent/discovery"
 	"github.com/30x/changeagent/storage"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -21,18 +20,17 @@ const (
 	DataDir           = "./rafttestdata"
 	PreserveDatabases = false
 	DumpDatabases     = false
-	DebugMode         = false
+	DebugMode         = true
 )
 
 var testRafts []*Service
 var testListener []*net.TCPListener
 var unitTestRaft *Service
 var unitTestListener *net.TCPListener
-var testDiscovery discovery.Discovery
 var anyPort net.TCPAddr
-var unitTestAddr string
 var webHookListener *net.TCPListener
 var webHookAddr string
+var unitTestID communication.NodeID
 
 func TestRaft(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -55,35 +53,38 @@ var _ = BeforeSuite(func() {
 		addrs = append(addrs, addr)
 		testListener = append(testListener, listener)
 	}
-	disco := discovery.CreateStaticDiscovery(addrs)
-	testDiscovery = disco
 
 	// Create one more for unit tests
-	var unitAddr string
-	unitTestListener, unitAddr = startListener()
-	unitTestAddr = unitAddr
-	unitDisco := discovery.CreateStaticDiscovery([]string{unitAddr})
+	unitTestListener, _ = startListener()
 
-	raft1, err := startRaft(disco, testListener[0], path.Join(DataDir, "test1"))
+	raft1, err := startRaft(testListener[0], path.Join(DataDir, "test1"))
 	Expect(err).Should(Succeed())
 	testRafts = append(testRafts, raft1)
 
-	raft2, err := startRaft(disco, testListener[1], path.Join(DataDir, "test2"))
+	raft2, err := startRaft(testListener[1], path.Join(DataDir, "test2"))
 	Expect(err).Should(Succeed())
 	testRafts = append(testRafts, raft2)
 
-	raft3, err := startRaft(disco, testListener[2], path.Join(DataDir, "test3"))
+	raft3, err := startRaft(testListener[2], path.Join(DataDir, "test3"))
 	Expect(err).Should(Succeed())
 	testRafts = append(testRafts, raft3)
 
-	unitTestRaft, err = startRaft(unitDisco, unitTestListener, path.Join(DataDir, "unit"))
+	unitTestRaft, err = startRaft(unitTestListener, path.Join(DataDir, "unit"))
 	Expect(err).Should(Succeed())
+	unitTestID = unitTestRaft.MyID()
 
 	webHookListener, webHookAddr = startListener()
 	go http.Serve(webHookListener, &webHookServer{})
 
-	// This happens normally -- need it to happen here for unit tests to work.
-	unitTestRaft.addDiscoveredNode(unitTestRaft.id, unitAddr)
+	// Now build the cluster
+	err = raft1.InitializeCluster(addrs[0])
+	Expect(err).Should(Succeed())
+
+	err = raft1.AddNode(addrs[1])
+	Expect(err).Should(Succeed())
+
+	err = raft1.AddNode(addrs[2])
+	Expect(err).Should(Succeed())
 })
 
 func startListener() (*net.TCPListener, string) {
@@ -100,7 +101,7 @@ var _ = AfterSuite(func() {
 	webHookListener.Close()
 })
 
-func startRaft(disco discovery.Discovery, listener *net.TCPListener, dir string) (*Service, error) {
+func startRaft(listener *net.TCPListener, dir string) (*Service, error) {
 	mux := http.NewServeMux()
 	comm, err := communication.StartHTTPCommunication(mux)
 	if err != nil {
@@ -111,7 +112,7 @@ func startRaft(disco discovery.Discovery, listener *net.TCPListener, dir string)
 		return nil, err
 	}
 
-	raft, err := StartRaft(comm, disco, stor, &dummyStateMachine{})
+	raft, err := StartRaft(comm, stor, &dummyStateMachine{})
 	if err != nil {
 		return nil, err
 	}

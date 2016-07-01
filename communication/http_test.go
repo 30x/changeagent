@@ -76,6 +76,7 @@ var _ = Describe("Communication", func() {
 		req := VoteRequest{
 			Term:        1,
 			CandidateID: 1,
+			ClusterID:   4,
 		}
 		ch := make(chan VoteResponse, 1)
 

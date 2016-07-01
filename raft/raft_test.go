@@ -124,15 +124,15 @@ var _ = Describe("Raft Tests", func() {
 	It("Add Node", func() {
 		appendAndVerify("Before leadership change", 3)
 
-		listener, addr := startListener()
-		newRaft, err := startRaft(testDiscovery, listener, path.Join(DataDir, "test4"))
+		listener, _ := startListener()
+		newRaft, err := startRaft(listener, path.Join(DataDir, "test4"))
 		Expect(err).Should(Succeed())
 		testListener = append(testListener, listener)
 		testRafts = append(testRafts, newRaft)
 
 		time.Sleep(time.Second)
 		fmt.Fprintf(GinkgoWriter, "Adding new configuration for node 4\n")
-		testDiscovery.AddNode(addr)
+		//testDiscovery.AddNode(addr)
 		time.Sleep(time.Second)
 		assertOneLeader()
 		appendAndVerify("New leader elected. Yay!", 4)
@@ -156,7 +156,7 @@ func restartOneNode(ix int, savedPath string, savedPort int) error {
 	}
 	testListener[ix] = restartedListener
 	restartedRaft, err :=
-		startRaft(testDiscovery, testListener[ix], savedPath)
+		startRaft(testListener[ix], savedPath)
 	if err != nil {
 		return err
 	}

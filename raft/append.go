@@ -6,7 +6,6 @@ package raft
 
 import (
 	"github.com/30x/changeagent/communication"
-	"github.com/30x/changeagent/discovery"
 	"github.com/30x/changeagent/hooks"
 	"github.com/30x/changeagent/storage"
 	"github.com/golang/glog"
@@ -103,7 +102,7 @@ func (r *Service) applyCommittedEntries(commitIndex uint64) error {
 	// apply log[lastApplied] to state machine.
 	// In our implementation, we just move a pointer.
 	r.setLastApplied(commitIndex)
-	glog.V(2).Infof("Node %d: Last applied now %d", r.id, commitIndex)
+	glog.V(2).Infof("Node %s: Last applied now %d", r.id, commitIndex)
 	return nil
 }
 
@@ -172,7 +171,7 @@ func (r *Service) appendEntries(entries []storage.Entry) error {
 	}
 
 	if configChange != nil {
-		newCfg, err := discovery.DecodeConfig(configChange.Data)
+		newCfg, err := decodeNodeList(configChange.Data)
 		if err != nil {
 			glog.Errorf("Invalid configuration change record received (%d bytes): %v: %s",
 				len(configChange.Data), err, string(configChange.Data))
@@ -180,10 +179,8 @@ func (r *Service) appendEntries(entries []storage.Entry) error {
 		}
 		glog.V(2).Infof("Applying a new configuration %s", newCfg)
 
-		curCfg := r.GetNodeConfig()
-		newCfg.Previous = curCfg.Current
 		r.setNodeConfig(newCfg)
-		glog.Info("Applied a new node configuration from the master")
+		glog.Infof("Node %s applied a new node configuration from the master", r.id)
 
 		// TODO Still have to see if the node address changed for the master.
 	}

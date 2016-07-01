@@ -89,6 +89,7 @@ func (h *httpCommunication) sendVoteRequest(addr string, req VoteRequest, ch cha
 		CandidateId:  proto.Uint64(uint64(req.CandidateID)),
 		LastLogIndex: proto.Uint64(req.LastLogIndex),
 		LastLogTerm:  proto.Uint64(req.LastLogTerm),
+		ClusterId:    proto.Uint64(uint64(req.ClusterID)),
 	}
 	reqBody, err := proto.Marshal(&reqPb)
 	if err != nil {
@@ -234,7 +235,7 @@ func (h *httpCommunication) Propose(addr string, e storage.Entry) (ProposalRespo
 func (h *httpCommunication) handleRequestVote(resp http.ResponseWriter, req *http.Request) {
 	defer req.Body.Close()
 
-	if req.Method != "POST" {
+	if req.Method != http.MethodPost {
 		resp.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
@@ -261,6 +262,7 @@ func (h *httpCommunication) handleRequestVote(resp http.ResponseWriter, req *htt
 		CandidateID:  NodeID(reqpb.GetCandidateId()),
 		LastLogIndex: reqpb.GetLastLogIndex(),
 		LastLogTerm:  reqpb.GetLastLogTerm(),
+		ClusterID:    NodeID(reqpb.GetClusterId()),
 	}
 
 	voteResp, err := h.raft.RequestVote(voteReq)
@@ -289,7 +291,7 @@ func (h *httpCommunication) handleRequestVote(resp http.ResponseWriter, req *htt
 func (h *httpCommunication) handleAppend(resp http.ResponseWriter, req *http.Request) {
 	defer req.Body.Close()
 
-	if req.Method != "POST" {
+	if req.Method != http.MethodPost {
 		resp.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
@@ -353,7 +355,7 @@ func (h *httpCommunication) handleAppend(resp http.ResponseWriter, req *http.Req
 func (h *httpCommunication) handlePropose(resp http.ResponseWriter, req *http.Request) {
 	defer req.Body.Close()
 
-	if req.Method != "POST" {
+	if req.Method != http.MethodPost {
 		resp.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}

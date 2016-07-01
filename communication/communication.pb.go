@@ -29,9 +29,10 @@ var _ = math.Inf
 
 type VoteRequestPb struct {
 	Term             *uint64 `protobuf:"varint,1,req,name=term" json:"term,omitempty"`
-	CandidateId      *uint64 `protobuf:"varint,2,req,name=candidateId" json:"candidateId,omitempty"`
+	CandidateId      *uint64 `protobuf:"fixed64,2,req,name=candidateId" json:"candidateId,omitempty"`
 	LastLogIndex     *uint64 `protobuf:"varint,3,req,name=lastLogIndex" json:"lastLogIndex,omitempty"`
 	LastLogTerm      *uint64 `protobuf:"varint,4,req,name=lastLogTerm" json:"lastLogTerm,omitempty"`
+	ClusterId        *uint64 `protobuf:"fixed64,5,req,name=clusterId" json:"clusterId,omitempty"`
 	XXX_unrecognized []byte  `json:"-"`
 }
 
@@ -67,8 +68,15 @@ func (m *VoteRequestPb) GetLastLogTerm() uint64 {
 	return 0
 }
 
+func (m *VoteRequestPb) GetClusterId() uint64 {
+	if m != nil && m.ClusterId != nil {
+		return *m.ClusterId
+	}
+	return 0
+}
+
 type VoteResponsePb struct {
-	NodeId           *uint64 `protobuf:"varint,1,req,name=nodeId" json:"nodeId,omitempty"`
+	NodeId           *uint64 `protobuf:"fixed64,1,req,name=nodeId" json:"nodeId,omitempty"`
 	Term             *uint64 `protobuf:"varint,2,req,name=term" json:"term,omitempty"`
 	VoteGranted      *bool   `protobuf:"varint,3,req,name=voteGranted" json:"voteGranted,omitempty"`
 	XXX_unrecognized []byte  `json:"-"`
@@ -101,7 +109,7 @@ func (m *VoteResponsePb) GetVoteGranted() bool {
 
 type AppendRequestPb struct {
 	Term             *uint64  `protobuf:"varint,1,req,name=term" json:"term,omitempty"`
-	LeaderId         *uint64  `protobuf:"varint,2,req,name=leaderId" json:"leaderId,omitempty"`
+	LeaderId         *uint64  `protobuf:"fixed64,2,req,name=leaderId" json:"leaderId,omitempty"`
 	PrevLogIndex     *uint64  `protobuf:"varint,3,req,name=prevLogIndex" json:"prevLogIndex,omitempty"`
 	PrevLogTerm      *uint64  `protobuf:"varint,4,req,name=prevLogTerm" json:"prevLogTerm,omitempty"`
 	LeaderCommit     *uint64  `protobuf:"varint,5,req,name=leaderCommit" json:"leaderCommit,omitempty"`
@@ -204,7 +212,7 @@ func (m *ProposalResponsePb) GetError() string {
 }
 
 type DiscoveryResponsePb struct {
-	NodeId           *uint64 `protobuf:"varint,1,req,name=nodeId" json:"nodeId,omitempty"`
+	NodeId           *uint64 `protobuf:"fixed64,1,req,name=nodeId" json:"nodeId,omitempty"`
 	XXX_unrecognized []byte  `json:"-"`
 }
 

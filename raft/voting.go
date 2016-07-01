@@ -6,7 +6,6 @@ package raft
 
 import (
 	"github.com/30x/changeagent/communication"
-	"github.com/30x/changeagent/discovery"
 	"github.com/golang/glog"
 )
 
@@ -81,7 +80,7 @@ func (r *Service) sendVotes(state *raftState, index uint64, rc chan<- voteResult
 
 	// Get the current node list from the current config, and request votes.
 	cfg := r.GetNodeConfig()
-	allNodes := cfg.GetUniqueNodes()
+	allNodes := cfg.getUniqueNodes()
 	votes := 0
 	glog.V(2).Infof("Node %s sending vote request to %d nodes for term %d",
 		r.id, len(allNodes), currentTerm)
@@ -91,21 +90,19 @@ func (r *Service) sendVotes(state *raftState, index uint64, rc chan<- voteResult
 
 	// Send off all the votes. Each will run in a goroutine and send us the result in a channel
 	for _, node := range allNodes {
-		// We won't always know our own address but if we do, skip
-		if r.getNodeID(node) == r.id {
+		// Skip ourselves!
+		if node.NodeID == r.id {
 			votes++
 			continue
 		}
 		rc := make(chan communication.VoteResponse)
 		responseChannels = append(responseChannels, rc)
-		r.comm.RequestVote(node, vr, rc)
+		r.comm.RequestVote(node.Address, vr, rc)
 	}
 
 	// Pick up all the response channels. This will block until we get all responses.
 	for _, respChan := range responseChannels {
 		vresp := <-respChan
-		// Record node id <-> address mapping in case we don't know
-		r.addDiscoveredNode(vresp.NodeID, vresp.NodeAddress)
 		if vresp.NodeID != r.id {
 			responses = append(responses, vresp)
 		}
@@ -122,42 +119,42 @@ func (r *Service) sendVotes(state *raftState, index uint64, rc chan<- voteResult
 	rc <- finalResponse
 }
 
-func (r *Service) countVotes(responses []communication.VoteResponse, cfg *discovery.NodeConfig) bool {
+func (r *Service) countVotes(responses []communication.VoteResponse, cfg *NodeList) bool {
 	// Sort votes into a map so that we can process the rest.
-	voteMap := make(map[string]bool)
+	voteMap := make(map[communication.NodeID]bool)
 
 	// Map votes from peers
 	for _, resp := range responses {
 		if resp.Error != nil {
 			glog.V(2).Infof("Node %s: Error: %s", resp.NodeID, resp.Error)
-			voteMap[resp.NodeAddress] = false
+			voteMap[resp.NodeID] = false
 		} else if resp.VoteGranted {
 			glog.V(2).Infof("Node %s: Voted yes", resp.NodeID)
-			voteMap[resp.NodeAddress] = true
+			voteMap[resp.NodeID] = true
 		} else {
 			glog.V(2).Infof("Node %s: Voted no", resp.NodeID)
-			voteMap[resp.NodeAddress] = false
+			voteMap[resp.NodeID] = false
 		}
 	}
 
 	// Don't forget to vote for ourself!
-	voteMap[r.getLocalAddress()] = true
+	voteMap[r.id] = true
 
-	if len(cfg.Current.Old) > 0 {
+	if len(cfg.Next) > 0 {
 		// Joint consensus mode. Need both sets of nodes to vote yes.
-		if !countNodeListVotes(voteMap, cfg.Current.Old) {
+		if !countNodeListVotes(voteMap, cfg.Next) {
 			return false
 		}
 	}
 
-	return countNodeListVotes(voteMap, cfg.Current.New)
+	return countNodeListVotes(voteMap, cfg.Current)
 }
 
-func countNodeListVotes(voteMap map[string]bool, nodes []string) bool {
+func countNodeListVotes(voteMap map[communication.NodeID]bool, nodes []Node) bool {
 	votes := 0
 
 	for _, node := range nodes {
-		if voteMap[node] {
+		if voteMap[node.NodeID] {
 			votes++
 		}
 	}
