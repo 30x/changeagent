@@ -22,6 +22,7 @@ const (
 	appendURI      = "/raft/append"
 	proposeURI     = "/raft/propose"
 	discoveryURI   = "/raft/id"
+	joinURI        = "/raft/join"
 	requestTimeout = 10 * time.Second
 )
 
@@ -44,6 +45,7 @@ func StartHTTPCommunication(mux *http.ServeMux) (Communication, error) {
 	mux.HandleFunc(appendURI, comm.handleAppend)
 	mux.HandleFunc(proposeURI, comm.handlePropose)
 	mux.HandleFunc(discoveryURI, comm.handleDiscovery)
+	mux.HandleFunc(joinURI, comm.handleJoin)
 	return &comm, nil
 }
 
@@ -227,6 +229,55 @@ func (h *httpCommunication) Propose(addr string, e *common.Entry) (ProposalRespo
 	return appResp, nil
 }
 
+func (h *httpCommunication) Join(addr string, req JoinRequest) (ProposalResponse, error) {
+	uri := fmt.Sprintf("http://%s%s", addr, joinURI)
+
+	joinPb := protobufs.JoinRequestPb{
+		ClusterId: proto.Uint64(uint64(req.ClusterID)),
+		Last:      proto.Bool(req.Last),
+	}
+	for _, e := range req.Entries {
+		epb := e.EncodePb()
+		joinPb.Entries = append(joinPb.Entries, &epb)
+	}
+
+	reqBody, err := proto.Marshal(&joinPb)
+	if err != nil {
+		return DefaultProposalResponse, err
+	}
+
+	resp, err := httpClient.Post(uri, ContentType, bytes.NewReader(reqBody))
+	if err != nil {
+		return DefaultProposalResponse, err
+	}
+	defer resp.Body.Close()
+
+	glog.V(2).Infof("Got back %d on join", resp.StatusCode)
+	if resp.StatusCode != 200 {
+		return DefaultProposalResponse, fmt.Errorf("HTTP status %d %s", resp.StatusCode, resp.Status)
+	}
+
+	respBody, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return DefaultProposalResponse, err
+	}
+
+	var respPb protobufs.ProposalResponsePb
+	err = proto.Unmarshal(respBody, &respPb)
+	if err != nil {
+		return DefaultProposalResponse, err
+	}
+
+	appResp := ProposalResponse{
+		NewIndex: respPb.GetNewIndex(),
+	}
+	if respPb.GetError() != "" {
+		appResp.Error = errors.New(respPb.GetError())
+	}
+
+	return appResp, nil
+}
+
 func (h *httpCommunication) handleRequestVote(resp http.ResponseWriter, req *http.Request) {
 	defer req.Body.Close()
 
@@ -374,6 +425,59 @@ func (h *httpCommunication) handlePropose(resp http.ResponseWriter, req *http.Re
 
 	respPb := protobufs.ProposalResponsePb{
 		NewIndex: &newIndex,
+	}
+	if err != nil {
+		errMsg := err.Error()
+		respPb.Error = &errMsg
+	}
+
+	respBody, err := proto.Marshal(&respPb)
+	if err != nil {
+		resp.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	resp.Header().Set(http.CanonicalHeaderKey("content-type"), ContentType)
+	resp.Write(respBody)
+}
+
+func (h *httpCommunication) handleJoin(resp http.ResponseWriter, req *http.Request) {
+	defer req.Body.Close()
+
+	if req.Method != http.MethodPost {
+		resp.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	if req.Header.Get(http.CanonicalHeaderKey("content-type")) != ContentType {
+		resp.WriteHeader(http.StatusUnsupportedMediaType)
+		return
+	}
+	body, err := ioutil.ReadAll(req.Body)
+	if err != nil {
+		resp.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	var joinPb protobufs.JoinRequestPb
+	err = proto.Unmarshal(body, &joinPb)
+	if err != nil {
+		resp.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	joinReq := JoinRequest{
+		ClusterID: common.NodeID(joinPb.GetClusterId()),
+		Last:      joinPb.GetLast(),
+	}
+	for _, e := range joinPb.GetEntries() {
+		joinReq.Entries = append(joinReq.Entries, *common.DecodeEntryFromPb(*e))
+	}
+
+	newIndex, err := h.raft.Join(joinReq)
+
+	respPb := protobufs.ProposalResponsePb{
+		NewIndex: proto.Uint64(newIndex),
 	}
 	if err != nil {
 		errMsg := err.Error()

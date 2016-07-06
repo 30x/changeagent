@@ -89,7 +89,7 @@ func (r *Service) followerLoop(isCandidate bool, state *raftState) chan bool {
 			glog.V(2).Infof("Node %s: election timeout", r.id)
 			if !r.followerOnly {
 				r.setState(Candidate)
-				r.setLeader(nil)
+				r.setLeader(0)
 				return nil
 			}
 
@@ -104,17 +104,16 @@ func (r *Service) followerLoop(isCandidate bool, state *raftState) chan bool {
 			// 5.1: If RPC request or response contains term T > currentTerm:
 			// set currentTerm = T, convert to follower
 			glog.V(2).Infof("Processing append command from leader %s", appendCmd.ar.LeaderID)
-			leader := r.getNode(appendCmd.ar.LeaderID)
 			if appendCmd.ar.Term > r.GetCurrentTerm() {
 				glog.Infof("Append request from new leader at new term %d", appendCmd.ar.Term)
 				r.setCurrentTerm(appendCmd.ar.Term)
 				state.votedFor = 0
 				r.writeLastVote(0)
 				r.setState(Follower)
-				r.setLeader(leader)
+				r.setLeader(appendCmd.ar.LeaderID)
 			} else if r.GetLeaderID() == 0 {
 				glog.Infof("Seeing new leader %s for the first time", appendCmd.ar.LeaderID)
-				r.setLeader(leader)
+				r.setLeader(appendCmd.ar.LeaderID)
 			}
 			r.handleAppend(state, appendCmd)
 			timeout.Reset(r.randomElectionTimeout())
@@ -150,18 +149,18 @@ func (r *Service) followerLoop(isCandidate bool, state *raftState) chan bool {
 				glog.V(2).Infof("Node %s received the election result: %v", r.id, vr.result)
 				if vr.result {
 					r.setState(Leader)
-					r.setLeader(nil)
+					r.setLeader(0)
 					return nil
 				}
 				// Voting failed. Try again after timeout.
 				timeout.Reset(r.randomElectionTimeout())
 			}
 
-		case <-r.configChanges:
-			glog.V(2).Info("Follower ignoring a request to process a configuration change")
-
 		case si := <-r.statusInquiries:
 			returnStatus(si, state, false)
+
+		case cmd := <-r.loopCommands:
+			glog.V(2).Infof("Ignoring loop command %s", cmd)
 
 		case stopDone := <-r.stopChan:
 			r.setState(Stopping)
@@ -201,7 +200,6 @@ func (r *Service) leaderLoop(state *raftState) chan bool {
 			// 5.1: If RPC request or response contains term T > currentTerm:
 			// set currentTerm = T, convert to follower
 			if appendCmd.ar.Term > r.GetCurrentTerm() {
-				leader := r.getNode(appendCmd.ar.LeaderID)
 				glog.Infof("Append request from new leader at new term %d. No longer leader",
 					appendCmd.ar.Term)
 				// Potential race condition averted because only this goroutine updates term
@@ -209,7 +207,7 @@ func (r *Service) leaderLoop(state *raftState) chan bool {
 				state.votedFor = 0
 				r.writeLastVote(0)
 				r.setState(Follower)
-				r.setLeader(leader)
+				r.setLeader(appendCmd.ar.LeaderID)
 				stopPeers(state)
 				r.handleAppend(state, appendCmd)
 				return nil
@@ -257,8 +255,20 @@ func (r *Service) leaderLoop(state *raftState) chan bool {
 		case si := <-r.statusInquiries:
 			returnStatus(si, state, true)
 
-		case <-r.configChanges:
-			r.updatePeerList(state)
+		case cmd := <-r.loopCommands:
+			glog.V(2).Infof("Received loop command %s", cmd)
+			switch cmd {
+			case UpdateConfiguration:
+				r.updatePeerList(state)
+			case JoinAsFollower:
+				r.setState(Follower)
+				return nil
+			case JoinAsCandidate:
+				r.setState(Candidate)
+				return nil
+			default:
+				glog.V(2).Info("Ignoring command.")
+			}
 
 		case stopDone := <-r.stopChan:
 			r.setState(Stopping)

@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/30x/changeagent/storage"
+	"github.com/30x/changeagent/common"
 	"github.com/golang/glog"
 	"github.com/gorilla/mux"
 )
@@ -140,16 +140,16 @@ func (a *ChangeAgent) fetchEntries(
 	since uint64,
 	limit uint,
 	tags []string,
-	resp http.ResponseWriter) ([]storage.Entry, uint64, error) {
+	resp http.ResponseWriter) ([]common.Entry, uint64, error) {
 
-	var entries []storage.Entry
+	var entries []common.Entry
 	var err error
 	lastRawChange := since
 
 	glog.V(2).Infof("Fetching up to %d changes since %d", limit, since)
 
 	entries, err = a.stor.GetEntries(since, limit,
-		func(e *storage.Entry) bool {
+		func(e *common.Entry) bool {
 			if e.Index > since {
 				lastRawChange = e.Index
 			}
@@ -190,7 +190,7 @@ func (a *ChangeAgent) handleGetChange(resp http.ResponseWriter, req *http.Reques
 
 	} else {
 		resp.Header().Set("Content-Type", jsonContent)
-		marshalJSON(*entry, resp)
+		marshalJSON(entry, resp)
 	}
 }
 
@@ -200,7 +200,7 @@ and "limit." The list may include entries before "since" and after "limit,"
 and we use those entries to understand whether we are at the start and / or end
 of the list.
 */
-func pruneChanges(entries []storage.Entry, since uint64, limit uint) ([]storage.Entry, bool, bool) {
+func pruneChanges(entries []common.Entry, since uint64, limit uint) ([]common.Entry, bool, bool) {
 	pruned := entries
 	atStart := true
 	atEnd := true

@@ -12,7 +12,7 @@ import (
 )
 
 func (r *Service) handleAppend(state *raftState, cmd appendCommand) {
-	glog.V(2).Infof("Got append request for term %d. prevIndex = %d prevTerm = %d leader = %d",
+	glog.V(2).Infof("Got append request for term %d. prevIndex = %d prevTerm = %d leader = %s",
 		cmd.ar.Term, cmd.ar.PrevLogIndex, cmd.ar.PrevLogTerm, cmd.ar.LeaderID)
 	currentTerm := r.GetCurrentTerm()
 	commitIndex := r.GetCommitIndex()
@@ -80,7 +80,7 @@ func (r *Service) handleAppend(state *raftState, cmd appendCommand) {
 			commitIndex = lastIndex
 		}
 		r.setCommitIndex(commitIndex)
-		glog.V(2).Infof("Node %d: Commit index now %d", r.id, commitIndex)
+		glog.V(2).Infof("Node %s: Commit index now %d", r.id, commitIndex)
 
 		err = r.applyCommittedEntries(commitIndex)
 		if err != nil {
@@ -125,6 +125,8 @@ func (r *Service) appendEntries(entries []common.Entry) error {
 		return err
 	}
 
+	glog.V(2).Infof("Node %s appending from %d to %d", r.id,
+		entries[0].Index, entries[len(entries)-1].Index)
 	for _, e := range entries {
 		if terms[e.Index] != 0 && terms[e.Index] != e.Term {
 			// Yep, that happened. Once we delete we can break out of this here loop too
@@ -141,19 +143,14 @@ func (r *Service) appendEntries(entries []common.Entry) error {
 		}
 	}
 
-	var configChange *common.Entry
-
-	for i, e := range entries {
+	for _, e := range entries {
 		// Append any new entries not already in the log
 		if terms[e.Index] == 0 {
+			glog.V(2).Infof("Node %s appending %d", r.id, e.Index)
 			err = r.stor.AppendEntry(&e)
 			if err != nil {
 				return err
 			}
-		}
-		// Check to see if it's a membership change
-		if e.Type == MembershipChange {
-			configChange = &(entries[i])
 		}
 	}
 
@@ -161,21 +158,6 @@ func (r *Service) appendEntries(entries []common.Entry) error {
 	if len(entries) > 0 {
 		last := entries[len(entries)-1]
 		r.setLastIndex(last.Index, last.Term)
-	}
-
-	if configChange != nil {
-		newCfg, err := decodeNodeList(configChange.Data)
-		if err != nil {
-			glog.Errorf("Invalid configuration change record received (%d bytes): %v: %s",
-				len(configChange.Data), err, string(configChange.Data))
-			return err
-		}
-		glog.V(2).Infof("Applying a new configuration %s", newCfg)
-
-		r.setNodeConfig(newCfg)
-		glog.Infof("Node %s applied a new node configuration from the master", r.id)
-
-		// TODO Still have to see if the node address changed for the master.
 	}
 
 	return nil
@@ -196,7 +178,7 @@ func (r *Service) makeProposal(newEntry *common.Entry, state *raftState) (uint64
 	term := r.GetCurrentTerm()
 
 	if newEntry != nil {
-		glog.V(2).Infof("Appending data for index %d term %d", newIndex, term)
+		glog.V(2).Infof("Node %s: Appending data for index %d term %d", r.id, newIndex, term)
 		newEntry.Index = newIndex
 		newEntry.Term = term
 		err := r.appendEntries([]common.Entry{*newEntry})

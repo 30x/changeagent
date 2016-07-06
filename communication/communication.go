@@ -15,6 +15,7 @@ type Raft interface {
 	RequestVote(req VoteRequest) (VoteResponse, error)
 	Append(req AppendRequest) (AppendResponse, error)
 	Propose(e *common.Entry) (uint64, error)
+	Join(req JoinRequest) (uint64, error)
 }
 
 /*
@@ -113,6 +114,17 @@ func (a *ProposalResponse) String() string {
 }
 
 /*
+A JoinRequest is sent when we are trying to add a new node to the cluster.
+We use it to send catch-up messages to the new node so that it will have a
+copy of the log before we let it formally join the cluster.
+*/
+type JoinRequest struct {
+	ClusterID common.NodeID
+	Last      bool // Sent on the last request.
+	Entries   []common.Entry
+}
+
+/*
 Communication is the interface that other modules use in order to communicate
 with other nodes in the cluster.
 */
@@ -136,4 +148,9 @@ type Communication interface {
 	// Propose is called by a non-leader node to ask the leader to propose a new
 	// change to its followers. It blocks until it gets a response.
 	Propose(address string, e *common.Entry) (ProposalResponse, error)
+
+	// Join is called by the leader to add a new node to the cluster. There
+	// may be multiple calls here if there are a large number of records
+	// to send to the new node to catch it up.
+	Join(address string, req JoinRequest) (ProposalResponse, error)
 }

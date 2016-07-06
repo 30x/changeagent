@@ -8,8 +8,6 @@ import (
 	"github.com/golang/protobuf/proto"
 )
 
-//go:generate protoc --go_out=. nodelist.proto
-
 /*
 A Node represents a single node in the cluster. It has a unique ID as well
 as a network address.

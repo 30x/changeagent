@@ -11,8 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/30x/changeagent/discovery"
-
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )
@@ -54,11 +52,10 @@ var _ = BeforeSuite(func() {
 		panic("Invalid listen address")
 	}
 	listenAddr = fmt.Sprintf("localhost:%s", port)
-	disco := discovery.CreateStaticDiscovery([]string{listenAddr})
 	listenURI = fmt.Sprintf("http://localhost:%s%s", port, uriPrefix)
 	fmt.Fprintf(GinkgoWriter, "Listening on port %s\n", port)
 
-	testAgent, err = startAgent(1, disco, DataDir, testListener)
+	testAgent, err = startAgent(1, DataDir, testListener)
 	Expect(err).Should(Succeed())
 
 	time.Sleep(time.Second)
@@ -68,10 +65,10 @@ var _ = AfterSuite(func() {
 	cleanAgent(testAgent, testListener)
 })
 
-func startAgent(id uint64, disco discovery.Discovery, dir string, listener *net.TCPListener) (*ChangeAgent, error) {
+func startAgent(id uint64, dir string, listener *net.TCPListener) (*ChangeAgent, error) {
 	mux := http.NewServeMux()
 
-	agent, err := StartChangeAgent(disco, dir, mux, uriPrefix)
+	agent, err := StartChangeAgent(dir, mux, uriPrefix)
 	if err != nil {
 		return nil, err
 	}

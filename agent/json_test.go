@@ -5,7 +5,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/30x/changeagent/storage"
+	"github.com/30x/changeagent/common"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )
@@ -56,7 +56,7 @@ var _ = Describe("JSON encoding tests", func() {
 		Expect(err).Should(Succeed())
 		ts := time.Now()
 
-		md := storage.Entry{
+		md := &common.Entry{
 			Index:     123,
 			Data:      entry.Data,
 			Timestamp: ts,
@@ -98,7 +98,7 @@ var _ = Describe("JSON encoding tests", func() {
 		entry, err := unmarshalJSON(bytes.NewReader([]byte(testStringIn)))
 		Expect(err).Should(Succeed())
 
-		md := storage.Entry{
+		md := &common.Entry{
 			Index: 456,
 			Data:  entry.Data,
 		}
@@ -119,7 +119,7 @@ var _ = Describe("JSON encoding tests", func() {
 		entry2, err := unmarshalJSON(bytes.NewReader([]byte(testStringIn)))
 		Expect(err).Should(Succeed())
 
-		cl := []storage.Entry{
+		cl := []common.Entry{
 			{
 				Index: 123,
 				Data:  entry1.Data,
@@ -140,7 +140,7 @@ var _ = Describe("JSON encoding tests", func() {
 	})
 
 	It("Test marshal empty list", func() {
-		cl := []storage.Entry{}
+		cl := []common.Entry{}
 
 		out := &bytes.Buffer{}
 		err := marshalChanges(cl, false, false, out)
@@ -158,7 +158,7 @@ var _ = Describe("JSON encoding tests", func() {
 	})
 
 	It("Test marshal insert response", func() {
-		e := storage.Entry{
+		e := &common.Entry{
 			Index: 456,
 		}
 
@@ -172,7 +172,7 @@ var _ = Describe("JSON encoding tests", func() {
 	})
 })
 
-func marshalJSONToString(entry storage.Entry) (string, error) {
+func marshalJSONToString(entry *common.Entry) (string, error) {
 	out := &bytes.Buffer{}
 	err := marshalJSON(entry, out)
 	if err != nil {

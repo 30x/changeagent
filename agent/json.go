@@ -6,7 +6,7 @@ import (
 	"io/ioutil"
 	"time"
 
-	"github.com/30x/changeagent/storage"
+	"github.com/30x/changeagent/common"
 )
 
 var defaultTime = time.Time{}
@@ -44,12 +44,12 @@ type JSONError struct {
  * bytes that exactly represents the original JSON, although possibly not
  * including white space.
  */
-func unmarshalJSON(in io.Reader) (storage.Entry, error) {
+func unmarshalJSON(in io.Reader) (*common.Entry, error) {
 	// We are going to decode twice, because we accept two JSON formats.
 	// That means we need to read the whole body into memory.
 	body, err := ioutil.ReadAll(in)
 	if err != nil {
-		return storage.Entry{}, err
+		return nil, err
 	}
 
 	var fullData Change
@@ -60,13 +60,13 @@ func unmarshalJSON(in io.Reader) (storage.Entry, error) {
 		var rawJSON json.RawMessage
 		err = json.Unmarshal(body, &rawJSON)
 		if err != nil {
-			return storage.Entry{}, err
+			return nil, err
 		}
-		return storage.Entry{
+		return &common.Entry{
 			Data: rawJSON,
 		}, nil
 	}
-	entry := storage.Entry{
+	entry := &common.Entry{
 		Index: fullData.ID,
 		Tags:  fullData.Tags,
 		Data:  fullData.Data,
@@ -87,7 +87,7 @@ func unmarshalJSON(in io.Reader) (storage.Entry, error) {
  * named "data". Any fields in "metadata" that are non-empty will also be
  * added to the message.
  */
-func marshalJSON(entry storage.Entry, out io.Writer) error {
+func marshalJSON(entry *common.Entry, out io.Writer) error {
 	jd := convertData(entry)
 	enc := json.NewEncoder(out)
 	err := enc.Encode(&jd)
@@ -97,7 +97,7 @@ func marshalJSON(entry storage.Entry, out io.Writer) error {
 /*
  * Same as above but marshal a whole array of changes.
  */
-func marshalChanges(changes []storage.Entry, atStart, atEnd bool, out io.Writer) error {
+func marshalChanges(changes []common.Entry, atStart, atEnd bool, out io.Writer) error {
 	cl := ChangeList{
 		Changes: convertChanges(changes),
 		AtStart: atStart,
@@ -108,13 +108,13 @@ func marshalChanges(changes []storage.Entry, atStart, atEnd bool, out io.Writer)
 	return err
 }
 
-func convertChanges(changes []storage.Entry) []Change {
+func convertChanges(changes []common.Entry) []Change {
 	if len(changes) == 0 {
 		return []Change{}
 	}
 	var changeList []Change
 	for _, change := range changes {
-		cd := convertData(change)
+		cd := convertData(&change)
 		changeList = append(changeList, *cd)
 	}
 	return changeList
@@ -132,7 +132,7 @@ func marshalError(result error) string {
 	return string(outBody)
 }
 
-func convertData(entry storage.Entry) *Change {
+func convertData(entry *common.Entry) *Change {
 	ret := Change{
 		ID:   entry.Index,
 		Tags: entry.Tags,

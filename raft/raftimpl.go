@@ -3,6 +3,7 @@ package raft
 import (
 	cryptoRand "crypto/rand"
 	"errors"
+	"fmt"
 	"math"
 	"math/big"
 	"math/rand"
@@ -80,6 +81,20 @@ const (
 	ProposedFinalConsensus
 )
 
+// LoopCommand is used to send configuration changes to the main loop
+type LoopCommand int32
+
+//go:generate stringer -type LoopCommand .
+
+/*
+ * Commands to send to the main loop.
+ */
+const (
+	UpdateConfiguration LoopCommand = iota
+	JoinAsFollower
+	JoinAsCandidate
+)
+
 /*
 Service is an instance of code that implements the Raft protocol.
 It relies on the Storage, Discovery, and Communication services to do
@@ -88,18 +103,18 @@ its work, and invokes the StateMachine when changes are committed.
 type Service struct {
 	id                   common.NodeID
 	clusterID            uint64
+	leaderID             uint64
 	localAddress         atomic.Value
 	state                int32
-	leader               atomic.Value
 	comm                 communication.Communication
 	nodeConfig           atomic.Value
 	stor                 storage.Storage
+	loopCommands         chan LoopCommand
 	stopChan             chan chan bool
 	voteCommands         chan voteCommand
 	appendCommands       chan appendCommand
 	proposals            chan proposalCommand
 	statusInquiries      chan chan<- ProtocolStatus
-	configChanges        chan bool
 	latch                sync.Mutex
 	followerOnly         bool
 	currentTerm          uint64
@@ -157,16 +172,15 @@ func StartRaft(
 	r := &Service{
 		state:                int32(Follower),
 		comm:                 comm,
-		leader:               atomic.Value{},
 		localAddress:         atomic.Value{},
 		nodeConfig:           atomic.Value{},
 		stor:                 stor,
 		stopChan:             make(chan chan bool, 1),
+		loopCommands:         make(chan LoopCommand, 1),
 		voteCommands:         make(chan voteCommand, 1),
 		appendCommands:       make(chan appendCommand, 1),
 		statusInquiries:      make(chan chan<- ProtocolStatus, 1),
 		proposals:            make(chan proposalCommand, 100),
-		configChanges:        make(chan bool, 1),
 		latch:                sync.Mutex{},
 		followerOnly:         false,
 		appliedTracker:       CreateTracker(),
@@ -328,7 +342,7 @@ Append is called by the commnunication service when the leader has a new
 item to append to the index.
 */
 func (r *Service) Append(req communication.AppendRequest) (communication.AppendResponse, error) {
-	glog.V(2).Infof("Node %d append request. State is %v", r.id, r.GetState())
+	glog.V(2).Infof("Node %s append request. State is %v", r.id, r.GetState())
 	if r.GetState() == Stopping || r.GetState() == Stopped {
 		return communication.AppendResponse{}, errors.New("Raft is stopped")
 	}
@@ -369,6 +383,34 @@ func (r *Service) Propose(e *common.Entry) (uint64, error) {
 }
 
 /*
+Join is called by the communication service when we are being added to a new
+cluster and we need to catch up.
+*/
+func (r *Service) Join(req communication.JoinRequest) (uint64, error) {
+	if r.GetClusterID() == 0 {
+		lastIx, _, _ := r.stor.GetLastIndex()
+		if lastIx > 0 {
+			return 0, fmt.Errorf("Cannot join cluster because we already have data to index %d", lastIx)
+		}
+	} else if r.GetClusterID() != req.ClusterID {
+		return 0, fmt.Errorf("Already part of cluster %s: Cannot join %s", r.GetClusterID(), req.ClusterID)
+	}
+
+	r.setClusterID(req.ClusterID)
+
+	for _, e := range req.Entries {
+		r.stor.AppendEntry(&e)
+	}
+
+	if req.Last {
+		r.loopCommands <- JoinAsFollower
+	}
+
+	lastIx, _, _ := r.stor.GetLastIndex()
+	return lastIx, nil
+}
+
+/*
 MyID returns the unique ID of this Raft node.
 */
 func (r *Service) MyID() common.NodeID {
@@ -394,24 +436,24 @@ GetLeaderID returns the unique ID of the leader node, or zero if there is
 currently no known leader.
 */
 func (r *Service) GetLeaderID() common.NodeID {
-	leader := r.getLeader()
-	if leader == nil {
-		return 0
-	}
-	return leader.NodeID
+	return common.NodeID(atomic.LoadUint64(&r.leaderID))
 }
 
 func (r *Service) getLeader() *Node {
-	return r.leader.Load().(*Node)
+	cfg := r.GetNodeConfig()
+	if cfg == nil {
+		return nil
+	}
+	return cfg.getNode(r.GetLeaderID())
 }
 
-func (r *Service) setLeader(newLeader *Node) {
-	if newLeader == nil {
+func (r *Service) setLeader(id common.NodeID) {
+	if id == 0 {
 		glog.V(2).Infof("Node %s: No leader present", r.id)
 	} else {
-		glog.V(2).Infof("Node %s: Node %d is now the leader", r.id, newLeader.NodeID)
+		glog.V(2).Infof("Node %s: Node %s is now the leader", r.id, id)
 	}
-	r.leader.Store(newLeader)
+	atomic.StoreUint64(&r.leaderID, uint64(id))
 }
 
 func (r *Service) getNode(id common.NodeID) *Node {
@@ -494,12 +536,11 @@ elsewhere.
 func (r *Service) setLastApplied(t uint64) {
 	entry, err := r.stor.GetEntry(t)
 	if err != nil {
-		glog.Errorf("Error reading entry from change %d for commit: %s", t, err)
-		return
+		panic(fmt.Sprintf("Node %s: Error reading entry from change %d for commit: %s", r.id, t, err))
 	}
 	if entry == nil {
-		glog.Errorf("Committed entry %d could not be read", t)
-		return
+		// TODO maybe don't panic?
+		panic(fmt.Sprintf("Node %s: Committed entry %d could not be read", r.id, t))
 	}
 
 	switch t := entry.Type; {
@@ -520,8 +561,7 @@ func (r *Service) setLastApplied(t uint64) {
 
 	err = r.stor.SetUintMetadata(LastAppliedKey, t)
 	if err != nil {
-		glog.Errorf("Error updating last applied key %d to the database: %s", t, err)
-		return
+		panic(fmt.Sprintf("Node %s: Error updating last applied key %d to the database: %s", r.id, t, err))
 	}
 
 	atomic.StoreUint64(&r.lastApplied, t)
@@ -608,7 +648,11 @@ the configuration that is currently running (as oppopsed to what
 has been proposed.
 */
 func (r *Service) GetNodeConfig() *NodeList {
-	return r.nodeConfig.Load().(*NodeList)
+	val := r.nodeConfig.Load()
+	if val == nil {
+		return nil
+	}
+	return val.(*NodeList)
 }
 
 func (r *Service) setNodeConfig(newCfg *NodeList) error {
@@ -622,11 +666,12 @@ func (r *Service) setNodeConfig(newCfg *NodeList) error {
 }
 
 func (r *Service) getLocalAddress() string {
-	addr := r.localAddress.Load().(*string)
+	addr := r.localAddress.Load()
 	if addr == nil {
 		return ""
 	}
-	return *addr
+	a := addr.(*string)
+	return *a
 }
 
 /*

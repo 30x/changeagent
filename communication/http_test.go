@@ -136,6 +136,37 @@ var _ = Describe("Communication", func() {
 		Expect(aresp.Success).Should(BeFalse())
 	})
 
+	It("Join", func() {
+		ar := JoinRequest{
+			ClusterID: 4,
+			Last:      true,
+		}
+		e := common.Entry{
+			Index:     1,
+			Term:      2,
+			Timestamp: time.Now(),
+			Tags:      []string{"foo"},
+			Data:      []byte("Hello!"),
+		}
+		ar.Entries = append(ar.Entries, e)
+		e2 := common.Entry{
+			Index:     2,
+			Term:      3,
+			Timestamp: time.Now(),
+			Tags:      []string{"bar", "baz"},
+			Data:      []byte("Goodbye!"),
+		}
+		ar.Entries = append(ar.Entries, e2)
+
+		expectedLock.Lock()
+		expectedEntries = ar.Entries
+		expectedLock.Unlock()
+
+		aresp, err := comm.Join(address, ar)
+		Expect(err).Should(Succeed())
+		Expect(aresp.Error).Should(Succeed())
+	})
+
 	It("Propose", func() {
 		e3 := common.Entry{
 			Timestamp: time.Now(),
@@ -224,4 +255,30 @@ func (r *testImpl) Propose(e *common.Entry) (uint64, error) {
 	}
 
 	return 123, nil
+}
+
+func (r *testImpl) Join(req JoinRequest) (uint64, error) {
+	expectedLock.Lock()
+	defer expectedLock.Unlock()
+
+	var err error
+	for i, e := range req.Entries {
+		ee := expectedEntries[i]
+		if e.Index != ee.Index {
+			err = fmt.Errorf("%d: Expected index %d and got %d", i, expectedEntries[i].Index, e.Index)
+		}
+		if e.Term != ee.Term {
+			err = fmt.Errorf("Terms do not match")
+		}
+		if e.Timestamp != ee.Timestamp {
+			err = fmt.Errorf("Timestamps do not match")
+		}
+		if !bytes.Equal(e.Data, expectedEntries[i].Data) {
+			err = fmt.Errorf("Bytes do not match")
+		}
+		if !reflect.DeepEqual(e.Tags, expectedEntries[i].Tags) {
+			err = fmt.Errorf("Tags do not match")
+		}
+	}
+	return req.Entries[len(req.Entries)-1].Index, err
 }

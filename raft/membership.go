@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/30x/changeagent/common"
+	"github.com/30x/changeagent/communication"
 	"github.com/golang/glog"
 )
 
@@ -43,13 +44,14 @@ func (r *Service) InitializeCluster(addr string) error {
 		return err
 	}
 	r.setClusterID(common.NodeID(id))
+	r.setState(Leader)
 
 	cfg := &NodeList{
 		Current: []Node{{Address: addr, NodeID: r.id}},
 	}
 	r.setNodeConfig(cfg)
 
-	r.setState(Leader)
+	r.loopCommands <- JoinAsCandidate
 
 	glog.Infof("Node %s is now the leader of its own cluster %s", r.id, r.GetClusterID())
 	return nil
@@ -73,6 +75,13 @@ func (r *Service) AddNode(addr string) error {
 	if err != nil {
 		return fmt.Errorf("Error discovering new node at %s: %s", addr, err)
 	}
+
+	glog.V(2).Infof("Catching node %s up with existing data", nodeID)
+	err = r.catchUpNode(addr)
+	if err != nil {
+		return fmt.Errorf("Error catching up node %s: %s", nodeID, err)
+	}
+
 	glog.V(2).Infof("Proposing node %s as a new member", nodeID)
 
 	cfg := r.GetNodeConfig()
@@ -127,6 +136,60 @@ func (r *Service) AddNode(addr string) error {
 	return nil
 }
 
+func (r *Service) catchUpNode(addr string) error {
+	var lastIx uint64
+	joinCount := 0
+
+	for {
+		entries, err := r.stor.GetEntries(lastIx, maxPeerBatchSize,
+			func(e *common.Entry) bool {
+				return true
+			})
+		if err != nil {
+			return err
+		}
+		glog.V(2).Infof("Got back %d entries to join from %d", len(entries), lastIx)
+
+		if len(entries) > 0 {
+			joinReq := communication.JoinRequest{
+				ClusterID: r.GetClusterID(),
+				Entries:   entries,
+			}
+
+			glog.V(2).Infof("Sending %d entries to %s to join cluster", len(entries), addr)
+
+			joinResp, err := r.comm.Join(addr, joinReq)
+			if err != nil {
+				return err
+			}
+			if joinResp.Error != nil {
+				return joinResp.Error
+			}
+			joinCount += len(entries)
+			lastIx = entries[len(entries)-1].Index
+		} else {
+			break
+		}
+	}
+
+	joinReq := communication.JoinRequest{
+		ClusterID: r.GetClusterID(),
+		Last:      true,
+	}
+
+	joinResp, err := r.comm.Join(addr, joinReq)
+	if err != nil {
+		return err
+	}
+	if joinResp.Error != nil {
+		return joinResp.Error
+	}
+	glog.V(2).Infof("Node at %s now caught up to %d", addr, joinResp.NewIndex)
+
+	glog.Infof("Caught up node at %s with %d records", addr, joinCount)
+	return nil
+}
+
 func (r *Service) applyMembershipChange(e *common.Entry) {
 	newCfg, err := decodeNodeList(e.Data)
 	if err != nil {
@@ -137,5 +200,5 @@ func (r *Service) applyMembershipChange(e *common.Entry) {
 	glog.Infof("Applying new node configuration %s", newCfg)
 
 	r.setNodeConfig(newCfg)
-	r.configChanges <- true
+	r.loopCommands <- UpdateConfiguration
 }

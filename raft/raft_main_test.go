@@ -21,7 +21,7 @@ const (
 	DataDir           = "./rafttestdata"
 	PreserveDatabases = false
 	DumpDatabases     = false
-	DebugMode         = true
+	DebugMode         = false
 )
 
 var testRafts []*Service
@@ -41,7 +41,7 @@ func TestRaft(t *testing.T) {
 var _ = BeforeSuite(func() {
 	os.MkdirAll(DataDir, 0777)
 	flag.Set("logtostderr", "true")
-	if DebugMode {
+	if DebugMode || os.Getenv("TESTDEBUG") != "" {
 		flag.Set("v", "5")
 	}
 	flag.Parse()

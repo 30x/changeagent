@@ -25,6 +25,12 @@ message AppendRequestPb {
   repeated EntryPb entries = 6;
 }
 
+message JoinRequestPb {
+  required fixed64 clusterId = 1;
+  optional bool last = 2;
+  repeated EntryPb entries = 3;
+}
+
 message AppendResponsePb {
   required uint64 term = 1;
   required bool success = 2;

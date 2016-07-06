@@ -15,6 +15,7 @@ It has these top-level messages:
 	VoteRequestPb
 	VoteResponsePb
 	AppendRequestPb
+	JoinRequestPb
 	AppendResponsePb
 	ProposalResponsePb
 	DiscoveryResponsePb

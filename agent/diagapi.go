@@ -8,8 +8,7 @@ import (
 	"runtime"
 	"strconv"
 
-	"github.com/30x/changeagent/communication"
-	"github.com/30x/changeagent/discovery"
+	"github.com/30x/changeagent/common"
 	"github.com/30x/changeagent/raft"
 )
 
@@ -32,17 +31,16 @@ RaftState represents the state of the Raft implementation and is used to generat
 a JSON response.
 */
 type RaftState struct {
-	ID             string                `json:"id"`
-	State          string                `json:"state"`
-	Leader         string                `json:"leader"`
-	Term           uint64                `json:"term"`
-	NodeConfig     *discovery.NodeConfig `json:"nodeConfig"`
-	FirstIndex     uint64                `json:"firstIndex"`
-	LastIndex      uint64                `json:"lastIndex"`
-	AppliedIndex   uint64                `json:"appliedIndex"`
-	CommittedIndex uint64                `json:"committedIndex"`
-	ChangeState    string                `json:"configChangeState"`
-	PeerIndices    *map[string]uint64    `json:"peerIndices,omitempty"`
+	ID             string             `json:"id"`
+	State          string             `json:"state"`
+	Leader         string             `json:"leader"`
+	Term           uint64             `json:"term"`
+	NodeConfig     *raft.NodeList     `json:"nodeConfig"`
+	FirstIndex     uint64             `json:"firstIndex"`
+	LastIndex      uint64             `json:"lastIndex"`
+	AppliedIndex   uint64             `json:"appliedIndex"`
+	CommittedIndex uint64             `json:"committedIndex"`
+	PeerIndices    *map[string]uint64 `json:"peerIndices,omitempty"`
 }
 
 func (a *ChangeAgent) initDiagnosticAPI(prefix string) {
@@ -116,17 +114,25 @@ func (a *ChangeAgent) handleRaftInfo(resp http.ResponseWriter, req *http.Request
 		LastIndex:      last,
 		AppliedIndex:   a.raft.GetLastApplied(),
 		CommittedIndex: a.raft.GetCommitIndex(),
-		ChangeState:    status.ChangeMode.String(),
-		PeerIndices:    status.PeerIndices,
 	}
 
-	body, _ := json.MarshalIndent(&state, indentPrefix, indentSpace)
+	pis := make(map[string]uint64)
+	for pik, piv := range *status.PeerIndices {
+		pis[pik.String()] = piv
+	}
+	state.PeerIndices = &pis
+
+	body, err := json.MarshalIndent(&state, indentPrefix, indentSpace)
+	if err != nil {
+		writeError(resp, 500, err)
+		return
+	}
 
 	resp.Header().Set("Content-Type", jsonContent)
 	resp.Write(body)
 }
 
-func (a *ChangeAgent) getLeaderID() communication.NodeID {
+func (a *ChangeAgent) getLeaderID() common.NodeID {
 	if a.GetRaftState() == raft.Leader {
 		return a.raft.MyID()
 	}

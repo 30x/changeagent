@@ -1,6 +1,6 @@
 ALLDEPS = \
-  agent/*.go communication/*.go \
-	discovery/*.go storage/*.go raft/*.go agent/*.go \
+	agent/*.go communication/*.go \
+	storage/*.go raft/*.go agent/*.go \
 	hooks/*.go
 
 all: changeagent

@@ -16,7 +16,7 @@ import (
 
 const (
 	pollInterval = 250 * time.Millisecond
-	testTimeout  = 10 * time.Second
+	testTimeout  = 20 * time.Second
 )
 
 var _ = Describe("Raft Tests", func() {
@@ -165,7 +165,7 @@ func restartOneNode(ix int, savedPath string, savedPort int) error {
 }
 
 func assertOneLeader() {
-	Eventually(countLeaders(), testTimeout, pollInterval).Should(Equal(1))
+	Eventually(countLeaders, testTimeout, pollInterval).Should(Equal(1))
 }
 
 func appendAndVerify(msg string, expectedCount int) uint64 {
@@ -210,6 +210,7 @@ func countRafts() (int, int) {
 			leaders++
 		}
 	}
+	fmt.Fprintf(GinkgoWriter, "%d followers and %d leaders\n", followers, leaders)
 
 	return followers, leaders
 }

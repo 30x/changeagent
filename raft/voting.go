@@ -11,7 +11,7 @@ import (
 )
 
 func (r *Service) handleFollowerVote(state *raftState, cmd voteCommand) bool {
-	glog.V(2).Infof("Node %s got vote request from %d at term %d",
+	glog.V(2).Infof("Node %s got vote request from %s at term %d",
 		r.id, cmd.vr.CandidateID, cmd.vr.Term)
 	currentTerm := r.GetCurrentTerm()
 
@@ -41,7 +41,7 @@ func (r *Service) handleFollowerVote(state *raftState, cmd voteCommand) bool {
 		cmd.vr.LastLogIndex >= commitIndex {
 		state.votedFor = cmd.vr.CandidateID
 		r.writeLastVote(cmd.vr.CandidateID)
-		glog.V(2).Infof("Node %s voting for candidate %d", r.id, cmd.vr.CandidateID)
+		glog.V(2).Infof("Node %s voting for candidate %s", r.id, cmd.vr.CandidateID)
 		resp.VoteGranted = true
 	} else {
 		resp.VoteGranted = false

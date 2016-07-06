@@ -6,8 +6,8 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/30x/changeagent/common"
 	"github.com/30x/changeagent/communication"
-	"github.com/30x/changeagent/discovery"
 	"github.com/30x/changeagent/raft"
 	"github.com/30x/changeagent/storage"
 	"github.com/golang/glog"
@@ -50,7 +50,7 @@ If "uriPrefix" is not the empty string, then every API call will require that
 it be prepended. In other words, "/changes" will become "/prefix/changes".
 The prefix must not end with a "/".
 */
-func StartChangeAgent(disco discovery.Discovery,
+func StartChangeAgent(
 	dbFile string,
 	httpMux *http.ServeMux,
 	uriPrefix string) (*ChangeAgent, error) {
@@ -79,7 +79,7 @@ func StartChangeAgent(disco discovery.Discovery,
 		uriPrefix: uriPrefix,
 	}
 
-	raft, err := raft.StartRaft(comm, disco, stor, agent)
+	raft, err := raft.StartRaft(comm, stor, agent)
 	if err != nil {
 		return nil, err
 	}
@@ -118,7 +118,7 @@ func (a *ChangeAgent) GetRaftState() raft.State {
 	return a.raft.GetState()
 }
 
-func (a *ChangeAgent) makeProposal(proposal storage.Entry) (storage.Entry, error) {
+func (a *ChangeAgent) makeProposal(proposal *common.Entry) (*common.Entry, error) {
 	// Timestamp and otherwise update the proposal
 	proposal.Timestamp = time.Now()
 
@@ -126,19 +126,19 @@ func (a *ChangeAgent) makeProposal(proposal storage.Entry) (storage.Entry, error
 	newIndex, err := a.raft.Propose(proposal)
 	if err != nil {
 		glog.Warningf("Fatal error making Raft proposal: %v", err)
-		return storage.Entry{}, err
+		return nil, err
 	}
 	glog.V(2).Infof("Proposed new change with index %d", newIndex)
 
 	err = a.waitForCommit(newIndex)
 	if err == nil {
-		newEntry := storage.Entry{
+		newEntry := &common.Entry{
 			Index: newIndex,
 		}
 		return newEntry, nil
 	}
 
-	return storage.Entry{}, err
+	return nil, err
 }
 
 // Wait for the new commit to be applied, or time out
@@ -156,7 +156,7 @@ func (a *ChangeAgent) waitForCommit(ix uint64) error {
 Commit is called by the Raft implementation when an entry has reached
 commit state. However, we do not do anything here today.
 */
-func (a *ChangeAgent) Commit(entry *storage.Entry) error {
+func (a *ChangeAgent) Commit(entry *common.Entry) error {
 	// Nothing to do now. Perhaps we take this interface out.
 	return nil
 }

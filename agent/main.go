@@ -8,15 +8,12 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
-	"github.com/30x/changeagent/discovery"
 	"github.com/golang/glog"
 )
 
 const (
-	defaultPort       = 8080
-	defaultConfigScan = 10 * time.Second
+	defaultPort = 8080
 )
 
 func main() {
@@ -26,13 +23,11 @@ func main() {
 func runAgentMain() int {
 	var port int
 	var dbDir string
-	var discoveryFile string
 	var apiPrefix string
 	var help bool
 
 	flag.IntVar(&port, "p", defaultPort, "Port to listen on.")
 	flag.StringVar(&dbDir, "d", "", "Directory in which to place data. Required.")
-	flag.StringVar(&discoveryFile, "s", "", "File from which to read list of peers. Default is single-node operation.")
 	flag.BoolVar(&help, "h", false, "Print help message.")
 	flag.StringVar(&apiPrefix, "P", "", "API Path Prefix. Ex. \"foo\" means all APIs prefixed with \"/foo\"")
 
@@ -47,21 +42,8 @@ func runAgentMain() int {
 		return 3
 	}
 
-	var disco discovery.Discovery
-	var err error
-	if discoveryFile == "" {
-		disco = discovery.CreateStandaloneDiscovery(fmt.Sprintf("localhost:%d", port))
-	} else {
-		disco, err = discovery.ReadDiscoveryFile(discoveryFile, defaultConfigScan)
-		if err != nil {
-			fmt.Printf("Error reading discovery file: %s\n", err)
-			return 5
-		}
-	}
-	defer disco.Close()
-
 	mux := http.NewServeMux()
-	agent, err := StartChangeAgent(disco, dbDir, mux, apiPrefix)
+	agent, err := StartChangeAgent(dbDir, mux, apiPrefix)
 	if err != nil {
 		fmt.Printf("Error starting agent: %s\n", err)
 		return 6
