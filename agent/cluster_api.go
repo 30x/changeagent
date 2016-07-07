@@ -47,6 +47,7 @@ func (a *ChangeAgent) initClusterAPI(prefix string) {
 	a.router.HandleFunc(prefix+clusterURI, a.handleGetCluster).Methods("GET")
 	a.router.HandleFunc(prefix+membersURI, a.handleGetClusterMembers).Methods("GET")
 	a.router.HandleFunc(prefix+memberURI, a.handleGetClusterMember).Methods("GET")
+	a.router.HandleFunc(prefix+memberURI, a.handleRemoveClusterMember).Methods("DELETE")
 	a.router.HandleFunc(prefix+membersURI, a.handleAddClusterMember).Methods("POST")
 }
 
@@ -104,8 +105,33 @@ func (a *ChangeAgent) handleAddClusterMember(resp http.ResponseWriter, req *http
 		err = a.raft.AddNode(addrInfo.address)
 	}
 
-	if err != nil {
+	if err == nil {
+		a.handleGetClusterMembers(resp, req)
+	} else {
 		writeError(resp, http.StatusBadRequest, err)
+	}
+}
+
+func (a *ChangeAgent) handleRemoveClusterMember(resp http.ResponseWriter, req *http.Request) {
+	idStr := mux.Vars(req)["id"]
+	id := common.ParseNodeID(idStr)
+	if id == 0 {
+		writeError(resp, http.StatusBadRequest, fmt.Errorf("Invalid Node ID: %s", idStr))
+		return
+	}
+
+	node := a.raft.GetNodeConfig().GetNode(id)
+	if node == nil {
+		resp.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	err := a.raft.RemoveNode(node.NodeID)
+
+	if err == nil {
+		a.handleGetClusterMembers(resp, req)
+	} else {
+		writeError(resp, http.StatusInternalServerError, err)
 	}
 }
 
