@@ -46,16 +46,16 @@ func (r *Service) mainLoop() {
 
 	var stopDone chan bool
 	for {
+		glog.Infof("Node %s entering %s mode", r.id, r.GetState())
 		switch r.GetState() {
 		case Follower:
-			glog.Infof("Node %s entering follower mode", r.id)
 			stopDone = r.followerLoop(false, state)
 		case Candidate:
-			glog.Infof("Node %s entering candidate mode", r.id)
 			stopDone = r.followerLoop(true, state)
-		case Leader, Standalone:
-			glog.Infof("Node %s entering leader mode", r.id)
-			stopDone = r.leaderLoop(state)
+		case Leader:
+			stopDone = r.leaderLoop(state, true)
+		case Standalone:
+			stopDone = r.leaderLoop(state, false)
 		case Stopping:
 			r.cleanup()
 			if stopDone != nil {
@@ -167,6 +167,13 @@ func (r *Service) followerLoop(isCandidate bool, state *raftState) chan bool {
 			returnStatus(si, state, false)
 
 		case cmd := <-r.loopCommands:
+			if cmd == UpdateConfiguration && r.GetNodeConfig().GetNode(r.id) == nil {
+				glog.Infof("We have been removed from cluster %s", r.GetClusterID())
+				r.setClusterID(0)
+				r.setLeader(0)
+				r.setState(Standalone)
+				return nil
+			}
 			glog.V(2).Infof("Ignoring loop command %s", cmd)
 
 		case stopDone := <-r.stopChan:
@@ -176,12 +183,14 @@ func (r *Service) followerLoop(isCandidate bool, state *raftState) chan bool {
 	}
 }
 
-func (r *Service) leaderLoop(state *raftState) chan bool {
+func (r *Service) leaderLoop(state *raftState, isLeader bool) chan bool {
 	// Get the list of nodes here from the current configuration.
-	nodes := r.GetNodeConfig().GetUniqueNodes()
-	for _, node := range nodes {
-		state.peers[node.NodeID] = startPeer(node, r, state.peerMatchChanges)
-		state.peerMatches[node.NodeID] = 0
+	if isLeader {
+		nodes := r.GetNodeConfig().GetUniqueNodes()
+		for _, node := range nodes {
+			state.peers[node.NodeID] = startPeer(node, r, state.peerMatchChanges)
+			state.peerMatches[node.NodeID] = 0
+		}
 	}
 
 	// Upon election: send initial empty AppendEntries RPCs (heartbeat) to
@@ -206,7 +215,7 @@ func (r *Service) leaderLoop(state *raftState) chan bool {
 		case appendCmd := <-r.appendCommands:
 			// 5.1: If RPC request or response contains term T > currentTerm:
 			// set currentTerm = T, convert to follower
-			if appendCmd.ar.Term > r.GetCurrentTerm() {
+			if isLeader && appendCmd.ar.Term > r.GetCurrentTerm() {
 				glog.Infof("Append request from new leader at new term %d. No longer leader",
 					appendCmd.ar.Term)
 				// Potential race condition averted because only this goroutine updates term
@@ -266,6 +275,13 @@ func (r *Service) leaderLoop(state *raftState) chan bool {
 			glog.V(2).Infof("Received loop command %s", cmd)
 			switch cmd {
 			case UpdateConfiguration:
+				if r.GetNodeConfig().GetNode(r.id) == nil {
+					glog.Infof("Node %s: we have been removed as leader of cluster %s", r.id, r.GetClusterID())
+					stopPeers(state)
+					r.setClusterID(0)
+					r.setState(Standalone)
+					return nil
+				}
 				r.updatePeerList(state)
 			case JoinAsFollower:
 				r.setState(Follower)
@@ -286,8 +302,10 @@ func (r *Service) leaderLoop(state *raftState) chan bool {
 }
 
 func stopPeers(state *raftState) {
-	for _, p := range state.peers {
+	for pid, p := range state.peers {
 		p.stop()
+		delete(state.peers, pid)
+		delete(state.peerMatches, pid)
 	}
 }
 

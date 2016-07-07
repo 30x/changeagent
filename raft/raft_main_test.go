@@ -32,6 +32,7 @@ var anyPort net.TCPAddr
 var webHookListener *net.TCPListener
 var webHookAddr string
 var unitTestID common.NodeID
+var clusterSize int
 
 func TestRaft(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -56,7 +57,7 @@ var _ = BeforeSuite(func() {
 	}
 
 	// Create one more for unit tests
-	unitTestListener, _ = startListener()
+	unitTestListener, unitTestAddr := startListener()
 
 	raft1, err := startRaft(testListener[0], path.Join(DataDir, "test1"))
 	Expect(err).Should(Succeed())
@@ -74,6 +75,8 @@ var _ = BeforeSuite(func() {
 	Expect(err).Should(Succeed())
 	unitTestID = unitTestRaft.MyID()
 
+	clusterSize = 3
+
 	webHookListener, webHookAddr = startListener()
 	go http.Serve(webHookListener, &webHookServer{})
 
@@ -88,6 +91,11 @@ var _ = BeforeSuite(func() {
 	err = raft1.AddNode(addrs[2])
 	Expect(err).Should(Succeed())
 	assertOneLeader()
+
+	// Also make the unit test raft a leader of its own cluster.
+	// Leaders work a little differently from standalone nodes.
+	err = unitTestRaft.InitializeCluster(unitTestAddr)
+	Expect(err).Should(Succeed())
 })
 
 func startListener() (*net.TCPListener, string) {

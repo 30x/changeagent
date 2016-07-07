@@ -140,6 +140,80 @@ func (r *Service) AddNode(addr string) error {
 	return nil
 }
 
+/*
+RemoveNode starts the process to remove a node from the cluster. It does this by
+creating a new membership list, and then proposing it to the cluster.
+*/
+func (r *Service) RemoveNode(nodeID common.NodeID) error {
+	if r.GetClusterID() == 0 {
+		return fmt.Errorf("Cluster mode must be initialized first")
+	}
+	cm := r.GetMembershipChangeMode()
+	if cm != Stable {
+		return fmt.Errorf("Prior membership change not complete. Mode = %s", cm)
+	}
+
+	if r.GetNodeConfig().GetNode(nodeID) == nil {
+		return fmt.Errorf("Node %s is not part of cluster %s", nodeID, r.GetClusterID())
+	}
+
+	glog.V(2).Infof("Proposing new configuration withoutnode %s as a new member", nodeID)
+
+	cfg := r.GetNodeConfig()
+
+	var nextList []Node
+	for _, n := range cfg.Current {
+		if n.NodeID != nodeID {
+			nextList = append(nextList, n)
+		}
+	}
+
+	newCfg := &NodeList{
+		Current: cfg.Current,
+		Next:    nextList,
+	}
+
+	proposedEntry := common.Entry{
+		Type: MembershipChange,
+		Data: newCfg.encode(),
+	}
+
+	glog.V(2).Infof("Proposing joint configuration: %s", newCfg)
+	ix, err := r.Propose(&proposedEntry)
+	if err != nil {
+		return err
+	}
+
+	appliedIx := r.appliedTracker.TimedWait(ix, NodeProposalTimeout)
+	if appliedIx < ix {
+		// TODO re-propose the original membership so we don't get stuck
+		return fmt.Errorf("Cannot apply the membership change to a quorum")
+	}
+
+	finalCfg := &NodeList{
+		Current: nextList,
+	}
+
+	proposedEntry = common.Entry{
+		Type: MembershipChange,
+		Data: finalCfg.encode(),
+	}
+
+	glog.V(2).Infof("Proposing final configuration: %s", newCfg)
+	ix, err = r.Propose(&proposedEntry)
+	if err != nil {
+		return err
+	}
+
+	appliedIx = r.appliedTracker.TimedWait(ix, NodeProposalTimeout)
+	if appliedIx < ix {
+		// TODO re-propose the original membership so we don't get stuck
+		return fmt.Errorf("Cannot apply the membership change to a quorum")
+	}
+
+	return nil
+}
+
 func (r *Service) catchUpNode(addr string) error {
 	var lastIx uint64
 	joinCount := 0

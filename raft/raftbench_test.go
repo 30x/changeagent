@@ -8,6 +8,10 @@ import (
 	. "github.com/onsi/gomega"
 )
 
+const (
+	shortPollInterval = time.Millisecond
+)
+
 var _ = Describe("Simple Benchmarks", func() {
 	Measure("Appends", func(b Benchmarker) {
 		assertOneLeader()
@@ -25,7 +29,7 @@ var _ = Describe("Simple Benchmarks", func() {
 			newIndex, err := leader.Propose(&newEntry)
 			Expect(err).Should(Succeed())
 			Expect(newIndex).Should(Equal(lastIndex + 1))
-			waitForApply(newIndex, 3)
+			waitForApply(newIndex, clusterSize, shortPollInterval)
 			lastIndex++
 		})
 	}, 50)

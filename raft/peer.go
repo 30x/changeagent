@@ -48,6 +48,7 @@ func startPeer(n Node, r *Service, changes chan<- peerMatchResult) *raftPeer {
 }
 
 func (p *raftPeer) stop() {
+	glog.V(2).Infof("Sending stop for peer %s", p.node.NodeID)
 	p.stopChan <- true
 }
 
@@ -130,7 +131,7 @@ func (p *raftPeer) peerLoop() {
 			}
 
 		case <-p.stopChan:
-			glog.V(2).Infof("Peer at %s stopping", p.node)
+			glog.V(2).Infof("Peer at %s stopping", p.node.NodeID)
 			return
 		}
 	}

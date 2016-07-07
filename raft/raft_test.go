@@ -25,7 +25,7 @@ var _ = Describe("Raft Tests", func() {
 	})
 
 	It("Basic Append", func() {
-		appendAndVerify("First test", 3)
+		appendAndVerify("First test", clusterSize)
 	})
 
 	It("Append to Non-Leader", func() {
@@ -35,19 +35,19 @@ var _ = Describe("Raft Tests", func() {
 		}
 		ix, err := getNonLeader().Propose(&entry)
 		Expect(err).Should(Succeed())
-		waitForApply(ix, 3)
+		waitForApply(ix, clusterSize, pollInterval)
 	})
 
 	// Verify that we can add a webhook that will block invalid requests
 	It("WebHook", func() {
-		appendAndVerify("FailMe", 3)
+		appendAndVerify("FailMe", clusterSize)
 
 		wh := []hooks.WebHook{
 			hooks.WebHook{URI: fmt.Sprintf("http://%s", webHookAddr)},
 		}
 		ix, err := getLeader().UpdateWebHooks(wh)
 		Expect(err).Should(Succeed())
-		waitForApply(ix, 3)
+		waitForApply(ix, clusterSize, pollInterval)
 
 		entry := common.Entry{
 			Data:      []byte("FailMe"),
@@ -55,15 +55,15 @@ var _ = Describe("Raft Tests", func() {
 		}
 		ix, err = getLeader().Propose(&entry)
 		Expect(err).ShouldNot(Succeed())
-		waitForApply(ix, 3)
+		waitForApply(ix, clusterSize, pollInterval)
 
-		appendAndVerify("DontFailMe", 3)
+		appendAndVerify("DontFailMe", clusterSize)
 
 		ix, err = getLeader().UpdateWebHooks([]hooks.WebHook{})
 		Expect(err).Should(Succeed())
-		waitForApply(ix, 3)
+		waitForApply(ix, clusterSize, pollInterval)
 
-		appendAndVerify("FailMe", 3)
+		appendAndVerify("FailMe", clusterSize)
 	})
 
 	// After stopping the leader, a new one is elected
@@ -80,7 +80,7 @@ var _ = Describe("Raft Tests", func() {
 		time.Sleep(time.Second)
 
 		assertOneLeader()
-		appendAndVerify("Second test. Yay!", 2)
+		appendAndVerify("Second test. Yay!", clusterSize-1)
 		// Previous step read the storage so we can close it now.
 		testRafts[leaderIndex].stor.Close()
 
@@ -90,7 +90,7 @@ var _ = Describe("Raft Tests", func() {
 
 		time.Sleep(time.Second)
 		assertOneLeader()
-		appendAndVerify("Restarted third node. Yay!", 3)
+		appendAndVerify("Restarted third node. Yay!", clusterSize)
 	})
 
 	// After stopping one follower, things are pretty normal actually.
@@ -107,7 +107,7 @@ var _ = Describe("Raft Tests", func() {
 		time.Sleep(time.Second)
 
 		assertOneLeader()
-		appendAndVerify("Second test. Yay!", 2)
+		appendAndVerify("Second test. Yay!", clusterSize-1)
 		// Previous step read the storage so we can close it now.
 		testRafts[followerIndex].stor.Close()
 
@@ -117,11 +117,11 @@ var _ = Describe("Raft Tests", func() {
 
 		time.Sleep(time.Second)
 		assertOneLeader()
-		appendAndVerify("Restarted third node. Yay!", 3)
+		appendAndVerify("Restarted third node. Yay!", clusterSize)
 	})
 
 	It("Add Node", func() {
-		appendAndVerify("Before leadership change", 3)
+		appendAndVerify("Before leadership change", clusterSize)
 
 		listener, addr := startListener()
 		newRaft, err := startRaft(listener, path.Join(DataDir, "test4"))
@@ -135,7 +135,40 @@ var _ = Describe("Raft Tests", func() {
 		Expect(err).Should(Succeed())
 		time.Sleep(time.Second)
 		assertOneLeader()
-		appendAndVerify("New leader elected. Yay!", 4)
+		clusterSize++
+		appendAndVerify("New leader elected. Yay!", clusterSize)
+	})
+
+	It("Remove Follower", func() {
+		appendAndVerify("Before leadership change", clusterSize)
+
+		nonLeader := getNonLeader()
+		fmt.Fprintf(GinkgoWriter, "Removing non-leader node %s\n", nonLeader.id)
+
+		err := getLeader().RemoveNode(nonLeader.id)
+		Expect(err).Should(Succeed())
+		time.Sleep(time.Second)
+		// Removed node is still running now, and should be in standalone mode
+		assertOneLeader()
+		clusterSize--
+		appendAndVerify("Follower removed. Yay!", clusterSize)
+		Expect(nonLeader.GetState()).Should(Equal(Standalone))
+	})
+
+	It("Remove Leader", func() {
+		appendAndVerify("Before leadership change", clusterSize)
+
+		leader := getLeader()
+		fmt.Fprintf(GinkgoWriter, "Removing leader node %s\n", leader.id)
+
+		err := leader.RemoveNode(leader.id)
+		Expect(err).Should(Succeed())
+		time.Sleep(time.Second)
+		// Removed node is still running now, and should be in standalone mode
+		assertOneLeader()
+		clusterSize--
+		appendAndVerify("Follower removed. Yay!", clusterSize)
+		Expect(leader.GetState()).Should(Equal(Standalone))
 	})
 })
 
@@ -284,8 +317,8 @@ func verifyApplied(ix uint64, expectedCount int) bool {
 	return correctCount >= expectedCount
 }
 
-func waitForApply(ix uint64, expectedCount int) {
+func waitForApply(ix uint64, expectedCount int, interval time.Duration) {
 	Eventually(func() bool {
 		return verifyApplied(ix, expectedCount)
-	}, testTimeout, pollInterval).Should(BeTrue())
+	}, testTimeout, interval).Should(BeTrue())
 }
