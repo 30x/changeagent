@@ -1,0 +1,11 @@
+package protos;
+
+// A single Raft entry.
+message EntryPb {
+  required uint64 index = 1;        // Unique sequential index
+  required int32 type = 2;          // User-defined record type field
+  optional uint64 term = 3;         // Raft term of this index
+  optional int64 timestamp = 4;     // Time when the record was created, in nanoseconds since 1970
+  repeated string tags = 5;         // Optional tags that allow record matching
+  optional bytes data = 6;          // The raw data from the message
+}
