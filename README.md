@@ -71,7 +71,7 @@ changeagent is designed for storing configuration changes for a distributed syst
 It is excellent for workloads that have the following characteristics:
 
 * Changes must be propagated in order to a large number of consumers
-* Consumers are occasionally connected, and cannot rely on anything but the abilty
+* Consumers are occasionally connected, and cannot rely on anything but the ability
 to make outgoing HTTP requests.
 * Changes are produced at a "human" scale -- 10s of changes per second, at most.
 * Latency for retrieving lists of changes is important.
@@ -223,26 +223,68 @@ For instance, here is a simple way to run on port 9000:
 
 ## Running a Cluster
 
-To run a cluster, you will need to create a file that lists the host names and
-ports for each cluster node. Then it's necessary to start each agent.
+When a changeagent node is started, it runs in standalone mode. In order to create
+a cluster, cluster configuration is propagated via the Raft protocol just like
+any other change. Once propagated, each cluster member has information about
+the other members in its local data store.
 
-For instance, create a file called "nodes" that contains the following:
+In order to create a cluster, we start a set of standalone modes, and then gradually
+build the cluster.
 
-    localhost:9000
-    localhost:9001
-    localhost:9002
-
-Then, start three "changeagent" binaries:
+For instance, start three "changeagent" binaries"
 
     mkdir data1
     mkdir data2
     mkdir data3
-    ./changeagent -p 9000 -d ./data1 -logtostderr -s nodes &
-    ./changeagent -p 9001 -d ./data2 -logtostderr -s nodes &
-    ./changeagent -p 9002 -d ./data3 -logtostderr -s nodes &
+    ./changeagent -p 9000 -d ./data1 -logtostderr &
+    ./changeagent -p 9001 -d ./data2 -logtostderr &
+    ./changeagent -p 9002 -d ./data3 -logtostderr &
 
-After about 10 seconds, the three agents will agree on a leader, and you will
-be able to make API calls to any cluster node.
+Now we will use the first one to build the cluster, by making three API calls:
+
+    curl http://localhost:9000/cluster/members -d 'address=server1:9000'
+    curl http://localhost:9000/cluster/members -d 'address=server2:9001'
+    curl http://localhost:9000/cluster/members -d 'address=server3:9002'
+
+At the end of the third API call, then all three members will be part of the
+cluster. The cluster information is persisted in each member's database, so
+upon restart all of the nodes will continue to find each other.
+
+Note that in this example, we used "server1" as the host name, and not "localhost."
+"server1" is a stand-in for the "real" host name or IP address where each node
+is running. This is very important, because all cluster nodes need to be able to
+reach all the other cluster nodes using this address. "localhost" will not work
+unless all the nodes will always be running on the same host.
+
+Also notice that the first thing that we do is to tell one of the cluster nodes
+to add itself as a member, with its own address. This is also critical because
+the first node in the cluster will advertise its address to the other nodes, and
+it does not necessarily know which address that they should use.
+
+Calls to add or remove nodes to the cluster must only be made to a single node.
+The change will be propagated to the whole cluster just like any other change,
+and will take effect on all nodes.
+
+## Managing a Cluster
+
+It is always possible to see which nodes are in a cluster:
+
+    curl http://localhost:9000/cluster
+
+Furthermore, other API calls behave the way you might expect. To see
+cluster members:
+
+    curl http://localhost:9000/cluster/members
+
+To see information about just one member, you need to know its member ID:
+
+    curl http://localhost:9000/cluster/members/MEMBERID
+
+And correspondingly, to delete a cluster node:
+
+    curl http://localhost:9000/cluster/members/MEMBERID -X DELETE
+
+Deleted nodes retain their data, but they go back to being standalone nodes.
 
 # Rationale
 

@@ -2,43 +2,9 @@
 
 ## Bugs
 
-Probably need to be able to query by timestamp because we won't always know
-when to start.
-
-Election deadlock is possible, at least with two out of three nodes running.
-  Only happened a few times.
-
 Insert performance is inconsistent. It seems like many inserts take as long as the HB interval.
 
-tests for having no servers in the discovery file, then adding them later.
-
 ## High Priority
-
-Return something at "end of stream." That way clients know when they need
-to ask for a snapshot. Also return a link to the previous chunk if they
-are not at the end of the stream.
-  Add index information to the Raft diagnostic stuff to make this stuff
-    easier as well.
-
-Finish membership change support:
-  Test removal of a follower
-  Implement removal of a leader (it should stop being leader even if still running)
-    What stops it from starting a new election?
-    Followers need to vote "no" until the leader timeout has expired, right?
-  Test address changes
-  Test node catchup with a big database
-  Test graceful stop of a node
-
-DNS SRV discovery
-  By default, look for _changeagent._tcp.YOUR-NAME-HERE. That will make this
-  a standard SRV record. Poll every five, or maybe one, minutes, and assume
-  that go will do caching. Lookup support is already in the "net" package.
-
-Add a unique cluster ID
-  Prevents configuration screw-ups
-  Cluster ID generated first time leader sends a message, as an "init" message.
-  Gets persisted on each node
-  Sent on each request. Node rejects anything with a bad cluster ID.
 
 Read-only slaves.
 
@@ -46,14 +12,13 @@ TLS everywhere.
   Specify CA for trusted connections from server to server.
   Optional CA for API calls.
 
-Add a version number to the whole database!
-
-Test and understand ramifications of current cluster configuration changes.
-
-Come up with a graceful shutdown procedure for the leader.
+Add a version number to the whole database
 
 Think seriously about rolling back any change that does not happen within the
 commit timeout.
+
+"Force remove" option for cluster members just in case we are stuck without
+consensus.
 
 ## Lower Priority
 
