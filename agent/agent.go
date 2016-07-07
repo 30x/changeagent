@@ -89,6 +89,7 @@ func StartChangeAgent(
 	agent.initDiagnosticAPI(uriPrefix)
 	agent.initChangesAPI(uriPrefix)
 	agent.initHooksAPI(uriPrefix)
+	agent.initClusterAPI(uriPrefix)
 
 	httpMux.Handle("/", agent.router)
 

@@ -61,6 +61,7 @@ func (a *ChangeAgent) handleRootCall(resp http.ResponseWriter, req *http.Request
 	links["changes"] = a.makeLink(req, "/changes")
 	links["diagnostics"] = a.makeLink(req, "/diagnostics")
 	links["hooks"] = a.makeLink(req, "/hooks")
+	links["cluster"] = a.makeLink(req, "/cluster")
 
 	body, _ := json.MarshalIndent(&links, indentPrefix, indentSpace)
 
@@ -117,10 +118,12 @@ func (a *ChangeAgent) handleRaftInfo(resp http.ResponseWriter, req *http.Request
 	}
 
 	pis := make(map[string]uint64)
-	for pik, piv := range *status.PeerIndices {
-		pis[pik.String()] = piv
+	if status.PeerIndices != nil {
+		for pik, piv := range *status.PeerIndices {
+			pis[pik.String()] = piv
+		}
+		state.PeerIndices = &pis
 	}
-	state.PeerIndices = &pis
 
 	body, err := json.MarshalIndent(&state, indentPrefix, indentSpace)
 	if err != nil {

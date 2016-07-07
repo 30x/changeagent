@@ -81,7 +81,7 @@ func (r *Service) sendVotes(state *raftState, index uint64, rc chan<- voteResult
 
 	// Get the current node list from the current config, and request votes.
 	cfg := r.GetNodeConfig()
-	allNodes := cfg.getUniqueNodes()
+	allNodes := cfg.GetUniqueNodes()
 	votes := 0
 	glog.V(2).Infof("Node %s sending vote request to %d nodes for term %d",
 		r.id, len(allNodes), currentTerm)

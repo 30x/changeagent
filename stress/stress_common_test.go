@@ -10,7 +10,9 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/30x/changeagent/common"
 	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/gomega"
 )
 
 const (
@@ -26,7 +28,6 @@ func launchAgent(port int, dataDir string) (*os.Process, error) {
 	cmd := exec.Command("../changeagent")
 	args := []string{
 		"../agent/agent",
-		"-s", "./tmpdisco",
 		"-p", strconv.Itoa(port),
 		"-d", dataDir,
 		"-logtostderr",
@@ -74,11 +75,8 @@ func getRaftState(port int, maxWait int) (string, uint64, error) {
 				if err != nil {
 					return "", 0, err
 				}
-				leaderID, err := strconv.ParseUint(state.Leader, 16, 64)
-				if err != nil {
-					return "", 0, err
-				}
-				return state.State, leaderID, nil
+				leaderID := common.ParseNodeID(state.Leader)
+				return state.State, uint64(leaderID), nil
 			}
 		} else {
 			if err == nil {
@@ -86,11 +84,16 @@ func getRaftState(port int, maxWait int) (string, uint64, error) {
 			}
 			lastErr = err
 		}
-		time.Sleep(time.Second)
+		time.Sleep(250 * time.Millisecond)
 	}
 
 	return "", 0, fmt.Errorf("Raft peer bad status %s after %d seconds: code = %d err = %s",
 		lastStatus, maxWait, lastCode, lastErr)
+}
+
+func waitForServerUp(port int, maxWait int) {
+	_, _, err := getRaftState(port, maxWait)
+	Expect(err).Should(Succeed())
 }
 
 func waitForLeader(ports []int, maxWait int) error {
@@ -119,14 +122,14 @@ func waitForLeader(ports []int, maxWait int) error {
 		}
 
 		if leaderCount == 1 {
-			leaderId := leaders[0]
-			leaderIdCount := 1
+			leaderID := leaders[0]
+			leaderIDCount := 1
 			for i := 1; i < len(leaders); i++ {
-				if leaders[i] == leaderId {
-					leaderIdCount++
+				if leaders[i] == leaderID {
+					leaderIDCount++
 				}
 			}
-			if leaderId != 0 && leaderIdCount == len(leaders) {
+			if leaderID != 0 && leaderIDCount == len(leaders) {
 				return nil
 			}
 		}
@@ -138,34 +141,4 @@ func waitForLeader(ports []int, maxWait int) error {
 	}
 
 	return fmt.Errorf("No leader identified after %d seconds", maxWait)
-}
-
-func copyFile(src string, dst string) error {
-	dstFile, err := os.OpenFile(dst, os.O_RDWR|os.O_CREATE, 0666)
-	if err != nil {
-		return err
-	}
-	defer dstFile.Close()
-
-	srcFile, err := os.OpenFile(src, os.O_RDONLY, 0)
-	if err != nil {
-		return err
-	}
-	defer srcFile.Close()
-	stat, err := srcFile.Stat()
-	if err != nil {
-		return err
-	}
-
-	buf := make([]byte, stat.Size())
-	_, err = srcFile.Read(buf)
-	if err != nil {
-		return err
-	}
-	_, err = dstFile.Write(buf)
-	if err != nil {
-		return err
-	}
-	stat, _ = dstFile.Stat()
-	return nil
 }

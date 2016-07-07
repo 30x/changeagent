@@ -76,6 +76,10 @@ func (r *Service) AddNode(addr string) error {
 		return fmt.Errorf("Error discovering new node at %s: %s", addr, err)
 	}
 
+	if r.GetNodeConfig().GetNode(nodeID) != nil {
+		return fmt.Errorf("Node %s is already part of cluster %s", nodeID, r.GetClusterID())
+	}
+
 	glog.V(2).Infof("Catching node %s up with existing data", nodeID)
 	err = r.catchUpNode(addr)
 	if err != nil {

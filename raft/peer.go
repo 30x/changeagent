@@ -225,7 +225,7 @@ func (p *raftPeer) sendUpdates(desired uint64, next uint64, rc chan rpcResponse)
 	// Unless we are starting from 0, the first entry in the list just tells us what the
 	// lastIndex and lastTerm should be. The rest are the entries that we actually
 	// want to send.
-	if next == 0 {
+	if len(allEntries) == 0 || next == 0 {
 		lastIndex = 0
 		lastTerm = 0
 		sendEntries = allEntries

@@ -6,3 +6,4 @@ import:
   subpackages:
   - /proto
 - package: github.com/gorilla/mux
+- package: github.com/mholt/binding

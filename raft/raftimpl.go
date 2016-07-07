@@ -444,7 +444,7 @@ func (r *Service) getLeader() *Node {
 	if cfg == nil {
 		return nil
 	}
-	return cfg.getNode(r.GetLeaderID())
+	return cfg.GetNode(r.GetLeaderID())
 }
 
 func (r *Service) setLeader(id common.NodeID) {
@@ -461,7 +461,7 @@ func (r *Service) getNode(id common.NodeID) *Node {
 	if cfg == nil {
 		return nil
 	}
-	return cfg.getNode(id)
+	return cfg.GetNode(id)
 }
 
 /*

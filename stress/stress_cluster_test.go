@@ -20,7 +20,7 @@ const (
 )
 
 type StressChange struct {
-	Id uint64 `json:"_id"`
+	ID uint64 `json:"_id"`
 }
 
 type WriteResponse struct {
@@ -28,16 +28,13 @@ type WriteResponse struct {
 }
 
 type CollectionResponse struct {
-	Id string `json:"_id"`
+	ID string `json:"_id"`
 }
 
 var _ = Describe("Cluster Test", func() {
 	var ports []int
 
 	It("Cluster Test", func() {
-		err := copyFile("./disco", "./tmpdisco")
-		Expect(err).Should(Succeed())
-
 		ports = make([]int, 3)
 		ports[0] = BasePort
 		ports[1] = BasePort + 1
@@ -54,6 +51,14 @@ var _ = Describe("Cluster Test", func() {
 		var _ = server1
 		var _ = server2
 		var _ = server3
+
+		waitForServerUp(ports[0], DefaultWait)
+		waitForServerUp(ports[1], DefaultWait)
+		waitForServerUp(ports[2], DefaultWait)
+
+		addToCluster(ports[0], ports[0])
+		addToCluster(ports[0], ports[1])
+		addToCluster(ports[0], ports[2])
 
 		err = waitForLeader(ports, DefaultWait)
 		Expect(err).Should(Succeed())
@@ -152,9 +157,6 @@ var _ = Describe("Cluster Test", func() {
 
 		// Now start a fourth server and add it to the cluster
 
-		err = copyFile("./disco2", "./tmpdisco")
-		Expect(err).Should(Succeed())
-
 		morePorts := make([]int, 4)
 		morePorts[0] = ports[0]
 		morePorts[1] = ports[1]
@@ -163,6 +165,8 @@ var _ = Describe("Cluster Test", func() {
 
 		_, err = launchAgent(morePorts[3], path.Join(dataDir, "data4"))
 		Expect(err).Should(Succeed())
+		waitForServerUp(morePorts[3], DefaultWait)
+		addToCluster(morePorts[0], morePorts[3])
 
 		err = waitForLeader(morePorts, DefaultWait)
 		Expect(err).Should(Succeed())
@@ -205,10 +209,10 @@ func sendBatch(writePort int, count int, anno string) (uint64, uint64) {
 		Expect(err).Should(Succeed())
 
 		if first {
-			firstChange = writeResp.Id
+			firstChange = writeResp.ID
 			first = false
 		}
-		lastChange = writeResp.Id
+		lastChange = writeResp.ID
 	}
 
 	return firstChange, lastChange
@@ -229,7 +233,7 @@ func fetchChanges(readPort int, since uint64) []uint64 {
 
 	ret := make([]uint64, len(entries.Changes))
 	for i, entry := range entries.Changes {
-		ret[i] = entry.Id
+		ret[i] = entry.ID
 	}
 
 	return ret
@@ -250,4 +254,12 @@ func checkChanges(readPort int, firstChange, lastChange uint64, maxWait int) {
 	}
 
 	Expect(true).Should(BeFalse())
+}
+
+func addToCluster(apiPort, addPort int) {
+	uri := fmt.Sprintf("http://localhost:%d/cluster/members", apiPort)
+	bod := fmt.Sprintf("address=localhost:%d", addPort)
+	resp, err := http.Post(uri, "application/x-www-form-urlencoded", strings.NewReader(bod))
+	Expect(err).Should(Succeed())
+	Expect(resp.StatusCode).Should(Equal(200))
 }

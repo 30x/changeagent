@@ -171,7 +171,7 @@ func (r *Service) followerLoop(isCandidate bool, state *raftState) chan bool {
 
 func (r *Service) leaderLoop(state *raftState) chan bool {
 	// Get the list of nodes here from the current configuration.
-	nodes := r.GetNodeConfig().getUniqueNodes()
+	nodes := r.GetNodeConfig().GetUniqueNodes()
 	for _, node := range nodes {
 		state.peers[node.NodeID] = startPeer(node, r, state.peerMatchChanges)
 		state.peerMatches[node.NodeID] = 0
@@ -290,7 +290,7 @@ func stopPeers(state *raftState) {
 func (r *Service) updatePeerList(state *raftState) {
 	cfg := r.GetNodeConfig()
 	foundNodes := make(map[common.NodeID]bool)
-	nodes := cfg.getUniqueNodes()
+	nodes := cfg.GetUniqueNodes()
 
 	// Add any missing nodes
 	for _, n := range nodes {

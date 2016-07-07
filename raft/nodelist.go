@@ -56,7 +56,11 @@ func decodeNodeList(buf []byte) (*NodeList, error) {
 	return &l, nil
 }
 
-func (nl *NodeList) getUniqueNodes() []Node {
+/*
+GetUniqueNodes returns only the unique nodes. This is helpful when in joint
+consensus mode.
+*/
+func (nl *NodeList) GetUniqueNodes() []Node {
 	var l []Node
 	ids := make(map[common.NodeID]bool)
 	for _, n := range nl.Current {
@@ -74,7 +78,11 @@ func (nl *NodeList) getUniqueNodes() []Node {
 	return l
 }
 
-func (nl *NodeList) getNode(id common.NodeID) *Node {
+/*
+GetNode returns information about a single node in the list, or nil if the
+node does not exist.
+*/
+func (nl *NodeList) GetNode(id common.NodeID) *Node {
 	for _, n := range nl.Current {
 		if n.NodeID == id {
 			return &n
