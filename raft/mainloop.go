@@ -83,6 +83,8 @@ func (r *Service) followerLoop(isCandidate bool, state *raftState) chan bool {
 	}
 
 	timeout := time.NewTimer(r.randomElectionTimeout())
+	lastSawLeader := time.Unix(0, 0)
+
 	for {
 		select {
 		case <-timeout.C:
@@ -94,7 +96,7 @@ func (r *Service) followerLoop(isCandidate bool, state *raftState) chan bool {
 			}
 
 		case voteCmd := <-r.voteCommands:
-			granted := r.handleFollowerVote(state, voteCmd)
+			granted := r.handleFollowerVote(state, voteCmd, lastSawLeader)
 			if granted {
 				// After voting yes, wait for a timeout until voting again
 				timeout.Reset(r.randomElectionTimeout())
@@ -116,6 +118,7 @@ func (r *Service) followerLoop(isCandidate bool, state *raftState) chan bool {
 				r.setLeader(appendCmd.ar.LeaderID)
 			}
 			r.handleAppend(state, appendCmd)
+			lastSawLeader = time.Now()
 			timeout.Reset(r.randomElectionTimeout())
 
 		case prop := <-r.proposals:
@@ -152,8 +155,12 @@ func (r *Service) followerLoop(isCandidate bool, state *raftState) chan bool {
 					r.setLeader(0)
 					return nil
 				}
+
 				// Voting failed. Try again after timeout.
 				timeout.Reset(r.randomElectionTimeout())
+				r.setState(Follower)
+				r.setLeader(0)
+				return nil
 			}
 
 		case si := <-r.statusInquiries:

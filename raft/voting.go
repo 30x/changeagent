@@ -5,12 +5,14 @@
 package raft
 
 import (
+	"time"
+
 	"github.com/30x/changeagent/common"
 	"github.com/30x/changeagent/communication"
 	"github.com/golang/glog"
 )
 
-func (r *Service) handleFollowerVote(state *raftState, cmd voteCommand) bool {
+func (r *Service) handleFollowerVote(state *raftState, cmd voteCommand, lastSawLeader time.Time) bool {
 	glog.V(2).Infof("Node %s got vote request from %s at term %d",
 		r.id, cmd.vr.CandidateID, cmd.vr.Term)
 	currentTerm := r.GetCurrentTerm()
@@ -22,6 +24,18 @@ func (r *Service) handleFollowerVote(state *raftState, cmd voteCommand) bool {
 
 	// 5.1: Reply false if term < currentTerm
 	if cmd.vr.Term < currentTerm {
+		glog.V(2).Infof("Voting no because term %d less than current term %d", cmd.vr.Term, currentTerm)
+		resp.VoteGranted = false
+		cmd.rc <- resp
+		return false
+	}
+
+	// Section 6: Ignore votes if we never reached election timeout.
+	// Note that election timeout may have been reached even if we are not
+	// a candidate.
+	sinceSawLeader := time.Now().Sub(lastSawLeader)
+	if sinceSawLeader < ElectionTimeout {
+		glog.V(2).Info("Voting no because we saw the leader %v ago", sinceSawLeader)
 		resp.VoteGranted = false
 		cmd.rc <- resp
 		return false
@@ -29,6 +43,7 @@ func (r *Service) handleFollowerVote(state *raftState, cmd voteCommand) bool {
 
 	// Important to double-check state at this point as well since channels are buffered
 	if r.GetState() != Follower {
+		glog.V(2).Infof("Voting no because our state is %s", r.GetState())
 		resp.VoteGranted = false
 		cmd.rc <- resp
 		return false
@@ -44,6 +59,8 @@ func (r *Service) handleFollowerVote(state *raftState, cmd voteCommand) bool {
 		glog.V(2).Infof("Node %s voting for candidate %s", r.id, cmd.vr.CandidateID)
 		resp.VoteGranted = true
 	} else {
+		glog.V(2).Infof("Voting no because we voted for %s or because index %d >= %d",
+			state.votedFor, cmd.vr.LastLogIndex, commitIndex)
 		resp.VoteGranted = false
 	}
 	cmd.rc <- resp
@@ -56,6 +73,7 @@ func (r *Service) voteNo(state *raftState, cmd voteCommand) {
 		Term:        r.GetCurrentTerm(),
 		VoteGranted: false,
 	}
+	glog.V(2).Infof("Voting no because our state is %s", r.GetState())
 	cmd.rc <- resp
 }
 
