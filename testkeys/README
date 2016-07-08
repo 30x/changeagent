@@ -1,0 +1,7 @@
+Here is a CA and some certs for testing.
+
+Lots of help here:
+
+https://jamielinux.com/docs/openssl-certificate-authority/sign-server-and-client-certificates.html
+
+The word "secret" may be useful when doing this.

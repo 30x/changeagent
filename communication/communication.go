@@ -129,6 +129,13 @@ Communication is the interface that other modules use in order to communicate
 with other nodes in the cluster.
 */
 type Communication interface {
+	// Close should be called to shut down any communication and close ports.
+	Close()
+
+	// Port returns the port number that the communication server is listening
+	// on, or zero if it was configured to piggyback on an existing listener.
+	Port() int
+
 	// SetRaft must be called to wire up the communications module before anything
 	// else may be called.
 	SetRaft(raft Raft)

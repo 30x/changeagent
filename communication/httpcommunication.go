@@ -2,10 +2,13 @@ package communication
 
 import (
 	"bytes"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"net"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/30x/changeagent/common"
@@ -26,27 +29,147 @@ const (
 	requestTimeout = 10 * time.Second
 )
 
-var httpClient = &http.Client{
-	Timeout: requestTimeout,
-}
-
 type httpCommunication struct {
-	raft Raft
+	raft       Raft
+	httpClient *http.Client
+	listener   net.Listener
+	httpProto  string
 }
 
 /*
 StartHTTPCommunication creates an instance of the Communication interface that
-runs over HTTP. Requests and responses are made in the form of encoded
-protobufs.
+runs over HTTP. It uses the default HTTP client over regular (insecure) HTTP
+and connects to an existing HTTP listener.
 */
 func StartHTTPCommunication(mux *http.ServeMux) (Communication, error) {
-	comm := httpCommunication{}
-	mux.HandleFunc(requestVoteURI, comm.handleRequestVote)
-	mux.HandleFunc(appendURI, comm.handleAppend)
-	mux.HandleFunc(proposeURI, comm.handlePropose)
-	mux.HandleFunc(discoveryURI, comm.handleDiscovery)
-	mux.HandleFunc(joinURI, comm.handleJoin)
+	comm := &httpCommunication{
+		httpClient: &http.Client{
+			Timeout: requestTimeout,
+		},
+		httpProto: "http",
+	}
+	comm.initMux(mux)
+	return comm, nil
+}
+
+/*
+StartSeparateCommunication starts listening for communication on a separate
+port. It will open a new TCP listener on the specified port, and otherwise
+works the same way.
+*/
+func StartSeparateCommunication(port int) (Communication, error) {
+	addr := &net.TCPAddr{
+		Port: port,
+	}
+	listener, err := net.ListenTCP("tcp", addr)
+	if err != nil {
+		return nil, err
+	}
+
+	mux := http.NewServeMux()
+	comm := httpCommunication{
+		httpClient: &http.Client{
+			Timeout: requestTimeout,
+		},
+		httpProto: "http",
+		listener:  listener,
+	}
+	comm.initMux(mux)
+
+	glog.Infof("Listening for cluster communications on port %d", comm.Port())
+
+	go http.Serve(listener, mux)
 	return &comm, nil
+}
+
+/*
+StartSecureCommunication uses a separate port and also sets up encryption and
+authentication using TLS. All three of the key, certificate, and CA file
+must be specified. Communications are made using the specified key and certificate
+for both client-side and server-side authentication. Verification is provided
+against the specified CA file.
+
+In order for this to work, the specified certificate must include the
+"server_cert" and "usr_cert" options. Verification is always done manually
+against the specified CA list. However, the "CA" is not checked.
+This simplifies setup for most clusters on internal networks.
+*/
+func StartSecureCommunication(port int, key, cert, cas string) (Communication, error) {
+	if key == "" || cert == "" || cas == "" {
+		return nil, errors.New("All three of key, cert, and CA file must be specified")
+	}
+	keyPair, err := tls.LoadX509KeyPair(cert, key)
+	if err != nil {
+		return nil, err
+	}
+	certPool, err := loadCertPool(cas)
+	if err != nil {
+		return nil, err
+	}
+
+	// Set up cluster comms so that we only accept clients that have a TLS key
+	// that was signed by the specified set of certificates.
+	serverCfg := &tls.Config{
+		Certificates: []tls.Certificate{keyPair},
+		ClientAuth:   tls.RequireAndVerifyClientCert,
+		ClientCAs:    certPool,
+	}
+
+	listener, err := tls.Listen("tcp", net.JoinHostPort("", strconv.Itoa(port)), serverCfg)
+	if err != nil {
+		return nil, err
+	}
+
+	// Set up cluster comms so that we only initiate communications with servers
+	// that have a TLS key signed by the specifed set of certificates.
+	clientCfg := &tls.Config{
+		Certificates: []tls.Certificate{keyPair},
+		// We are doing this because built-in hostname validation in Go's TLS package
+		// makes it very hard to manage any clusters. Since we will validate the CA
+		// we don't need to do this.
+		InsecureSkipVerify: true,
+	}
+
+	mux := http.NewServeMux()
+	comm := httpCommunication{
+		httpClient: &http.Client{
+			Timeout: requestTimeout,
+			// This transport will verify the server cert.
+			Transport: createVerifyingTransport(clientCfg, certPool),
+		},
+		httpProto: "https",
+		listener:  listener,
+	}
+	comm.initMux(mux)
+
+	glog.Infof("Listening for TLS cluster communications on port %d",
+		comm.Port())
+
+	go http.Serve(listener, mux)
+	return &comm, nil
+}
+
+func (h *httpCommunication) initMux(mux *http.ServeMux) {
+	mux.HandleFunc(requestVoteURI, h.handleRequestVote)
+	mux.HandleFunc(appendURI, h.handleAppend)
+	mux.HandleFunc(proposeURI, h.handlePropose)
+	mux.HandleFunc(discoveryURI, h.handleDiscovery)
+	mux.HandleFunc(joinURI, h.handleJoin)
+}
+
+func (h *httpCommunication) Close() {
+	if h.listener != nil {
+		h.listener.Close()
+	}
+}
+
+func (h *httpCommunication) Port() int {
+	if h.listener == nil {
+		return 0
+	}
+	_, portStr, _ := net.SplitHostPort(h.listener.Addr().String())
+	port, _ := strconv.Atoi(portStr)
+	return port
 }
 
 func (h *httpCommunication) SetRaft(raft Raft) {
@@ -54,9 +177,9 @@ func (h *httpCommunication) SetRaft(raft Raft) {
 }
 
 func (h *httpCommunication) Discover(addr string) (common.NodeID, error) {
-	uri := fmt.Sprintf("http://%s%s", addr, discoveryURI)
+	uri := fmt.Sprintf("%s://%s%s", h.httpProto, addr, discoveryURI)
 
-	resp, err := httpClient.Get(uri)
+	resp, err := h.httpClient.Get(uri)
 	if err != nil {
 		return 0, err
 	}
@@ -85,7 +208,7 @@ func (h *httpCommunication) RequestVote(addr string, req VoteRequest, ch chan<- 
 }
 
 func (h *httpCommunication) sendVoteRequest(addr string, req VoteRequest, ch chan<- VoteResponse) {
-	uri := fmt.Sprintf("http://%s%s", addr, requestVoteURI)
+	uri := fmt.Sprintf("%s://%s%s", h.httpProto, addr, requestVoteURI)
 
 	reqPb := protobufs.VoteRequestPb{
 		Term:         proto.Uint64(req.Term),
@@ -94,39 +217,9 @@ func (h *httpCommunication) sendVoteRequest(addr string, req VoteRequest, ch cha
 		LastLogTerm:  proto.Uint64(req.LastLogTerm),
 		ClusterId:    proto.Uint64(uint64(req.ClusterID)),
 	}
-	reqBody, err := proto.Marshal(&reqPb)
-	if err != nil {
-		vr := VoteResponse{Error: err}
-		ch <- vr
-		return
-	}
-
-	resp, err := httpClient.Post(uri, ContentType, bytes.NewReader(reqBody))
-	if err != nil {
-		vr := VoteResponse{Error: err}
-		ch <- vr
-		return
-	}
-	defer resp.Body.Close()
-
-	glog.V(2).Infof("Got back %d", resp.StatusCode)
-	if resp.StatusCode != 200 {
-		vr := VoteResponse{
-			Error: fmt.Errorf("HTTP status %d %s", resp.StatusCode, resp.Status),
-		}
-		ch <- vr
-		return
-	}
-
-	respBody, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		vr := VoteResponse{Error: err}
-		ch <- vr
-		return
-	}
 
 	var respPb protobufs.VoteResponsePb
-	err = proto.Unmarshal(respBody, &respPb)
+	err := h.transportClientRequest(uri, &reqPb, &respPb)
 	if err != nil {
 		vr := VoteResponse{Error: err}
 		ch <- vr
@@ -143,7 +236,7 @@ func (h *httpCommunication) sendVoteRequest(addr string, req VoteRequest, ch cha
 }
 
 func (h *httpCommunication) Append(addr string, req AppendRequest) (AppendResponse, error) {
-	uri := fmt.Sprintf("http://%s%s", addr, appendURI)
+	uri := fmt.Sprintf("%s://%s%s", h.httpProto, addr, appendURI)
 
 	reqPb := protobufs.AppendRequestPb{
 		Term:         proto.Uint64(req.Term),
@@ -157,29 +250,8 @@ func (h *httpCommunication) Append(addr string, req AppendRequest) (AppendRespon
 		reqPb.Entries = append(reqPb.Entries, &pb)
 	}
 
-	reqBody, err := proto.Marshal(&reqPb)
-	if err != nil {
-		return DefaultAppendResponse, err
-	}
-
-	resp, err := httpClient.Post(uri, ContentType, bytes.NewReader(reqBody))
-	if err != nil {
-		return DefaultAppendResponse, err
-	}
-	defer resp.Body.Close()
-
-	glog.V(2).Infof("Got back %d", resp.StatusCode)
-	if resp.StatusCode != 200 {
-		return DefaultAppendResponse, fmt.Errorf("HTTP status %d %s", resp.StatusCode, resp.Status)
-	}
-
-	respBody, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return DefaultAppendResponse, err
-	}
-
 	var respPb protobufs.AppendResponsePb
-	err = proto.Unmarshal(respBody, &respPb)
+	err := h.transportClientRequest(uri, &reqPb, &respPb)
 	if err != nil {
 		return DefaultAppendResponse, err
 	}
@@ -193,28 +265,12 @@ func (h *httpCommunication) Append(addr string, req AppendRequest) (AppendRespon
 }
 
 func (h *httpCommunication) Propose(addr string, e *common.Entry) (ProposalResponse, error) {
-	uri := fmt.Sprintf("http://%s%s", addr, proposeURI)
+	uri := fmt.Sprintf("%s://%s%s", h.httpProto, addr, proposeURI)
 
-	reqBody := e.Encode()
-
-	resp, err := httpClient.Post(uri, ContentType, bytes.NewReader(reqBody))
-	if err != nil {
-		return DefaultProposalResponse, err
-	}
-	defer resp.Body.Close()
-
-	glog.V(2).Infof("Got back %d", resp.StatusCode)
-	if resp.StatusCode != 200 {
-		return DefaultProposalResponse, fmt.Errorf("HTTP status %d %s", resp.StatusCode, resp.Status)
-	}
-
-	respBody, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return DefaultProposalResponse, err
-	}
-
+	reqPb := e.EncodePb()
 	var respPb protobufs.ProposalResponsePb
-	err = proto.Unmarshal(respBody, &respPb)
+
+	err := h.transportClientRequest(uri, &reqPb, &respPb)
 	if err != nil {
 		return DefaultProposalResponse, err
 	}
@@ -230,7 +286,7 @@ func (h *httpCommunication) Propose(addr string, e *common.Entry) (ProposalRespo
 }
 
 func (h *httpCommunication) Join(addr string, req JoinRequest) (ProposalResponse, error) {
-	uri := fmt.Sprintf("http://%s%s", addr, joinURI)
+	uri := fmt.Sprintf("%s://%s%s", h.httpProto, addr, joinURI)
 
 	joinPb := protobufs.JoinRequestPb{
 		ClusterId: proto.Uint64(uint64(req.ClusterID)),
@@ -241,29 +297,8 @@ func (h *httpCommunication) Join(addr string, req JoinRequest) (ProposalResponse
 		joinPb.Entries = append(joinPb.Entries, &epb)
 	}
 
-	reqBody, err := proto.Marshal(&joinPb)
-	if err != nil {
-		return DefaultProposalResponse, err
-	}
-
-	resp, err := httpClient.Post(uri, ContentType, bytes.NewReader(reqBody))
-	if err != nil {
-		return DefaultProposalResponse, err
-	}
-	defer resp.Body.Close()
-
-	glog.V(2).Infof("Got back %d on join", resp.StatusCode)
-	if resp.StatusCode != 200 {
-		return DefaultProposalResponse, fmt.Errorf("HTTP status %d %s", resp.StatusCode, resp.Status)
-	}
-
-	respBody, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return DefaultProposalResponse, err
-	}
-
 	var respPb protobufs.ProposalResponsePb
-	err = proto.Unmarshal(respBody, &respPb)
+	err := h.transportClientRequest(uri, &joinPb, &respPb)
 	if err != nil {
 		return DefaultProposalResponse, err
 	}
@@ -279,27 +314,9 @@ func (h *httpCommunication) Join(addr string, req JoinRequest) (ProposalResponse
 }
 
 func (h *httpCommunication) handleRequestVote(resp http.ResponseWriter, req *http.Request) {
-	defer req.Body.Close()
-
-	if req.Method != http.MethodPost {
-		resp.WriteHeader(http.StatusMethodNotAllowed)
-		return
-	}
-
-	if req.Header.Get(http.CanonicalHeaderKey("content-type")) != ContentType {
-		resp.WriteHeader(http.StatusUnsupportedMediaType)
-		return
-	}
-	body, err := ioutil.ReadAll(req.Body)
-	if err != nil {
-		resp.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-
 	var reqpb protobufs.VoteRequestPb
-	err = proto.Unmarshal(body, &reqpb)
-	if err != nil {
-		resp.WriteHeader(http.StatusBadRequest)
+
+	if !h.readRequestBody(http.MethodPost, resp, req, &reqpb) {
 		return
 	}
 
@@ -324,38 +341,13 @@ func (h *httpCommunication) handleRequestVote(resp http.ResponseWriter, req *htt
 		VoteGranted: proto.Bool(voteResp.VoteGranted),
 	}
 
-	respBody, err := proto.Marshal(&respPb)
-	if err != nil {
-		resp.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-
-	resp.Header().Set(http.CanonicalHeaderKey("content-type"), ContentType)
-	resp.Write(respBody)
+	h.writeResponseBody(&respPb, resp)
 }
 
 func (h *httpCommunication) handleAppend(resp http.ResponseWriter, req *http.Request) {
-	defer req.Body.Close()
-
-	if req.Method != http.MethodPost {
-		resp.WriteHeader(http.StatusMethodNotAllowed)
-		return
-	}
-
-	if req.Header.Get(http.CanonicalHeaderKey("content-type")) != ContentType {
-		resp.WriteHeader(http.StatusUnsupportedMediaType)
-		return
-	}
-	body, err := ioutil.ReadAll(req.Body)
-	if err != nil {
-		resp.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-
 	var reqpb protobufs.AppendRequestPb
-	err = proto.Unmarshal(body, &reqpb)
-	if err != nil {
-		resp.WriteHeader(http.StatusBadRequest)
+
+	if !h.readRequestBody(http.MethodPost, resp, req, &reqpb) {
 		return
 	}
 
@@ -382,43 +374,20 @@ func (h *httpCommunication) handleAppend(resp http.ResponseWriter, req *http.Req
 		Success: &appResp.Success,
 	}
 
-	respBody, err := proto.Marshal(&respPb)
-	if err != nil {
-		resp.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-
-	resp.Header().Set(http.CanonicalHeaderKey("content-type"), ContentType)
-	resp.Write(respBody)
+	h.writeResponseBody(&respPb, resp)
 }
 
 func (h *httpCommunication) handlePropose(resp http.ResponseWriter, req *http.Request) {
-	defer req.Body.Close()
-
-	if req.Method != http.MethodPost {
-		resp.WriteHeader(http.StatusMethodNotAllowed)
+	var entryPb protobufs.EntryPb
+	if !h.readRequestBody(http.MethodPost, resp, req, &entryPb) {
 		return
 	}
 
-	if req.Header.Get(http.CanonicalHeaderKey("content-type")) != ContentType {
-		resp.WriteHeader(http.StatusUnsupportedMediaType)
-		return
-	}
-	body, err := ioutil.ReadAll(req.Body)
-	if err != nil {
-		resp.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-
-	newEntry, err := common.DecodeEntry(body)
-	if err != nil {
-		resp.WriteHeader(http.StatusBadRequest)
-		return
-	}
+	newEntry := common.DecodeEntryFromPb(entryPb)
 
 	newIndex, err := h.raft.Propose(newEntry)
 	if err != nil {
-		glog.V(1).Infof("Error in proposal: %s", err)
+		glog.V(2).Infof("Error in proposal: %s", err)
 		resp.WriteHeader(http.StatusInternalServerError)
 		return
 	}
@@ -431,38 +400,12 @@ func (h *httpCommunication) handlePropose(resp http.ResponseWriter, req *http.Re
 		respPb.Error = &errMsg
 	}
 
-	respBody, err := proto.Marshal(&respPb)
-	if err != nil {
-		resp.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-
-	resp.Header().Set(http.CanonicalHeaderKey("content-type"), ContentType)
-	resp.Write(respBody)
+	h.writeResponseBody(&respPb, resp)
 }
 
 func (h *httpCommunication) handleJoin(resp http.ResponseWriter, req *http.Request) {
-	defer req.Body.Close()
-
-	if req.Method != http.MethodPost {
-		resp.WriteHeader(http.StatusMethodNotAllowed)
-		return
-	}
-
-	if req.Header.Get(http.CanonicalHeaderKey("content-type")) != ContentType {
-		resp.WriteHeader(http.StatusUnsupportedMediaType)
-		return
-	}
-	body, err := ioutil.ReadAll(req.Body)
-	if err != nil {
-		resp.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-
 	var joinPb protobufs.JoinRequestPb
-	err = proto.Unmarshal(body, &joinPb)
-	if err != nil {
-		resp.WriteHeader(http.StatusBadRequest)
+	if !h.readRequestBody(http.MethodPost, resp, req, &joinPb) {
 		return
 	}
 
@@ -484,20 +427,13 @@ func (h *httpCommunication) handleJoin(resp http.ResponseWriter, req *http.Reque
 		respPb.Error = &errMsg
 	}
 
-	respBody, err := proto.Marshal(&respPb)
-	if err != nil {
-		resp.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-
-	resp.Header().Set(http.CanonicalHeaderKey("content-type"), ContentType)
-	resp.Write(respBody)
+	h.writeResponseBody(&respPb, resp)
 }
 
 func (h *httpCommunication) handleDiscovery(resp http.ResponseWriter, req *http.Request) {
 	defer req.Body.Close()
 
-	if req.Method != "GET" {
+	if req.Method != http.MethodGet {
 		resp.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
@@ -507,12 +443,70 @@ func (h *httpCommunication) handleDiscovery(resp http.ResponseWriter, req *http.
 		NodeId: proto.Uint64(uint64(nodeID)),
 	}
 
-	respBody, err := proto.Marshal(&respPb)
+	h.writeResponseBody(&respPb, resp)
+}
+
+func (h *httpCommunication) transportClientRequest(
+	uri string, reqMsg, respMsg proto.Message) error {
+
+	reqBody, err := proto.Marshal(reqMsg)
+	if err != nil {
+		return err
+	}
+
+	resp, err := h.httpClient.Post(uri, ContentType, bytes.NewReader(reqBody))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return fmt.Errorf("HTTP status %d %s", resp.StatusCode, resp.Status)
+	}
+
+	respBody, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+
+	return proto.Unmarshal(respBody, respMsg)
+}
+
+func (h *httpCommunication) readRequestBody(
+	method string, resp http.ResponseWriter, req *http.Request,
+	reqPb proto.Message) bool {
+	defer req.Body.Close()
+
+	if req.Method != method {
+		resp.WriteHeader(http.StatusMethodNotAllowed)
+		return false
+	}
+
+	if req.Header.Get("Content-Type") != ContentType {
+		resp.WriteHeader(http.StatusUnsupportedMediaType)
+		return false
+	}
+	body, err := ioutil.ReadAll(req.Body)
+	if err != nil {
+		resp.WriteHeader(http.StatusInternalServerError)
+		return false
+	}
+
+	err = proto.Unmarshal(body, reqPb)
+	if err != nil {
+		resp.WriteHeader(http.StatusBadRequest)
+		return false
+	}
+	return true
+}
+
+func (h *httpCommunication) writeResponseBody(respPb proto.Message, resp http.ResponseWriter) {
+	respBody, err := proto.Marshal(respPb)
 	if err != nil {
 		resp.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
-	resp.Header().Set(http.CanonicalHeaderKey("content-type"), ContentType)
+	resp.Header().Set("Content-Type", ContentType)
 	resp.Write(respBody)
 }

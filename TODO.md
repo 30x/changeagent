@@ -20,6 +20,8 @@ commit timeout.
 "Force remove" option for cluster members just in case we are stuck without
 consensus.
 
+Automatic truncation of change log
+
 ## Lower Priority
 
 Add API option to post without waiting for commit.

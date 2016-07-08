@@ -2,8 +2,10 @@ package main
 
 import (
 	"errors"
+	"net"
 	"net/http"
 	"regexp"
+	"strconv"
 	"time"
 
 	"github.com/30x/changeagent/common"
@@ -53,7 +55,8 @@ The prefix must not end with a "/".
 func StartChangeAgent(
 	dbFile string,
 	httpMux *http.ServeMux,
-	uriPrefix string) (*ChangeAgent, error) {
+	uriPrefix string,
+	comm communication.Communication) (*ChangeAgent, error) {
 
 	if uriPrefix != "" {
 		if uriPrefix[len(uriPrefix)-1] == '/' {
@@ -64,10 +67,6 @@ func StartChangeAgent(
 		}
 	}
 
-	comm, err := communication.StartHTTPCommunication(httpMux)
-	if err != nil {
-		return nil, err
-	}
 	stor, err := storage.CreateRocksDBStorage(dbFile, dbCacheSize)
 	if err != nil {
 		return nil, err
@@ -178,4 +177,18 @@ func isJSON(resp http.ResponseWriter, req *http.Request) bool {
 		return false
 	}
 	return true
+}
+
+func startListener(port int) (net.Listener, int, error) {
+	addr := &net.TCPAddr{
+		Port: port,
+	}
+
+	listener, err := net.ListenTCP("tcp", addr)
+	if err != nil {
+		return nil, 0, err
+	}
+	_, portStr, _ := net.SplitHostPort(listener.Addr().String())
+	listenPort, _ := strconv.Atoi(portStr)
+	return listener, listenPort, err
 }

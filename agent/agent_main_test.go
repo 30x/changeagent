@@ -8,9 +8,11 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path"
 	"testing"
 	"time"
 
+	"github.com/30x/changeagent/communication"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )
@@ -55,7 +57,7 @@ var _ = BeforeSuite(func() {
 	listenURI = fmt.Sprintf("http://localhost:%s%s", port, uriPrefix)
 	fmt.Fprintf(GinkgoWriter, "Listening on port %s\n", port)
 
-	testAgent, err = startAgent(1, DataDir, testListener)
+	testAgent, err = startAgent(1, path.Join(DataDir, "data1"), testListener)
 	Expect(err).Should(Succeed())
 
 	time.Sleep(time.Second)
@@ -63,19 +65,25 @@ var _ = BeforeSuite(func() {
 
 var _ = AfterSuite(func() {
 	cleanAgent(testAgent, testListener)
+	os.RemoveAll(DataDir)
 })
 
 func startAgent(id uint64, dir string, listener *net.TCPListener) (*ChangeAgent, error) {
 	mux := http.NewServeMux()
 
-	agent, err := StartChangeAgent(dir, mux, uriPrefix)
+	comm, err := communication.StartHTTPCommunication(mux)
+	if err != nil {
+		return nil, err
+	}
+
+	agent, err := StartChangeAgent(dir, mux, uriPrefix, comm)
 	if err != nil {
 		return nil, err
 	}
 	go func() {
 		err = http.Serve(listener, mux)
 		if err != nil {
-			panic(fmt.Sprintf("Error serving HTTP: %s", err))
+			fmt.Fprintf(GinkgoWriter, "Error serving HTTP: %s", err)
 		}
 	}()
 
