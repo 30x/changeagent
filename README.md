@@ -166,7 +166,18 @@ webhooks, DELETE the same path.
 Webhook configuration is persisted across the cluster and is available on all
 nodes after a restart.
 
-# Building
+# Running on Docker
+
+The simplest way to get changeagent running is to use the Docker image. For
+instance, the following command will get it running in standalone mode on
+your Docker host with port 8080.
+
+    docker run -it --rm -p 8080:8080 gbrail/changeagent
+
+See elsewhere in this README and the Dockerfile for instructions on running it in a cluster,
+or for instructions on how to handle persistent data.
+
+# Building from Source
 
 The product is built in Go, but it relies on the "glide" package management
 tool for dependency management, and on the rocksdb library for data storage.

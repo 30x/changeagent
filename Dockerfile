@@ -25,7 +25,7 @@
 # container is stopped.)
 
 # This image has Git, Glide, and rocksdb pre-built for us.
-FROM  gbrail/go-rocksdb:1.6-4.2
+FROM  gbrail/go-rocksdb:1.6.2-4.2
 
 COPY . /go/src/github.com/30x/changeagent
 
