@@ -33,11 +33,14 @@ RUN \
     (cd /go/src/github.com/30x/changeagent; glide install) \
  && (cd /go/src/github.com/30x/changeagent; make clean all) \
  && cp /go/src/github.com/30x/changeagent/changeagent / \
- && mkdir -p /var/changeagent/data
+ && mkdir -p /var/changeagent/data \
+ && mkdir -p /etc/changeagent/keys
 
 EXPOSE 8080
+EXPOSE 9080
 
 VOLUME /var/changeagent/data
+VOLUME /etc/changeagent/keys
 
 ENV LD_LIBRARY_PATH=/usr/local/lib
 
