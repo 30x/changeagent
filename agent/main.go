@@ -26,6 +26,9 @@ func runAgentMain() int {
 	var dbDir string
 	var apiPrefix string
 	var help bool
+	var key string
+	var cert string
+	var cas string
 	var clusterPort int
 	var clusterKey string
 	var clusterCert string
@@ -35,7 +38,10 @@ func runAgentMain() int {
 	flag.StringVar(&dbDir, "d", "", "Directory in which to place data. Required.")
 	flag.BoolVar(&help, "h", false, "Print help message.")
 	flag.StringVar(&apiPrefix, "P", "", "API Path Prefix. Ex. \"foo\" means all APIs prefixed with \"/foo\"")
-	flag.IntVar(&clusterPort, "cp", -1, "Cluster Port. Optional.")
+	flag.StringVar(&key, "key", "", "TLS key file")
+	flag.StringVar(&cert, "cert", "", "TLS certificate file")
+	flag.StringVar(&cas, "cas", "", "Trusted Client certificates for TLS")
+	flag.IntVar(&clusterPort, "cp", -1, "Cluster Port. Required if any TLS information is used.")
 	flag.StringVar(&clusterKey, "ckey", "", "Cluster TLS key file")
 	flag.StringVar(&clusterCert, "ccert", "", "Cluster TLS Certificate")
 	flag.StringVar(&clusterCA, "cca", "", "Cluster TLS certificate file for peer verification")
@@ -81,7 +87,7 @@ func runAgentMain() int {
 	}
 	defer agent.Close()
 
-	listener, listenPort, err := startListener(port)
+	listener, listenPort, err := startListener(port, key, cert, cas)
 	if err != nil {
 		fmt.Printf("Error listening on TCP port: %s", err)
 		return 7

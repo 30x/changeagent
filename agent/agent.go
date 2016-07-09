@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"errors"
 	"net"
 	"net/http"
@@ -179,15 +180,53 @@ func isJSON(resp http.ResponseWriter, req *http.Request) bool {
 	return true
 }
 
-func startListener(port int) (net.Listener, int, error) {
+func startListener(port int, key, cert, cas string) (net.Listener, int, error) {
 	addr := &net.TCPAddr{
 		Port: port,
 	}
 
-	listener, err := net.ListenTCP("tcp", addr)
+	tcpListener, err := net.ListenTCP("tcp", addr)
 	if err != nil {
 		return nil, 0, err
 	}
+	var listener net.Listener = tcpListener
+	success := false
+
+	defer func() {
+		if !success {
+			listener.Close()
+		}
+	}()
+
+	if key != "" || cert != "" {
+		if key == "" || cert == "" {
+			return nil, 0, errors.New("Both -key and -cert must be set")
+		}
+
+		tlsCert, err := tls.LoadX509KeyPair(cert, key)
+		if err != nil {
+			return nil, 0, err
+		}
+
+		tlsCfg := tls.Config{
+			Certificates: []tls.Certificate{tlsCert},
+		}
+
+		if cas != "" {
+			caPool, err := communication.LoadCertPool(cas)
+			if err != nil {
+				return nil, 0, err
+			}
+
+			// If we have "cas" then also verify clients
+			tlsCfg.ClientCAs = caPool
+			tlsCfg.ClientAuth = tls.RequireAndVerifyClientCert
+		}
+
+		listener = tls.NewListener(tcpListener, &tlsCfg)
+	}
+
+	success = true
 	_, portStr, _ := net.SplitHostPort(listener.Addr().String())
 	listenPort, _ := strconv.Atoi(portStr)
 	return listener, listenPort, err

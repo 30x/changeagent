@@ -48,7 +48,10 @@ func connectTLS(network, addr string, cfg *tls.Config, cas *x509.CertPool) (net.
 	return nil, err
 }
 
-func loadCertPool(fileName string) (*x509.CertPool, error) {
+/*
+LoadCertPool is a uility that loads a list of CA certificates from a file.
+*/
+func LoadCertPool(fileName string) (*x509.CertPool, error) {
 	caFile, err := os.Open(fileName)
 	if err != nil {
 		return nil, err

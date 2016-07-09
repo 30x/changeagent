@@ -102,7 +102,7 @@ func StartSecureCommunication(port int, key, cert, cas string) (Communication, e
 	if err != nil {
 		return nil, err
 	}
-	certPool, err := loadCertPool(cas)
+	certPool, err := LoadCertPool(cas)
 	if err != nil {
 		return nil, err
 	}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -24,20 +25,41 @@ var dataCount = 1
 var _ = Describe("Cluster Tests", func() {
 
 	It("Basic Cluster Test", func() {
-		clusterTest(false, false)
+		clusterTest(false, false, false)
 	})
 
 	It("Separate Cluster Port", func() {
-		clusterTest(true, false)
+		clusterTest(true, false, false)
 	})
 
 	It("Secure Cluster", func() {
-		clusterTest(true, true)
+		clusterTest(true, true, false)
+	})
+
+	It("Secure Cluster and API", func() {
+		clusterTest(true, true, true)
 	})
 })
 
-func clusterTest(useClusterPort, useSecureCluster bool) {
-	listener1, port1, err := startListener(0)
+func clusterTest(useClusterPort, useSecureCluster, secureAPI bool) {
+	key := ""
+	cert := ""
+	proto := "http"
+	httpClient := http.DefaultClient
+	if secureAPI {
+		key = "../testkeys/key.pem"
+		cert = "../testkeys/cert.pem"
+		proto = "https"
+		httpClient = &http.Client{
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{
+					InsecureSkipVerify: true,
+				},
+			},
+		}
+	}
+
+	listener1, port1, err := startListener(0, key, cert, "")
 	Expect(err).Should(Succeed())
 	defer listener1.Close()
 	clusterPort1 := port1
@@ -64,7 +86,7 @@ func clusterTest(useClusterPort, useSecureCluster bool) {
 	defer agent1.Close()
 	go http.Serve(listener1, mux1)
 
-	listener2, port2, err := startListener(0)
+	listener2, port2, err := startListener(0, key, cert, "")
 	Expect(err).Should(Succeed())
 	defer listener2.Close()
 	clusterPort2 := port2
@@ -91,28 +113,28 @@ func clusterTest(useClusterPort, useSecureCluster bool) {
 	defer agent2.Close()
 	go http.Serve(listener2, mux2)
 
-	addNode(port1, clusterPort1)
-	addNode(port1, clusterPort2)
+	addNode(port1, clusterPort1, proto, httpClient)
+	addNode(port1, clusterPort2, proto, httpClient)
 
-	first := sendOneChange(port1, "one")
-	sendOneChange(port2, "two")
-	verifyChanges(port1, first-1, []string{"one", "two"})
-	verifyChanges(port2, first-1, []string{"one", "two"})
+	first := sendOneChange(port1, "one", proto, httpClient)
+	sendOneChange(port2, "two", proto, httpClient)
+	verifyChanges(port1, first-1, []string{"one", "two"}, proto, httpClient)
+	verifyChanges(port2, first-1, []string{"one", "two"}, proto, httpClient)
 }
 
-func addNode(apiPort, addPort int) {
-	uri := fmt.Sprintf("http://localhost:%d/cluster/members", apiPort)
+func addNode(apiPort, addPort int, proto string, client *http.Client) {
+	uri := fmt.Sprintf("%s://localhost:%d/cluster/members", proto, apiPort)
 	msg := fmt.Sprintf("address=localhost:%d", addPort)
-	resp, err := http.Post(uri, formContent, strings.NewReader(msg))
+	resp, err := client.Post(uri, formContent, strings.NewReader(msg))
 	Expect(err).Should(Succeed())
 	Expect(resp.StatusCode).Should(Equal(200))
 	defer resp.Body.Close()
 }
 
-func sendOneChange(port int, msg string) uint64 {
-	uri := fmt.Sprintf("http://localhost:%d/changes", port)
+func sendOneChange(port int, msg, proto string, client *http.Client) uint64 {
+	uri := fmt.Sprintf("%s://localhost:%d/changes", proto, port)
 	bod := fmt.Sprintf("{\"data\":{\"msg\":\"%s\"}}", msg)
-	resp, err := http.Post(uri, jsonContent, strings.NewReader(bod))
+	resp, err := client.Post(uri, jsonContent, strings.NewReader(bod))
 	Expect(err).Should(Succeed())
 	Expect(resp.StatusCode).Should(Equal(200))
 	defer resp.Body.Close()
@@ -124,9 +146,9 @@ func sendOneChange(port int, msg string) uint64 {
 	return c.ID
 }
 
-func verifyChanges(port int, since uint64, msgs []string) {
-	uri := fmt.Sprintf("http://localhost:%d/changes?since=%d", port, since)
-	resp, err := http.Get(uri)
+func verifyChanges(port int, since uint64, msgs []string, proto string, client *http.Client) {
+	uri := fmt.Sprintf("%s://localhost:%d/changes?since=%d", proto, port, since)
+	resp, err := client.Get(uri)
 	Expect(err).Should(Succeed())
 	Expect(resp.StatusCode).Should(Equal(200))
 	defer resp.Body.Close()
