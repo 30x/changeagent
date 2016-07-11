@@ -36,12 +36,9 @@ RUN \
  && mkdir /data \
  && mkdir /keys
 
-EXPOSE 8080
-EXPOSE 8443
-EXPOSE 9080
+EXPOSE 8080 8443 9080
 
-VOLUME /data
-VOLUME /keys
+VOLUME [ "/data" "/keys" ]
 
 ENV LD_LIBRARY_PATH=/usr/local/lib
 
