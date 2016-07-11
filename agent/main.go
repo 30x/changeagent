@@ -4,6 +4,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -18,11 +19,13 @@ const (
 )
 
 func main() {
-	os.Exit(runAgentMain())
+	exitCode := runAgentMain()
+	os.Exit(exitCode)
 }
 
 func runAgentMain() int {
 	var port int
+	var securePort int
 	var dbDir string
 	var apiPrefix string
 	var help bool
@@ -35,6 +38,7 @@ func runAgentMain() int {
 	var clusterCA string
 
 	flag.IntVar(&port, "p", defaultPort, "Port to listen on")
+	flag.IntVar(&securePort, "sp", -1, "Port to listen on if TLS is configured")
 	flag.StringVar(&dbDir, "d", "", "Directory in which to place data. Required.")
 	flag.BoolVar(&help, "h", false, "Print help message.")
 	flag.StringVar(&apiPrefix, "P", "", "API Path Prefix. Ex. \"foo\" means all APIs prefixed with \"/foo\"")
@@ -62,8 +66,15 @@ func runAgentMain() int {
 	var comm communication.Communication
 	var err error
 
-	if clusterKey != "" && clusterCert != "" && clusterCA != "" {
-		if clusterKey == "" || clusterCert == "" || clusterCA == "" || clusterPort == 0 {
+	if key != "" || cert != "" {
+		if key == "" || cert == "" || securePort < 0 {
+			fmt.Fprintf(os.Stderr, "All three of \"key,\" \"cert,\" and \"cp\" must be set.\n")
+			return 5
+		}
+	}
+
+	if clusterKey != "" || clusterCert != "" || clusterCA != "" {
+		if clusterKey == "" || clusterCert == "" || clusterCA == "" || clusterPort <= 0 {
 			err = errors.New("All of \"cp\", \"ckey\", \"ccert\", and \"cca\" must be set")
 		} else {
 			comm, err = communication.StartSecureCommunication(
@@ -75,26 +86,44 @@ func runAgentMain() int {
 		comm, err = communication.StartHTTPCommunication(mux)
 	}
 	if err != nil {
-		fmt.Printf(err.Error())
+		fmt.Fprintln(os.Stderr, err.Error())
 		return 5
 	}
 	defer comm.Close()
 
 	agent, err := StartChangeAgent(dbDir, mux, apiPrefix, comm)
 	if err != nil {
-		fmt.Printf("Error starting agent: %s\n", err)
+		fmt.Fprintf(os.Stderr, "Error starting agent: %s\n", err)
 		return 6
 	}
 	defer agent.Close()
 
-	listener, listenPort, err := startListener(port, key, cert, cas)
+	listener, listenPort, err := startListener(port, "", "", "")
 	if err != nil {
-		fmt.Printf("Error listening on TCP port: %s", err)
+		fmt.Fprintf(os.Stderr, "Error listening on TCP port: %s", err)
 		return 7
 	}
 	defer listener.Close()
-
 	glog.Infof("Listening on port %d", listenPort)
+
+	var secureListener net.Listener
+	if securePort >= 0 {
+		if key == "" || cert == "" {
+			fmt.Fprintln(os.Stderr,
+				"Cannot listen on secure port unless both key and cert are specified")
+			return 8
+		}
+
+		var secureListenerPort int
+		secureListener, secureListenerPort, err =
+			startListener(securePort, key, cert, cas)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error listening on secure TCP port: %s\n", err)
+			return 9
+		}
+		glog.Infof("Listening with TLS on port %d", secureListenerPort)
+		defer secureListener.Close()
+	}
 
 	doneChan := make(chan bool, 1)
 	signalChan := make(chan os.Signal, 1)
@@ -109,6 +138,10 @@ func runAgentMain() int {
 
 	go http.Serve(listener, mux)
 
+	if secureListener != nil {
+		go http.Serve(secureListener, mux)
+	}
+
 	<-doneChan
 	glog.Infof("Shutting down.")
 	return 0
@@ -116,12 +149,12 @@ func runAgentMain() int {
 
 func printUsage(msg string) {
 	if msg != "" {
-		fmt.Println(msg)
-		fmt.Println()
+		fmt.Fprintln(os.Stderr, msg)
+		fmt.Fprintln(os.Stderr)
 	}
-	fmt.Println("Usage:")
+	fmt.Fprintln(os.Stderr, "Usage:")
 	flag.PrintDefaults()
-	fmt.Println()
-	fmt.Println("Example:")
-	fmt.Println("  agent -d ./data -p 9000")
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Example:")
+	fmt.Fprintln(os.Stderr, "  agent -d ./data -p 9000")
 }

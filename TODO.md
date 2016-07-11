@@ -6,19 +6,23 @@ Insert performance is inconsistent. It seems like many inserts take as long as t
 
 ## High Priority
 
-Read-only slaves.
+Allow listening on a secure port and on a non-secure port.
 
-TLS everywhere.
-  Specify CA for trusted connections from server to server.
-  Optional CA for API calls.
+Graceful shutdown for HTTP transactions.
+
+Graceful leader step-down / nomination algorithm.
+
+"Force remove" option for cluster members just in case we are stuck without
+consensus.
+
+Read-only method to get current change ID from master.
+
+Read-only slaves.
 
 Add a version number to the whole database
 
 Think seriously about rolling back any change that does not happen within the
 commit timeout.
-
-"Force remove" option for cluster members just in case we are stuck without
-consensus.
 
 Automatic truncation of change log
 

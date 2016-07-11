@@ -9,7 +9,7 @@
 # Now run:
 #
 # docker run -it -p 8080:8080 \
-#   -v /home/docker/agent/data1:/var/changeagent/data changeagent
+#   -v /home/docker/agent/data1:/data changeagent
 #
 # Image details:
 #
@@ -18,7 +18,7 @@
 # When it first starts, changeagent will be running in standalone mode.
 # To assemble a group of changeagent servers into a cluster, see the README.
 #
-# Each agent will store its database in /var/changeagent/data. Since data is important,
+# Each agent will store its database in /data. Since data is important,
 # this should be a persistent volume.
 # (If you choose not to create this directory, then the data will be stored
 # on the ephemeral volume created by Docker, and will go away when the
@@ -33,15 +33,16 @@ RUN \
     (cd /go/src/github.com/30x/changeagent; glide install) \
  && (cd /go/src/github.com/30x/changeagent; make clean all) \
  && cp /go/src/github.com/30x/changeagent/changeagent / \
- && mkdir -p /var/changeagent/data \
- && mkdir -p /etc/changeagent/keys
+ && mkdir /data \
+ && mkdir /keys
 
 EXPOSE 8080
+EXPOSE 8443
 EXPOSE 9080
 
-VOLUME /var/changeagent/data
-VOLUME /etc/changeagent/keys
+VOLUME /data
+VOLUME /keys
 
 ENV LD_LIBRARY_PATH=/usr/local/lib
 
-ENTRYPOINT ["/changeagent", "-logtostderr", "-p", "8080", "-d", "/var/changeagent/data"]
+ENTRYPOINT ["/changeagent", "-logtostderr", "-p", "8080", "-d", "/data"]

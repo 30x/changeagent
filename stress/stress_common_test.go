@@ -16,7 +16,8 @@ import (
 )
 
 const (
-	DebugNodes = false
+	agentBinary = "../changeagent"
+	DebugNodes  = false
 )
 
 type RaftState struct {
@@ -25,7 +26,7 @@ type RaftState struct {
 }
 
 func launchAgent(port int, dataDir string) (*os.Process, error) {
-	cmd := exec.Command("../changeagent")
+	cmd := exec.Command(agentBinary)
 	args := []string{
 		"../agent/agent",
 		"-p", strconv.Itoa(port),
