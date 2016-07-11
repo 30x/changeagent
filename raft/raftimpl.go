@@ -396,6 +396,7 @@ func (r *Service) Join(req communication.JoinRequest) (uint64, error) {
 		return 0, fmt.Errorf("Already part of cluster %s: Cannot join %s", r.GetClusterID(), req.ClusterID)
 	}
 
+	r.stor.SetUintMetadata(ClusterIDKey, uint64(req.ClusterID))
 	r.setClusterID(req.ClusterID)
 
 	for _, e := range req.Entries {

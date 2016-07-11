@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/30x/changeagent/common"
 	"github.com/gorilla/mux"
@@ -126,7 +127,13 @@ func (a *ChangeAgent) handleRemoveClusterMember(resp http.ResponseWriter, req *h
 		return
 	}
 
-	err := a.raft.RemoveNode(node.NodeID)
+	var err error
+	forceCmd := req.URL.Query().Get("force")
+	if strings.ToLower(forceCmd) == "true" {
+		err = a.raft.RemoveNodeForcibly(node.NodeID)
+	} else {
+		err = a.raft.RemoveNode(node.NodeID)
+	}
 
 	if err == nil {
 		a.handleGetClusterMembers(resp, req)

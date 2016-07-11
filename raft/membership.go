@@ -214,6 +214,41 @@ func (r *Service) RemoveNode(nodeID common.NodeID) error {
 	return nil
 }
 
+/*
+RemoveNodeForcibly removes knowledge of a node from the local state, with no
+consideration to what is going on in the rest of the cluster. It can result
+in an inconsistent cluster configuration which can cause inconsistent data.
+
+This method is useful (and essential) in the event that an attempt to add
+a new node has failed and the cluster state must be fixed
+locally because quorum cannot be reached until the cluster state is fixed.
+*/
+func (r *Service) RemoveNodeForcibly(nodeID common.NodeID) error {
+	cfg := r.GetNodeConfig()
+	if cfg.GetNode(nodeID) == nil {
+		return fmt.Errorf("Node %s is not part of cluster %s", nodeID, r.GetClusterID())
+	}
+
+	glog.V(2).Infof("Forcibly removing %s from the cluster in our local state only!", nodeID)
+
+	var nextList []Node
+	for _, n := range cfg.Current {
+		if n.NodeID != nodeID {
+			nextList = append(nextList, n)
+		}
+	}
+
+	finalCfg := &NodeList{
+		Current: nextList,
+	}
+
+	r.setMembershipChangeMode(Stable)
+	r.setNodeConfig(finalCfg)
+	r.loopCommands <- UpdateConfiguration
+
+	return nil
+}
+
 func (r *Service) catchUpNode(addr string) error {
 	var lastIx uint64
 	joinCount := 0
