@@ -2,18 +2,17 @@
 
 ## Bugs
 
+Node joining seems very flaky.
+
 Insert performance is inconsistent. It seems like many inserts take as long as the HB interval.
 
 ## High Priority
 
-Allow listening on a secure port and on a non-secure port.
-
 Graceful shutdown for HTTP transactions.
 
-Graceful leader step-down / nomination algorithm.
+Automatic truncation of change log
 
-"Force remove" option for cluster members just in case we are stuck without
-consensus.
+Graceful leader step-down / nomination algorithm.
 
 Read-only method to get current change ID from master.
 
@@ -23,8 +22,6 @@ Add a version number to the whole database
 
 Think seriously about rolling back any change that does not happen within the
 commit timeout.
-
-Automatic truncation of change log
 
 ## Lower Priority
 

@@ -22,13 +22,23 @@ func (n Node) String() string {
 }
 
 /*
+MarshalJSON creates the JSON for this object because otherwise the built-in
+encoder does not encode the NodeID properly to string.
+*/
+func (n Node) MarshalJSON() ([]byte, error) {
+	s := fmt.Sprintf("{\"id\":\"%s\", \"address\":\"%s\"}",
+		n.NodeID, n.Address)
+	return []byte(s), nil
+}
+
+/*
 A NodeList is simply a list of nodes. For the purposes of joint consensus, it
 a list of "current" nodes (which are currently running) and an optional list
 of "next" nodes, which are subject to joint consensus.
 */
 type NodeList struct {
-	Current []Node
-	Next    []Node
+	Current []Node `json:"current"`
+	Next    []Node `json:"next"`
 }
 
 func decodeNodeList(buf []byte) (*NodeList, error) {
