@@ -19,10 +19,6 @@ import (
 	"github.com/golang/glog"
 )
 
-const (
-	maxDeleteBatch = 1000
-)
-
 var defaultWriteOptions = C.rocksdb_writeoptions_create()
 var defaultReadOptions = C.rocksdb_readoptions_create()
 var rocksInitOnce sync.Once
@@ -431,6 +427,40 @@ func (s *rocksDBStorage) DeleteEntriesAfter(first uint64) error {
 	return nil
 }
 
+// Delete everything that is less than the index
+func (s *rocksDBStorage) TruncateBefore(max uint64) error {
+	it := C.rocksdb_create_iterator_cf(s.db, defaultReadOptions, s.entries)
+	defer C.rocksdb_iter_destroy(it)
+
+	C.rocksdb_iter_seek_to_first(it)
+
+	for C.rocksdb_iter_valid(it) != 0 {
+		var keyLen C.size_t
+		keyPtr := C.rocksdb_iter_key(it, &keyLen)
+
+		keyType, key, err := keyToUint(unsafe.Pointer(keyPtr), keyLen)
+		if err != nil {
+			return err
+		}
+		if keyType != EntryKey {
+			// We unexpectedly found the wrong type of entry
+			return nil
+		}
+
+		if key >= max {
+			// Done
+			return nil
+		}
+
+		err = s.deleteEntry(key)
+		if err != nil {
+			return err
+		}
+		C.rocksdb_iter_next(it)
+	}
+	return nil
+}
+
 func (s *rocksDBStorage) deleteEntry(ix uint64) error {
 	delPtr, delLen := uintToKey(EntryKey, ix)
 	defer freePtr(delPtr)
@@ -444,13 +474,16 @@ func (s *rocksDBStorage) deleteEntry(ix uint64) error {
 	return nil
 }
 
-// Truncate older entries.
-func (s *rocksDBStorage) Truncate(minEntries uint64, maxDur time.Duration) (uint64, error) {
+// Figure out what index to truncate.
+func (s *rocksDBStorage) CalculateTruncate(
+	minEntries uint64,
+	minDur time.Duration,
+	lastIndex uint64) (uint64, error) {
+
 	min, err := s.GetFirstIndex()
 	if err != nil {
 		return 0, err
 	}
-
 	if min == 0 {
 		glog.V(2).Info("Empty database -- not truncating")
 		return 0, nil
@@ -460,7 +493,11 @@ func (s *rocksDBStorage) Truncate(minEntries uint64, maxDur time.Duration) (uint
 	if err != nil {
 		return 0, err
 	}
+	if max > (lastIndex - 1) {
+		max = lastIndex - 1
+	}
 
+	// Total number of entries in the DB minus "minIndex"
 	total := max - min + 1
 	glog.V(2).Infof("Min index: %d. Max: %d. Total = %d", min, max, total)
 	if total <= minEntries {
@@ -468,39 +505,41 @@ func (s *rocksDBStorage) Truncate(minEntries uint64, maxDur time.Duration) (uint
 		return 0, nil
 	}
 
-	maxTime := time.Now().Add(-maxDur)
-	truncCount := total - minEntries
-	var deleteCount uint64
+	truncMin := max - minEntries
+	// Maximum time -- truncate only if before that time
+	maxTime := time.Now().Add(-minDur)
 
 	it := C.rocksdb_create_iterator_cf(s.db, defaultReadOptions, s.entries)
 	defer C.rocksdb_iter_destroy(it)
 
-	C.rocksdb_iter_seek_to_first(it)
+	lastKeyPtr, lastKeyLen := uintToKey(EntryKey, truncMin)
+	defer freePtr(lastKeyPtr)
 
-	glog.Info("Starting database truncation...")
+	glog.V(3).Infof("Maxtime = %s truncMin = %d", maxTime, truncMin)
+	// Iterate backwards until we get a record old enough
+	C.go_rocksdb_iter_seek(it, lastKeyPtr, lastKeyLen)
 
-	for truncCount > 0 {
-		toTrunc := truncCount
-		if toTrunc > maxDeleteBatch {
-			toTrunc = maxDeleteBatch
+	for {
+		if C.rocksdb_iter_valid(it) == 0 {
+			// No more records to read, so we can't delete anything
+			glog.V(2).Info("Truncate reached start of entries")
+			return 0, nil
 		}
-
-		glog.V(2).Infof("Truncating a maximum of %d entries", toTrunc)
-		deleted, err := s.truncateBatch(it, toTrunc, maxTime)
-		deleteCount += deleted
+		ix, _, e, err := readIterPosition(it)
 		if err != nil {
-			return deleteCount, err
+			glog.V(2).Infof("Error on truncate: %s", err)
+			return 0, err
 		}
-		glog.V(2).Infof("Truncated %d entries", deleted)
-		if deleted == 0 {
-			truncCount = 0
-		} else {
-			truncCount -= deleted
+		glog.V(3).Infof("Entry: ix = %d time = %s", ix, e.Timestamp)
+		if !e.Timestamp.After(maxTime) {
+			// Reached an old enough one so we're done
+			glog.V(2).Infof("Truncate reached an old enough record = %d", ix)
+			// Truncate everything BEFORE this one, so add one.
+			return ix + 1, nil
 		}
-	}
 
-	glog.Infof("Truncated %d entries from the database", deleteCount)
-	return deleteCount, nil
+		C.rocksdb_iter_prev(it)
+	}
 }
 
 func (s *rocksDBStorage) truncateBatch(it *C.rocksdb_iterator_t, maxCount uint64, maxTime time.Time) (uint64, error) {

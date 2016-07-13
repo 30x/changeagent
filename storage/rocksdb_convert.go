@@ -94,6 +94,10 @@ func stringToKey(keyType int, k string) (unsafe.Pointer, C.size_t) {
 	return bytesToPtr(buf.Bytes())
 }
 
+/*
+keyToString is unused in the code but it is used in the test. Since it uses
+cgo it cannot be in a test file, however.
+*/
 func keyToString(ptr unsafe.Pointer, len C.size_t) (int, string, error) {
 	if len < 1 {
 		return 0, "", errors.New("Invalid key")
@@ -198,6 +202,10 @@ func parseKeyPrefix(b byte) (int, int) {
 	return vers, kt
 }
 
+/*
+compareKeys is unused in the code but it is used by the tests. Since it uses
+cgo it cannot be in a test file, however.
+*/
 func compareKeys(ptra unsafe.Pointer, lena C.size_t, ptrb unsafe.Pointer, lenb C.size_t) int {
 	cmp := C.go_compare_bytes(nil, ptra, lena, ptrb, lenb)
 	return int(cmp)

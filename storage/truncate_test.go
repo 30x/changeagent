@@ -2,6 +2,7 @@ package storage
 
 import (
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/30x/changeagent/common"
@@ -25,7 +26,7 @@ var _ = Describe("Truncation test", func() {
 	})
 
 	It("Truncate empty", func() {
-		count, err := truncateStore.Truncate(1000, time.Minute)
+		count, err := truncateStore.CalculateTruncate(1000, time.Minute, math.MaxUint64)
 		Expect(err).Should(Succeed())
 		Expect(count).Should(BeEquivalentTo(0))
 	})
@@ -34,31 +35,41 @@ var _ = Describe("Truncation test", func() {
 		fillRecords(truncateStore, 1, 100, time.Now())
 		countEntries(truncateStore, 1, 100)
 
-		deleted, err := truncateStore.Truncate(50, 0)
+		pos, err := truncateStore.CalculateTruncate(50, 0, math.MaxUint64)
 		Expect(err).Should(Succeed())
-		Expect(deleted).Should(BeEquivalentTo(50))
+		Expect(pos).Should(BeEquivalentTo(51))
+
+		err = truncateStore.TruncateBefore(pos)
+		Expect(err).Should(Succeed())
 		countEntries(truncateStore, 51, 50)
+
+		pos, err = truncateStore.CalculateTruncate(50, 0, math.MaxUint64)
+		Expect(err).Should(Succeed())
+		Expect(pos).Should(BeEquivalentTo(0))
 	})
 
 	It("Truncate nothing", func() {
 		fillRecords(truncateStore, 1, 100, time.Now())
 
-		deleted, err := truncateStore.Truncate(100, 0)
+		pos, err := truncateStore.CalculateTruncate(100, 0, math.MaxUint64)
 		Expect(err).Should(Succeed())
-		Expect(deleted).Should(BeEquivalentTo(0))
+		Expect(pos).Should(BeEquivalentTo(0))
 		countEntries(truncateStore, 1, 100)
 	})
 
 	It("Truncate all", func() {
 		fillRecords(truncateStore, 1, 100, time.Now())
 
-		deleted, err := truncateStore.Truncate(0, 0)
+		pos, err := truncateStore.CalculateTruncate(0, 0, math.MaxUint64)
 		Expect(err).Should(Succeed())
-		Expect(deleted).Should(BeEquivalentTo(100))
+		Expect(pos).Should(BeEquivalentTo(101))
 
-		deleted, err = truncateStore.Truncate(0, 0)
+		err = truncateStore.TruncateBefore(pos)
 		Expect(err).Should(Succeed())
-		Expect(deleted).Should(BeEquivalentTo(0))
+
+		pos, err = truncateStore.CalculateTruncate(0, 0, math.MaxUint64)
+		Expect(err).Should(Succeed())
+		Expect(pos).Should(BeEquivalentTo(0))
 	})
 
 	It("Truncate by time", func() {
@@ -72,15 +83,36 @@ var _ = Describe("Truncation test", func() {
 		fillRecords(truncateStore, 21, 10, oneBack)
 		countEntries(truncateStore, 1, 30)
 
-		deleted, err := truncateStore.Truncate(2, 6*time.Minute)
+		pos, err := truncateStore.CalculateTruncate(2, 6*time.Minute, math.MaxUint64)
 		Expect(err).Should(Succeed())
-		Expect(deleted).Should(BeEquivalentTo(10))
+		Expect(pos).Should(BeEquivalentTo(11))
+
+		err = truncateStore.TruncateBefore(pos)
+		Expect(err).Should(Succeed())
 		countEntries(truncateStore, 11, 20)
 
-		deleted, err = truncateStore.Truncate(2, 2*time.Minute)
+		pos, err = truncateStore.CalculateTruncate(2, 2*time.Minute, math.MaxUint64)
 		Expect(err).Should(Succeed())
-		Expect(deleted).Should(BeEquivalentTo(10))
+		Expect(pos).Should(BeEquivalentTo(21))
+
+		err = truncateStore.TruncateBefore(pos)
+		Expect(err).Should(Succeed())
 		countEntries(truncateStore, 21, 10)
+	})
+
+	It("Truncate consider index", func() {
+		fillRecords(truncateStore, 1, 100, time.Now())
+
+		pos, err := truncateStore.CalculateTruncate(0, 0, 98)
+		Expect(err).Should(Succeed())
+		Expect(pos).Should(BeEquivalentTo(98))
+
+		err = truncateStore.TruncateBefore(pos)
+		Expect(err).Should(Succeed())
+
+		pos, err = truncateStore.CalculateTruncate(0, 0, math.MaxUint64)
+		Expect(err).Should(Succeed())
+		Expect(pos).Should(BeEquivalentTo(101))
 	})
 })
 

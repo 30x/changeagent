@@ -8,6 +8,7 @@ package raft
 import (
 	"errors"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/30x/changeagent/common"
@@ -167,7 +168,7 @@ func (r *Service) followerLoop(isCandidate bool, state *raftState) chan bool {
 			returnStatus(si, state, false)
 
 		case cmd := <-r.loopCommands:
-			if cmd == UpdateConfiguration && r.GetNodeConfig().GetNode(r.id) == nil {
+			if cmd == UpdateNodeConfiguration && r.GetNodeConfig().GetNode(r.id) == nil {
 				glog.Infof("We have been removed from cluster %s", r.GetClusterID())
 				r.setClusterID(0)
 				r.setLeader(0)
@@ -206,6 +207,9 @@ func (r *Service) leaderLoop(state *raftState, isLeader bool) chan bool {
 		stopPeers(state)
 		return nil
 	}
+
+	purgeTimer := time.NewTimer(r.calculatePurgeDelay())
+	defer purgeTimer.Stop()
 
 	for {
 		select {
@@ -274,7 +278,7 @@ func (r *Service) leaderLoop(state *raftState, isLeader bool) chan bool {
 		case cmd := <-r.loopCommands:
 			glog.V(2).Infof("Received loop command %s", cmd)
 			switch cmd {
-			case UpdateConfiguration:
+			case UpdateNodeConfiguration:
 				if r.GetNodeConfig().GetNode(r.id) == nil {
 					glog.Infof("Node %s: we have been removed as leader of cluster %s", r.id, r.GetClusterID())
 					stopPeers(state)
@@ -289,9 +293,16 @@ func (r *Service) leaderLoop(state *raftState, isLeader bool) chan bool {
 			case JoinAsCandidate:
 				r.setState(Candidate)
 				return nil
+			case UpdateRaftConfiguration:
+				// Only configuration change so far is the purge timer
+				purgeTimer.Reset(r.calculatePurgeDelay())
 			default:
 				glog.V(2).Info("Ignoring command.")
 			}
+
+		case <-purgeTimer.C:
+			r.startPurge(minPeerIndex(state))
+			purgeTimer.Reset(r.calculatePurgeDelay())
 
 		case stopDone := <-r.stopChan:
 			r.setState(Stopping)
@@ -307,6 +318,16 @@ func stopPeers(state *raftState) {
 		delete(state.peers, pid)
 		delete(state.peerMatches, pid)
 	}
+}
+
+func minPeerIndex(state *raftState) uint64 {
+	var min uint64 = math.MaxUint64
+	for _, v := range state.peerMatches {
+		if v < min {
+			min = v
+		}
+	}
+	return min
 }
 
 /*
@@ -399,6 +420,22 @@ func (r *Service) getPartialCommitIndex(state *raftState, nodes []Node) uint64 {
 	// Since indices are zero-based, this will return element N / 2 + 1
 	p := len(indices) / 2
 	return indices[p]
+}
+
+func (r *Service) calculatePurgeDelay() time.Duration {
+	cfg := r.GetRaftConfig()
+	if !cfg.shouldPurgeRecords() {
+		return math.MaxInt64
+	}
+
+	switch d := cfg.MinPurgeDuration; {
+	case d < time.Minute:
+		return time.Second
+	case d < time.Hour:
+		return time.Minute
+	default:
+		return time.Hour
+	}
 }
 
 func returnStatus(ch chan<- ProtocolStatus, state *raftState, isLeader bool) {

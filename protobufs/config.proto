@@ -1,0 +1,10 @@
+package protobufs;
+
+message PurgeConfig {
+  required int64 minDuration = 1;
+  required uint32 minRecords = 2;
+}
+
+message ConfigPb {
+  optional PurgeConfig purge = 1;
+}

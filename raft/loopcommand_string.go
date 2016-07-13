@@ -4,9 +4,9 @@ package raft
 
 import "fmt"
 
-const _LoopCommand_name = "UpdateConfigurationJoinAsFollowerJoinAsCandidate"
+const _LoopCommand_name = "UpdateNodeConfigurationJoinAsFollowerJoinAsCandidateUpdateRaftConfiguration"
 
-var _LoopCommand_index = [...]uint8{0, 19, 33, 48}
+var _LoopCommand_index = [...]uint8{0, 23, 37, 52, 75}
 
 func (i LoopCommand) String() string {
 	if i < 0 || i >= LoopCommand(len(_LoopCommand_index)-1) {

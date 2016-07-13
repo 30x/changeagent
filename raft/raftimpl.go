@@ -29,6 +29,7 @@ const (
 	ClusterIDKey   = "clusterID"
 	LastAppliedKey = "lastApplied"
 	NodeConfig     = "nodeConfig"
+	RaftConfigKey  = "raftConfig"
 	WebHooks       = "webHooks"
 )
 
@@ -38,6 +39,13 @@ const (
 	// WebHookChange denotes a change in the WebHook configuration for the
 	// cluster.
 	WebHookChange = -2
+	// ConfigChange denotes a new RaftConfiguration object that describes various
+	// parameters about the implementation
+	ConfigChange = -3
+	// PurgeRequest denotes that the leader would like to propose purging all
+	// records older than the specified index. Body is just a change number
+	// encoded using a "varint".
+	PurgeRequest = -4
 
 	// ElectionTimeout is the amount of time a node will wait once it has heard
 	// from the current leader before it declares itself a candidate.
@@ -90,9 +98,10 @@ type LoopCommand int32
  * Commands to send to the main loop.
  */
 const (
-	UpdateConfiguration LoopCommand = iota
+	UpdateNodeConfiguration LoopCommand = iota
 	JoinAsFollower
 	JoinAsCandidate
+	UpdateRaftConfiguration
 )
 
 /*
@@ -108,6 +117,7 @@ type Service struct {
 	state                int32
 	comm                 communication.Communication
 	nodeConfig           atomic.Value
+	raftConfig           atomic.Value
 	stor                 storage.Storage
 	loopCommands         chan LoopCommand
 	stopChan             chan chan bool
@@ -174,6 +184,7 @@ func StartRaft(
 		comm:                 comm,
 		localAddress:         atomic.Value{},
 		nodeConfig:           atomic.Value{},
+		raftConfig:           atomic.Value{},
 		stor:                 stor,
 		stopChan:             make(chan chan bool, 1),
 		loopCommands:         make(chan LoopCommand, 1),
@@ -203,7 +214,11 @@ func StartRaft(
 
 	glog.Infof("Node %s starting in cluster %s", r.id, clusterID)
 
-	err = r.loadCurrentConfig(stor)
+	err = r.loadNodeConfig(stor)
+	if err != nil {
+		return nil, err
+	}
+	err = r.loadRaftConfig(stor)
 	if err != nil {
 		return nil, err
 	}
@@ -242,7 +257,7 @@ func (r *Service) loadNodeID(key string, stor storage.Storage, create bool) (com
 	return common.NodeID(id), nil
 }
 
-func (r *Service) loadCurrentConfig(stor storage.Storage) error {
+func (r *Service) loadNodeConfig(stor storage.Storage) error {
 	buf, err := stor.GetMetadata(NodeConfig)
 	if err != nil {
 		return err
@@ -261,6 +276,26 @@ func (r *Service) loadCurrentConfig(stor storage.Storage) error {
 		return err
 	}
 	r.nodeConfig.Store(cfg)
+	return nil
+}
+
+func (r *Service) loadRaftConfig(stor storage.Storage) error {
+	buf, err := stor.GetMetadata(RaftConfigKey)
+	if err != nil {
+		return err
+	}
+
+	if buf == nil {
+		emptyCfg := Config{}
+		r.setRaftConfig(&emptyCfg)
+		return nil
+	}
+
+	cfg, err := decodeRaftConfig(buf)
+	if err != nil {
+		return err
+	}
+	r.setRaftConfig(cfg)
 	return nil
 }
 
@@ -551,6 +586,12 @@ func (r *Service) setLastApplied(t uint64) {
 	case t == MembershipChange:
 		r.applyMembershipChange(entry)
 
+	case t == ConfigChange:
+		r.applyRaftConfigChange(entry)
+
+	case t == PurgeRequest:
+		r.purgeData(entry)
+
 	case t >= 0:
 		// Only pass positive (or zero) entry types to the state machine.
 		err = r.stateMachine.Commit(entry)
@@ -644,6 +685,22 @@ func (r *Service) UpdateWebHooks(webHooks []hooks.WebHook) (uint64, error) {
 }
 
 /*
+UpdateRaftConfiguration updates configuration of various aspects of the
+implementation. The configuration will be pushed to the other nodes just like
+any other change.
+*/
+func (r *Service) UpdateRaftConfiguration(config *Config) (uint64, error) {
+	glog.V(2).Info("Updating the configuration across the cluster")
+	buf := config.encode()
+	entry := common.Entry{
+		Type:      ConfigChange,
+		Timestamp: time.Now(),
+		Data:      buf,
+	}
+	return r.Propose(&entry)
+}
+
+/*
 GetNodeConfig returns the current configuration of this raft node, which means
 the configuration that is currently running (as oppopsed to what
 has been proposed.
@@ -664,6 +721,22 @@ func (r *Service) setNodeConfig(newCfg *NodeList) error {
 	}
 	r.nodeConfig.Store(newCfg)
 	return nil
+}
+
+/*
+GetRaftConfig returns details about the state of the node, including cluster
+status.
+*/
+func (r *Service) GetRaftConfig() *Config {
+	val := r.raftConfig.Load()
+	if val == nil {
+		return nil
+	}
+	return val.(*Config)
+}
+
+func (r *Service) setRaftConfig(rc *Config) {
+	r.raftConfig.Store(rc)
 }
 
 func (r *Service) getLocalAddress() string {

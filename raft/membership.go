@@ -244,7 +244,7 @@ func (r *Service) RemoveNodeForcibly(nodeID common.NodeID) error {
 
 	r.setMembershipChangeMode(Stable)
 	r.setNodeConfig(finalCfg)
-	r.loopCommands <- UpdateConfiguration
+	r.loopCommands <- UpdateNodeConfiguration
 
 	return nil
 }
@@ -313,5 +313,5 @@ func (r *Service) applyMembershipChange(e *common.Entry) {
 	glog.Infof("Applying new node configuration %s", newCfg)
 
 	r.setNodeConfig(newCfg)
-	r.loopCommands <- UpdateConfiguration
+	r.loopCommands <- UpdateNodeConfiguration
 }

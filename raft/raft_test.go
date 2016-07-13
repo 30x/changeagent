@@ -66,6 +66,55 @@ var _ = Describe("Raft Tests", func() {
 		appendAndVerify("FailMe", clusterSize)
 	})
 
+	It("Purge", func() {
+		appendAndVerify("Purge 1", clusterSize)
+		appendAndVerify("Purge 2", clusterSize)
+		appendAndVerify("Purge 3", clusterSize)
+		appendAndVerify("Purge 4", clusterSize)
+
+		cfg := Config{
+			MinPurgeRecords:  2,
+			MinPurgeDuration: 0,
+		}
+		fmt.Fprintf(GinkgoWriter, "Updating raft configuration\n")
+		ix, err := getLeader().UpdateRaftConfiguration(&cfg)
+		Expect(err).Should(Succeed())
+		Eventually(func() bool {
+			return verifyCommit(ix, clusterSize)
+		}, testTimeout, pollInterval).Should(BeTrue())
+		fmt.Fprintf(GinkgoWriter, "Updated raft configuration at index %d\n", ix)
+
+		for _, raft := range testRafts {
+			Expect(raft.GetRaftConfig().MinPurgeRecords).Should(BeEquivalentTo(2))
+			Expect(raft.GetRaftConfig().MinPurgeDuration).Should(BeZero())
+		}
+
+		Eventually(func() bool {
+			// leave one for purging..., and one for purge request -- but not sure why!
+			return verifyRecordCount(4)
+		}, testTimeout, pollInterval).Should(BeTrue())
+
+		fmt.Fprintf(GinkgoWriter, "Replacing original raft configuration\n")
+		cfg = Config{}
+		ix, err = getLeader().UpdateRaftConfiguration(&cfg)
+		Expect(err).Should(Succeed())
+		Eventually(func() bool {
+			return verifyCommit(ix, clusterSize)
+		}, testTimeout, pollInterval).Should(BeTrue())
+		fmt.Fprintf(GinkgoWriter, "Updated raft configuration at index %d\n", ix)
+
+		appendAndVerify("After Purge", clusterSize)
+		Consistently(func() bool {
+			// Added two records -- one config change and the real record
+			return verifyRecordCount(6)
+		}).Should(BeTrue())
+
+		for _, raft := range testRafts {
+			Expect(raft.GetRaftConfig().MinPurgeRecords).Should(BeZero())
+			Expect(raft.GetRaftConfig().MinPurgeDuration).Should(BeZero())
+		}
+	})
+
 	// After stopping the leader, a new one is elected
 	It("Stop Leader", func() {
 		var leaderIndex int
@@ -218,11 +267,11 @@ func appendAndVerify(msg string, expectedCount int) uint64 {
 
 	Eventually(func() bool {
 		if verifyIndex(index, data, expectedCount) {
-			fmt.Fprintf(GinkgoWriter, "Index now matches")
+			fmt.Fprintf(GinkgoWriter, "Index now matches\n")
 			if verifyCommit(index, expectedCount) {
-				fmt.Fprintf(GinkgoWriter, "Commit index matches too")
+				fmt.Fprintf(GinkgoWriter, "Commit index matches too\n")
 				if verifyApplied(index, expectedCount) {
-					fmt.Fprintf(GinkgoWriter, "Applied data matches too")
+					fmt.Fprintf(GinkgoWriter, "Applied data matches too\n")
 					return true
 				}
 			}
@@ -279,7 +328,7 @@ func verifyIndex(ix uint64, expected []byte, expectedCount int) bool {
 		entry, err := raft.stor.GetEntry(ix)
 		Expect(err).Should(Succeed())
 		if entry == nil {
-			fmt.Fprintf(GinkgoWriter, "Index %d not replicated to raft %d\n", ix, raft.id)
+			fmt.Fprintf(GinkgoWriter, "Index %d not replicated to raft %s\n", ix, raft.id)
 			verified = false
 		} else if !bytes.Equal(expected, entry.Data) {
 			fmt.Fprintf(GinkgoWriter, "Data in log does not match\n")
@@ -296,7 +345,7 @@ func verifyIndex(ix uint64, expected []byte, expectedCount int) bool {
 func verifyCommit(ix uint64, expectedCount int) bool {
 	correctCount := 0
 	for _, raft := range testRafts {
-		fmt.Fprintf(GinkgoWriter, "Node %d has commit index %d\n", raft.id, raft.GetCommitIndex())
+		fmt.Fprintf(GinkgoWriter, "Node %s has commit index %d\n", raft.id, raft.GetCommitIndex())
 		if raft.GetCommitIndex() >= ix {
 			correctCount++
 		}
@@ -322,4 +371,21 @@ func waitForApply(ix uint64, expectedCount int, interval time.Duration) {
 	Eventually(func() bool {
 		return verifyApplied(ix, expectedCount)
 	}, testTimeout, interval).Should(BeTrue())
+}
+
+func verifyRecordCount(expectedCount int) bool {
+	for _, raft := range testRafts {
+		entries, _ :=
+			raft.stor.GetEntries(0, uint(expectedCount+10),
+				func(e *common.Entry) bool { return true })
+		if len(entries) != expectedCount {
+			fmt.Fprintf(GinkgoWriter, "Raft %s has %d entries, not %d\n",
+				raft.id, len(entries), expectedCount)
+			for i, e := range entries {
+				fmt.Fprintf(GinkgoWriter, "  e[%d] = %d type %d\n", i, e.Index, e.Type)
+			}
+			return false
+		}
+	}
+	return true
 }
