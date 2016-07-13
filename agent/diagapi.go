@@ -62,6 +62,7 @@ func (a *ChangeAgent) handleRootCall(resp http.ResponseWriter, req *http.Request
 	links["diagnostics"] = a.makeLink(req, "/diagnostics")
 	links["hooks"] = a.makeLink(req, "/hooks")
 	links["cluster"] = a.makeLink(req, "/cluster")
+	links["config"] = a.makeLink(req, "/config")
 
 	body, _ := json.MarshalIndent(&links, indentPrefix, indentSpace)
 

@@ -124,7 +124,7 @@ func (r *Service) followerLoop(isCandidate bool, state *raftState) chan bool {
 
 		case prop := <-r.proposals:
 			leader := r.getLeader()
-			if leader.NodeID == 0 {
+			if leader == nil || leader.NodeID == 0 {
 				pr := proposalResult{
 					err: errors.New("Cannot accept proposal because there is no leader"),
 				}

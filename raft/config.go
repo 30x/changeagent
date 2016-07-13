@@ -71,5 +71,6 @@ func (r *Service) applyRaftConfigChange(entry *common.Entry) {
 	}
 
 	r.setRaftConfig(cfg)
+	r.stor.SetMetadata(RaftConfigKey, entry.Data)
 	r.loopCommands <- UpdateRaftConfiguration
 }
