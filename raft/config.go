@@ -118,10 +118,9 @@ func (r *Service) applyRaftConfigChange(entry *common.Entry) {
 	err = cfg.validate()
 	if err != nil {
 		glog.Errorf("Received invalid raft configuration data: %s", err)
-		panic("Bad config!")
+		return
 	}
 
 	r.setRaftConfig(cfg)
 	r.stor.SetMetadata(RaftConfigKey, entry.Data)
-	r.loopCommands <- UpdateRaftConfiguration
 }

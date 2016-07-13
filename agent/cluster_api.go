@@ -93,6 +93,7 @@ func (a *ChangeAgent) handleGetClusterMember(resp http.ResponseWriter, req *http
 
 func (a *ChangeAgent) handleAddClusterMember(resp http.ResponseWriter, req *http.Request) {
 	addrInfo := &addressInfo{}
+	defer req.Body.Close()
 	bindingErr := binding.Bind(req, addrInfo)
 	if bindingErr.Handle(resp) {
 		return

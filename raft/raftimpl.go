@@ -428,6 +428,9 @@ func (r *Service) Join(req communication.JoinRequest) (uint64, error) {
 	for _, e := range req.Entries {
 		r.stor.AppendEntry(&e)
 	}
+	for _, e := range req.ConfigEntries {
+		r.handleJoinConfigEntry(&e)
+	}
 
 	if req.Last {
 		r.loopCommands <- JoinAsFollower
@@ -579,6 +582,7 @@ func (r *Service) setLastApplied(t uint64) {
 
 	case t == ConfigChange:
 		r.applyRaftConfigChange(entry)
+		r.loopCommands <- UpdateRaftConfiguration
 
 	case t == PurgeRequest:
 		r.purgeData(entry)
@@ -600,6 +604,25 @@ func (r *Service) setLastApplied(t uint64) {
 	atomic.StoreUint64(&r.lastApplied, t)
 
 	r.appliedTracker.Update(t)
+}
+
+/*
+handleJoinConfigEntry is invoked on special entries sent during the catch-up
+process that help replicate config to a new node.
+*/
+func (r *Service) handleJoinConfigEntry(entry *common.Entry) {
+	switch t := entry.Type; {
+	case t == WebHookChange:
+		r.applyWebHookChange(entry)
+
+	case t == ConfigChange:
+		r.applyRaftConfigChange(entry)
+
+	default:
+		// Ignore membership changes, as we will have that set up later.
+		// Also ignore purge requests, since data we get should be pre-purged
+		glog.V(2).Infof("Ignoring record of type %d during join", t)
+	}
 }
 
 func (r *Service) applyWebHookChange(entry *common.Entry) {
@@ -631,7 +654,8 @@ two election timeouts, which means that updates will always work as long
 as the cluster is capable of electing a leader.
 */
 func (r *Service) WaitForCommit(ix uint64) error {
-	propTimeout := r.GetRaftConfig().ElectionTimeout * 2
+	_, elTimeout := r.getTimeouts()
+	propTimeout := elTimeout * 2
 	appliedIx := r.appliedTracker.TimedWait(ix, propTimeout)
 	if appliedIx < ix {
 		return errors.New("Proposal timeout -- change could not be committed to a quorum")
@@ -746,13 +770,24 @@ func (r *Service) GetRaftConfig() Config {
 }
 
 func (r *Service) setRaftConfig(rc Config) {
-	err := rc.validate()
-	if err != nil {
-		panic(fmt.Sprintf("Error validating new config: %s", err))
-	}
 	r.latch.Lock()
 	r.raftConfig = rc
 	r.latch.Unlock()
+}
+
+/*
+getTimeouts returns the heartbeat timeout and election timeout, in order.
+*/
+func (r *Service) getTimeouts() (time.Duration, time.Duration) {
+	r.latch.Lock()
+	defer r.latch.Unlock()
+	return r.raftConfig.HeartbeatTimeout, r.raftConfig.ElectionTimeout
+}
+
+func (r *Service) getHeartbeatTimeout() time.Duration {
+	r.latch.Lock()
+	defer r.latch.Unlock()
+	return r.raftConfig.HeartbeatTimeout
 }
 
 func (r *Service) getLocalAddress() string {
@@ -832,9 +867,9 @@ func (r *Service) readLastApplied() uint64 {
 // Election timeout is the default timeout, plus or minus one heartbeat interval.
 // Use math.rand here, not crypto.rand, because it happens an awful lot.
 func (r *Service) randomElectionTimeout() time.Duration {
-	cfg := r.GetRaftConfig()
-	rge := int64(cfg.HeartbeatTimeout * 2)
-	min := int64(cfg.ElectionTimeout - cfg.HeartbeatTimeout)
+	hbTimeout, elTimeout := r.getTimeouts()
+	rge := int64(hbTimeout * 2)
+	min := int64(elTimeout - hbTimeout)
 	raftRandLock.Lock()
 	defer raftRandLock.Unlock()
 	return time.Duration(raftRand.Int63n(rge) + min)

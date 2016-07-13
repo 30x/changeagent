@@ -119,9 +119,14 @@ We use it to send catch-up messages to the new node so that it will have a
 copy of the log before we let it formally join the cluster.
 */
 type JoinRequest struct {
+	// ClusterID must be consistent on all calls
 	ClusterID common.NodeID
-	Last      bool // Sent on the last request.
-	Entries   []common.Entry
+	// Last indicates that there will be no more join requests
+	Last bool
+	// Entries are entries that are just replicated and inserted in storage
+	Entries []common.Entry
+	// ConfigEntries are entries that must be parsed and applied to local configuration
+	ConfigEntries []common.Entry
 }
 
 /*

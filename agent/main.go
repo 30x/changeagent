@@ -50,6 +50,9 @@ func runAgentMain() int {
 	flag.StringVar(&clusterCert, "ccert", "", "Cluster TLS Certificate")
 	flag.StringVar(&clusterCA, "cca", "", "Cluster TLS certificate file for peer verification")
 
+	// By default glog puts stuff in a log file which is annoying.
+	flag.Set("logtostderr", "true")
+
 	flag.Parse()
 	if help || !flag.Parsed() {
 		printUsage("")

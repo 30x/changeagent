@@ -76,7 +76,7 @@ func (p *raftPeer) peerLoop() {
 
 	// Repeat heartbeats during idle periods to prevent
 	// election timeouts (§5.2)
-	hbTimeout := time.NewTimer(p.r.GetRaftConfig().HeartbeatTimeout)
+	hbTimeout := time.NewTimer(p.r.getHeartbeatTimeout())
 
 	// Provide a way to delay on failure
 	failureDelay := false
@@ -94,7 +94,7 @@ func (p *raftPeer) peerLoop() {
 				glog.V(2).Infof("Error sending updates to peer %s: %s", p.node, err)
 			}
 			rpcRunning = true
-			hbTimeout.Reset(p.r.GetRaftConfig().HeartbeatTimeout)
+			hbTimeout.Reset(p.r.getHeartbeatTimeout())
 		}
 
 		select {
@@ -106,14 +106,14 @@ func (p *raftPeer) peerLoop() {
 				p.sendHeartbeat(desiredIndex, responseChan)
 				rpcRunning = true
 			}
-			hbTimeout.Reset(p.r.GetRaftConfig().HeartbeatTimeout)
+			hbTimeout.Reset(p.r.getHeartbeatTimeout())
 
 		case <-p.pokes:
 			// The main loop asked us to send an early heartbeat because the commit index changed
 			if !rpcRunning && (nextIndex == desiredIndex) && !failureDelay {
 				p.sendHeartbeat(desiredIndex, responseChan)
 				rpcRunning = true
-				hbTimeout.Reset(p.r.GetRaftConfig().HeartbeatTimeout)
+				hbTimeout.Reset(p.r.getHeartbeatTimeout())
 			}
 
 		case newIndex := <-p.proposals:

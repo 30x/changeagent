@@ -2,9 +2,11 @@ package raft
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/30x/changeagent/common"
 	"github.com/30x/changeagent/communication"
+	"github.com/30x/changeagent/hooks"
 	"github.com/golang/glog"
 )
 
@@ -284,6 +286,25 @@ func (r *Service) catchUpNode(addr string) error {
 		ClusterID: r.GetClusterID(),
 		Last:      true,
 	}
+
+	webHooks := r.GetWebHooks()
+	if len(webHooks) > 0 {
+		json := hooks.EncodeHooksJSON(webHooks)
+		entry := common.Entry{
+			Type:      WebHookChange,
+			Timestamp: time.Now(),
+			Data:      json,
+		}
+		joinReq.ConfigEntries = append(joinReq.ConfigEntries, entry)
+	}
+
+	cfgData := r.GetRaftConfig().encode()
+	cfgEntry := common.Entry{
+		Type:      ConfigChange,
+		Timestamp: time.Now(),
+		Data:      cfgData,
+	}
+	joinReq.ConfigEntries = append(joinReq.ConfigEntries, cfgEntry)
 
 	joinResp, err := r.comm.Join(addr, joinReq)
 	if err != nil {

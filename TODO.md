@@ -10,8 +10,6 @@ Insert performance is inconsistent. It seems like many inserts take as long as t
 
 Graceful shutdown for HTTP transactions.
 
-Automatic truncation of change log
-
 Graceful leader step-down / nomination algorithm.
 
 Read-only method to get current change ID from master.
@@ -28,8 +26,6 @@ commit timeout.
 Add API option to post without waiting for commit.
 
 Write a dump / load / recovery tool
-
-Experiment with heartbeat and election timeouts and make them configurable.
 
 # Archive Below
 

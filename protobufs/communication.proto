@@ -29,6 +29,7 @@ message JoinRequestPb {
   required fixed64 clusterId = 1;
   optional bool last = 2;
   repeated EntryPb entries = 3;
+  repeated EntryPb configEntries = 4;
 }
 
 message AppendResponsePb {

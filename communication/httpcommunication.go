@@ -296,6 +296,10 @@ func (h *httpCommunication) Join(addr string, req JoinRequest) (ProposalResponse
 		epb := e.EncodePb()
 		joinPb.Entries = append(joinPb.Entries, &epb)
 	}
+	for _, e := range req.ConfigEntries {
+		epb := e.EncodePb()
+		joinPb.ConfigEntries = append(joinPb.ConfigEntries, &epb)
+	}
 
 	var respPb protobufs.ProposalResponsePb
 	err := h.transportClientRequest(uri, &joinPb, &respPb)
@@ -415,6 +419,9 @@ func (h *httpCommunication) handleJoin(resp http.ResponseWriter, req *http.Reque
 	}
 	for _, e := range joinPb.GetEntries() {
 		joinReq.Entries = append(joinReq.Entries, *common.DecodeEntryFromPb(*e))
+	}
+	for _, e := range joinPb.GetConfigEntries() {
+		joinReq.ConfigEntries = append(joinReq.ConfigEntries, *common.DecodeEntryFromPb(*e))
 	}
 
 	newIndex, err := h.raft.Join(joinReq)
