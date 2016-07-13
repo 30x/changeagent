@@ -2,11 +2,28 @@ package raft
 
 import (
 	"encoding/binary"
+	"math"
 	"time"
 
 	"github.com/30x/changeagent/common"
 	"github.com/golang/glog"
 )
+
+func (r *Service) calculatePurgeDelay() time.Duration {
+	cfg := r.GetRaftConfig()
+	if !cfg.shouldPurgeRecords() {
+		return math.MaxInt64
+	}
+
+	switch d := cfg.MinPurgeDuration; {
+	case d < time.Minute:
+		return time.Second
+	case d < time.Hour:
+		return time.Minute
+	default:
+		return time.Hour
+	}
+}
 
 func (r *Service) startPurge(minIndex uint64) {
 	go r.runPurge(minIndex)

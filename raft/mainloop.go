@@ -422,22 +422,6 @@ func (r *Service) getPartialCommitIndex(state *raftState, nodes []Node) uint64 {
 	return indices[p]
 }
 
-func (r *Service) calculatePurgeDelay() time.Duration {
-	cfg := r.GetRaftConfig()
-	if !cfg.shouldPurgeRecords() {
-		return math.MaxInt64
-	}
-
-	switch d := cfg.MinPurgeDuration; {
-	case d < time.Minute:
-		return time.Second
-	case d < time.Hour:
-		return time.Minute
-	default:
-		return time.Hour
-	}
-}
-
 func returnStatus(ch chan<- ProtocolStatus, state *raftState, isLeader bool) {
 	s := ProtocolStatus{}
 	if isLeader {

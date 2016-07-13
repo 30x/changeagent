@@ -47,14 +47,6 @@ const (
 	// encoded using a "varint".
 	PurgeRequest = -4
 
-	// ElectionTimeout is the amount of time a node will wait once it has heard
-	// from the current leader before it declares itself a candidate.
-	// It must always be a small multiple of HeartbeatTimeout.
-	ElectionTimeout = 10 * time.Second
-	// HeartbeatTimeout is the amount of time between heartbeat messages from the
-	// leader to other nodes.
-	HeartbeatTimeout = 2 * time.Second
-
 	jsonContent = "application/json"
 )
 
@@ -286,8 +278,8 @@ func (r *Service) loadRaftConfig(stor storage.Storage) error {
 	}
 
 	if buf == nil {
-		emptyCfg := Config{}
-		r.setRaftConfig(&emptyCfg)
+		emptyCfg := MakeDefaultConfig()
+		r.setRaftConfig(emptyCfg)
 		return nil
 	}
 
@@ -633,6 +625,22 @@ func (r *Service) GetAppliedTracker() *ChangeTracker {
 }
 
 /*
+WaitForCommit blocks the caller until the specified index has been
+applied across the quorum. It is useful for APIs that want to wait for
+consistency before reporting to the user. It blocks for a maximum of
+two election timeouts, which means that updates will always work as long
+as the cluster is capable of electing a leader.
+*/
+func (r *Service) WaitForCommit(ix uint64) error {
+	propTimeout := r.GetRaftConfig().ElectionTimeout * 2
+	appliedIx := r.appliedTracker.TimedWait(ix, propTimeout)
+	if appliedIx < ix {
+		return errors.New("Proposal timeout -- change could not be committed to a quorum")
+	}
+	return nil
+}
+
+/*
 GetLastIndex returns the highest index that exists in the local raft log,
 and the corresponding term for that index.
 */
@@ -687,9 +695,14 @@ func (r *Service) UpdateWebHooks(webHooks []hooks.WebHook) (uint64, error) {
 /*
 UpdateRaftConfiguration updates configuration of various aspects of the
 implementation. The configuration will be pushed to the other nodes just like
-any other change.
+any other change. It doesn't get actually applied until it gets proposed
+to the various other nodes.
 */
 func (r *Service) UpdateRaftConfiguration(config *Config) (uint64, error) {
+	err := config.validate()
+	if err != nil {
+		return 0, err
+	}
 	glog.V(2).Info("Updating the configuration across the cluster")
 	buf := config.encode()
 	entry := common.Entry{
@@ -736,6 +749,7 @@ func (r *Service) GetRaftConfig() *Config {
 }
 
 func (r *Service) setRaftConfig(rc *Config) {
+	glog.V(2).Infof("Node %s setting config", r.id)
 	r.raftConfig.Store(rc)
 }
 
@@ -816,8 +830,12 @@ func (r *Service) readLastApplied() uint64 {
 // Election timeout is the default timeout, plus or minus one heartbeat interval.
 // Use math.rand here, not crypto.rand, because it happens an awful lot.
 func (r *Service) randomElectionTimeout() time.Duration {
-	rge := int64(HeartbeatTimeout * 2)
-	min := int64(ElectionTimeout - HeartbeatTimeout)
+	cfg := r.GetRaftConfig()
+	if cfg.ElectionTimeout <= 0 {
+		panic(fmt.Sprintf("Election timeout %s", cfg.ElectionTimeout))
+	}
+	rge := int64(cfg.HeartbeatTimeout * 2)
+	min := int64(cfg.ElectionTimeout - cfg.HeartbeatTimeout)
 	raftRandLock.Lock()
 	defer raftRandLock.Unlock()
 	return time.Duration(raftRand.Int63n(rge) + min)

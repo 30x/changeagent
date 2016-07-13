@@ -8,11 +8,6 @@ import (
 	"github.com/golang/glog"
 )
 
-const (
-	// NodeProposalTimeout is how long to wait for config change to work
-	NodeProposalTimeout = ElectionTimeout * 2
-)
-
 /*
 InitializeCluster sets the node up to be able to add nodes to a cluster.
 It should be called once and only once on the first node in a cluster.
@@ -110,10 +105,10 @@ func (r *Service) AddNode(addr string) error {
 		return err
 	}
 
-	appliedIx := r.appliedTracker.TimedWait(ix, NodeProposalTimeout)
-	if appliedIx < ix {
-		// TODO re-propose the original membership so we don't get stuck
-		return fmt.Errorf("Cannot apply the membership change to a quorum")
+	err = r.WaitForCommit(ix)
+	if err != nil {
+		// TODO recovery?
+		return err
 	}
 
 	finalCfg := &NodeList{
@@ -131,10 +126,10 @@ func (r *Service) AddNode(addr string) error {
 		return err
 	}
 
-	appliedIx = r.appliedTracker.TimedWait(ix, NodeProposalTimeout)
-	if appliedIx < ix {
-		// TODO re-propose the original membership so we don't get stuck
-		return fmt.Errorf("Cannot apply the membership change to a quorum")
+	err = r.WaitForCommit(ix)
+	if err != nil {
+		// TODO recovery?
+		return err
 	}
 
 	return nil
@@ -184,10 +179,10 @@ func (r *Service) RemoveNode(nodeID common.NodeID) error {
 		return err
 	}
 
-	appliedIx := r.appliedTracker.TimedWait(ix, NodeProposalTimeout)
-	if appliedIx < ix {
-		// TODO re-propose the original membership so we don't get stuck
-		return fmt.Errorf("Cannot apply the membership change to a quorum")
+	err = r.WaitForCommit(ix)
+	if err != nil {
+		// TODO recovery?
+		return err
 	}
 
 	finalCfg := &NodeList{
@@ -205,10 +200,10 @@ func (r *Service) RemoveNode(nodeID common.NodeID) error {
 		return err
 	}
 
-	appliedIx = r.appliedTracker.TimedWait(ix, NodeProposalTimeout)
-	if appliedIx < ix {
-		// TODO re-propose the original membership so we don't get stuck
-		return fmt.Errorf("Cannot apply the membership change to a quorum")
+	err = r.WaitForCommit(ix)
+	if err != nil {
+		// TODO recovery?
+		return err
 	}
 
 	return nil

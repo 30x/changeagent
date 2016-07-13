@@ -72,12 +72,12 @@ var _ = Describe("Raft Tests", func() {
 		appendAndVerify("Purge 3", clusterSize)
 		appendAndVerify("Purge 4", clusterSize)
 
-		cfg := Config{
-			MinPurgeRecords:  2,
-			MinPurgeDuration: 0,
-		}
+		cfg := MakeDefaultConfig()
+		cfg.MinPurgeRecords = 2
+		cfg.MinPurgeDuration = 100 * time.Millisecond
+
 		fmt.Fprintf(GinkgoWriter, "Updating raft configuration\n")
-		ix, err := getLeader().UpdateRaftConfiguration(&cfg)
+		ix, err := getLeader().UpdateRaftConfiguration(cfg)
 		Expect(err).Should(Succeed())
 		Eventually(func() bool {
 			return verifyCommit(ix, clusterSize)
@@ -86,7 +86,7 @@ var _ = Describe("Raft Tests", func() {
 
 		for _, raft := range testRafts {
 			Expect(raft.GetRaftConfig().MinPurgeRecords).Should(BeEquivalentTo(2))
-			Expect(raft.GetRaftConfig().MinPurgeDuration).Should(BeZero())
+			Expect(raft.GetRaftConfig().MinPurgeDuration).Should(Equal(100 * time.Millisecond))
 		}
 
 		Eventually(func() bool {
@@ -95,8 +95,7 @@ var _ = Describe("Raft Tests", func() {
 		}, testTimeout, pollInterval).Should(BeTrue())
 
 		fmt.Fprintf(GinkgoWriter, "Replacing original raft configuration\n")
-		cfg = Config{}
-		ix, err = getLeader().UpdateRaftConfiguration(&cfg)
+		ix, err = getLeader().UpdateRaftConfiguration(MakeDefaultConfig())
 		Expect(err).Should(Succeed())
 		Eventually(func() bool {
 			return verifyCommit(ix, clusterSize)

@@ -10,6 +10,18 @@ import (
 	"github.com/golang/protobuf/proto"
 )
 
+const (
+	// DefaultElectionTimeout is the election timeout out of the box.
+	// It may be modified using UpdateRaftConfig
+	DefaultElectionTimeout = 10 * time.Second
+	// DefaultHeartbeatTimeout is the default heartbeat timeout. It may be
+	// modified using UpdateRaftConfig
+	DefaultHeartbeatTimeout = 2 * time.Second
+
+	minElectionTimeout = 100 * time.Millisecond
+	minHeartbeatRatio  = 2
+)
+
 /*
 Config describes configuration information about the raft service
 that is shared around the cluster.
@@ -24,10 +36,38 @@ type Config struct {
 	// remain on the change list before being purged. Default is zero, which
 	// no purging.
 	MinPurgeDuration time.Duration
+	// ElectionTimeout is the amount of time a node will wait once it has heard
+	// from the current leader before it declares itself a candidate.
+	// It must always be a small multiple of HeartbeatTimeout.
+	ElectionTimeout time.Duration
+	// HeartbeatTimeout is the amount of time between heartbeat messages from the
+	// leader to other nodes.
+	HeartbeatTimeout time.Duration
+}
+
+/*
+MakeDefaultConfig returns a configuration that contains only defaults.
+*/
+func MakeDefaultConfig() *Config {
+	return &Config{
+		ElectionTimeout:  DefaultElectionTimeout,
+		HeartbeatTimeout: DefaultHeartbeatTimeout,
+	}
 }
 
 func (c *Config) shouldPurgeRecords() bool {
-	return c.MinPurgeRecords > 0 || c.MinPurgeDuration > 0
+	return c.MinPurgeRecords > 0 && c.MinPurgeDuration > 0
+}
+
+func (c *Config) validate() error {
+	if c.ElectionTimeout <= minElectionTimeout {
+		return fmt.Errorf("Heartbeat timeout must be at least %s", minElectionTimeout)
+	}
+	if c.ElectionTimeout < (c.HeartbeatTimeout * minHeartbeatRatio) {
+		return fmt.Errorf("Election timeout %s must be at least %s",
+			c.ElectionTimeout, c.HeartbeatTimeout*minHeartbeatRatio)
+	}
+	return nil
 }
 
 func decodeRaftConfig(buf []byte) (*Config, error) {

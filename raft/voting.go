@@ -34,7 +34,7 @@ func (r *Service) handleFollowerVote(state *raftState, cmd voteCommand, lastSawL
 	// Note that election timeout may have been reached even if we are not
 	// a candidate.
 	sinceSawLeader := time.Now().Sub(lastSawLeader)
-	if sinceSawLeader < ElectionTimeout {
+	if sinceSawLeader < r.GetRaftConfig().ElectionTimeout {
 		glog.V(2).Info("Voting no because we saw the leader %v ago", sinceSawLeader)
 		resp.VoteGranted = false
 		cmd.rc <- resp
