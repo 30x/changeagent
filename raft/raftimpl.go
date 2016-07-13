@@ -109,7 +109,7 @@ type Service struct {
 	state                int32
 	comm                 communication.Communication
 	nodeConfig           atomic.Value
-	raftConfig           atomic.Value
+	raftConfig           Config
 	stor                 storage.Storage
 	loopCommands         chan LoopCommand
 	stopChan             chan chan bool
@@ -176,7 +176,7 @@ func StartRaft(
 		comm:                 comm,
 		localAddress:         atomic.Value{},
 		nodeConfig:           atomic.Value{},
-		raftConfig:           atomic.Value{},
+		raftConfig:           defaultConfig,
 		stor:                 stor,
 		stopChan:             make(chan chan bool, 1),
 		loopCommands:         make(chan LoopCommand, 1),
@@ -278,8 +278,7 @@ func (r *Service) loadRaftConfig(stor storage.Storage) error {
 	}
 
 	if buf == nil {
-		emptyCfg := MakeDefaultConfig()
-		r.setRaftConfig(emptyCfg)
+		// Configuration already set to default
 		return nil
 	}
 
@@ -698,7 +697,7 @@ implementation. The configuration will be pushed to the other nodes just like
 any other change. It doesn't get actually applied until it gets proposed
 to the various other nodes.
 */
-func (r *Service) UpdateRaftConfiguration(config *Config) (uint64, error) {
+func (r *Service) UpdateRaftConfiguration(config Config) (uint64, error) {
 	err := config.validate()
 	if err != nil {
 		return 0, err
@@ -740,17 +739,20 @@ func (r *Service) setNodeConfig(newCfg *NodeList) error {
 GetRaftConfig returns details about the state of the node, including cluster
 status.
 */
-func (r *Service) GetRaftConfig() *Config {
-	val := r.raftConfig.Load()
-	if val == nil {
-		return nil
-	}
-	return val.(*Config)
+func (r *Service) GetRaftConfig() Config {
+	r.latch.Lock()
+	defer r.latch.Unlock()
+	return r.raftConfig
 }
 
-func (r *Service) setRaftConfig(rc *Config) {
-	glog.V(2).Infof("Node %s setting config", r.id)
-	r.raftConfig.Store(rc)
+func (r *Service) setRaftConfig(rc Config) {
+	err := rc.validate()
+	if err != nil {
+		panic(fmt.Sprintf("Error validating new config: %s", err))
+	}
+	r.latch.Lock()
+	r.raftConfig = rc
+	r.latch.Unlock()
 }
 
 func (r *Service) getLocalAddress() string {
@@ -831,9 +833,6 @@ func (r *Service) readLastApplied() uint64 {
 // Use math.rand here, not crypto.rand, because it happens an awful lot.
 func (r *Service) randomElectionTimeout() time.Duration {
 	cfg := r.GetRaftConfig()
-	if cfg.ElectionTimeout <= 0 {
-		panic(fmt.Sprintf("Election timeout %s", cfg.ElectionTimeout))
-	}
 	rge := int64(cfg.HeartbeatTimeout * 2)
 	min := int64(cfg.ElectionTimeout - cfg.HeartbeatTimeout)
 	raftRandLock.Lock()

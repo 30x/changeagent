@@ -45,21 +45,23 @@ type Config struct {
 	HeartbeatTimeout time.Duration
 }
 
-/*
-MakeDefaultConfig returns a configuration that contains only defaults.
-*/
-func MakeDefaultConfig() *Config {
-	return &Config{
-		ElectionTimeout:  DefaultElectionTimeout,
-		HeartbeatTimeout: DefaultHeartbeatTimeout,
-	}
+var defaultConfig = Config{
+	ElectionTimeout:  DefaultElectionTimeout,
+	HeartbeatTimeout: DefaultHeartbeatTimeout,
 }
 
-func (c *Config) shouldPurgeRecords() bool {
+/*
+GetDefaultConfig should be used as the basis for any configuration changes.
+*/
+func GetDefaultConfig() Config {
+	return defaultConfig
+}
+
+func (c Config) shouldPurgeRecords() bool {
 	return c.MinPurgeRecords > 0 && c.MinPurgeDuration > 0
 }
 
-func (c *Config) validate() error {
+func (c Config) validate() error {
 	if c.ElectionTimeout <= minElectionTimeout {
 		return fmt.Errorf("Heartbeat timeout must be at least %s", minElectionTimeout)
 	}
@@ -70,11 +72,11 @@ func (c *Config) validate() error {
 	return nil
 }
 
-func decodeRaftConfig(buf []byte) (*Config, error) {
+func decodeRaftConfig(buf []byte) (Config, error) {
 	var pb protobufs.ConfigPb
 	err := proto.Unmarshal(buf, &pb)
 	if err != nil {
-		return nil, err
+		return defaultConfig, err
 	}
 
 	rc := Config{}
@@ -83,11 +85,13 @@ func decodeRaftConfig(buf []byte) (*Config, error) {
 		rc.MinPurgeRecords = pb.GetPurge().GetMinRecords()
 		rc.MinPurgeDuration = time.Duration(pb.GetPurge().GetMinDuration()) * time.Millisecond
 	}
+	rc.HeartbeatTimeout = time.Duration(pb.GetHeartbeatTimeout())
+	rc.ElectionTimeout = time.Duration(pb.GetElectionTimeout())
 
-	return &rc, nil
+	return rc, nil
 }
 
-func (c *Config) encode() []byte {
+func (c Config) encode() []byte {
 	pb := protobufs.ConfigPb{}
 	if c.MinPurgeDuration > 0 || c.MinPurgeRecords > 0 {
 		pc := protobufs.PurgeConfig{}
@@ -95,6 +99,8 @@ func (c *Config) encode() []byte {
 		pc.MinRecords = proto.Uint32(c.MinPurgeRecords)
 		pb.Purge = &pc
 	}
+	pb.HeartbeatTimeout = proto.Int64(int64(c.HeartbeatTimeout))
+	pb.ElectionTimeout = proto.Int64(int64(c.ElectionTimeout))
 
 	buf, err := proto.Marshal(&pb)
 	if err != nil {
@@ -108,6 +114,11 @@ func (r *Service) applyRaftConfigChange(entry *common.Entry) {
 	if err != nil {
 		glog.Errorf("Received invalid raft configuration data: %s", err)
 		return
+	}
+	err = cfg.validate()
+	if err != nil {
+		glog.Errorf("Received invalid raft configuration data: %s", err)
+		panic("Bad config!")
 	}
 
 	r.setRaftConfig(cfg)

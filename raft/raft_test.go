@@ -72,7 +72,7 @@ var _ = Describe("Raft Tests", func() {
 		appendAndVerify("Purge 3", clusterSize)
 		appendAndVerify("Purge 4", clusterSize)
 
-		cfg := MakeDefaultConfig()
+		cfg := GetDefaultConfig()
 		cfg.MinPurgeRecords = 2
 		cfg.MinPurgeDuration = 100 * time.Millisecond
 
@@ -95,7 +95,7 @@ var _ = Describe("Raft Tests", func() {
 		}, testTimeout, pollInterval).Should(BeTrue())
 
 		fmt.Fprintf(GinkgoWriter, "Replacing original raft configuration\n")
-		ix, err = getLeader().UpdateRaftConfiguration(MakeDefaultConfig())
+		ix, err = getLeader().UpdateRaftConfiguration(GetDefaultConfig())
 		Expect(err).Should(Succeed())
 		Eventually(func() bool {
 			return verifyCommit(ix, clusterSize)

@@ -10,7 +10,7 @@ import (
 
 var _ = Describe("Config tests", func() {
 	It("Config encoding empty", func() {
-		cfg := &Config{}
+		cfg := Config{}
 		buf := cfg.encode()
 		dec, err := decodeRaftConfig(buf)
 		Expect(err).Should(Succeed())
@@ -18,13 +18,26 @@ var _ = Describe("Config tests", func() {
 	})
 
 	It("Config encoding", func() {
-		cfg := &Config{
+		cfg := Config{
 			MinPurgeRecords:  999,
 			MinPurgeDuration: 999 * time.Millisecond,
+			HeartbeatTimeout: 1 * time.Second,
+			ElectionTimeout:  2 * time.Second,
 		}
 		buf := cfg.encode()
 		dec, err := decodeRaftConfig(buf)
 		Expect(err).Should(Succeed())
 		Expect(reflect.DeepEqual(cfg, dec)).Should(BeTrue())
+	})
+
+	It("Config Validation", func() {
+		err := GetDefaultConfig().validate()
+		Expect(err).Should(Succeed())
+		cfg := Config{
+			MinPurgeRecords:  999,
+			MinPurgeDuration: 999 * time.Millisecond,
+		}
+		err = cfg.validate()
+		Expect(err).ShouldNot(Succeed())
 	})
 })

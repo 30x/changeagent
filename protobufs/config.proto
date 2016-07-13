@@ -7,4 +7,6 @@ message PurgeConfig {
 
 message ConfigPb {
   optional PurgeConfig purge = 1;
+  required int64 heartbeatTimeout = 2;
+  required int64 electionTimeout = 3;
 }
