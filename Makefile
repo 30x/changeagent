@@ -1,7 +1,8 @@
 ALLDEPS = \
 	agent/*.go communication/*.go \
 	storage/*.go raft/*.go agent/*.go \
-	hooks/*.go
+	hooks/*.go \
+	glide.lock
 
 all: changeagent
 
