@@ -129,7 +129,7 @@ func (r *Service) sendVotes(state *raftState, index uint64, rc chan<- voteResult
 	}
 
 	// Calculate whether we have enough votes. Take leader changes (joint consensus) into account.
-	granted := r.countVotes(responses, cfg)
+	granted := r.countVotes(responses, &cfg)
 	glog.Infof("Node %s: election request complete for term %d: Granted = %v", r.id, currentTerm, granted)
 
 	finalResponse := voteResult{

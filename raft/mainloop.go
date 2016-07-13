@@ -263,7 +263,8 @@ func (r *Service) leaderLoop(state *raftState, isLeader bool) chan bool {
 			// Got back a changed applied index from a peer. Decide if we have a commit and
 			// process it if we do.
 			state.peerMatches[peerMatch.nodeID] = peerMatch.newMatch
-			newIndex := r.calculateCommitIndex(state, r.GetNodeConfig())
+			cfg := r.GetNodeConfig()
+			newIndex := r.calculateCommitIndex(state, &cfg)
 			if r.setCommitIndex(newIndex) {
 				r.applyCommittedEntries(newIndex)
 				for _, p := range state.peers {

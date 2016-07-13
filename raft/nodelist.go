@@ -41,11 +41,11 @@ type NodeList struct {
 	Next    []Node `json:"next"`
 }
 
-func decodeNodeList(buf []byte) (*NodeList, error) {
+func decodeNodeList(buf []byte) (NodeList, error) {
 	var nl protobufs.NodeListPb
 	err := proto.Unmarshal(buf, &nl)
 	if err != nil {
-		return nil, err
+		return NodeList{}, err
 	}
 
 	l := NodeList{}
@@ -63,14 +63,14 @@ func decodeNodeList(buf []byte) (*NodeList, error) {
 		}
 		l.Next = append(l.Next, n)
 	}
-	return &l, nil
+	return l, nil
 }
 
 /*
 GetUniqueNodes returns only the unique nodes. This is helpful when in joint
 consensus mode.
 */
-func (nl *NodeList) GetUniqueNodes() []Node {
+func (nl NodeList) GetUniqueNodes() []Node {
 	var l []Node
 	ids := make(map[common.NodeID]bool)
 	for _, n := range nl.Current {
@@ -92,7 +92,7 @@ func (nl *NodeList) GetUniqueNodes() []Node {
 GetNode returns information about a single node in the list, or nil if the
 node does not exist.
 */
-func (nl *NodeList) GetNode(id common.NodeID) *Node {
+func (nl NodeList) GetNode(id common.NodeID) *Node {
 	for _, n := range nl.Current {
 		if n.NodeID == id {
 			return &n
@@ -106,7 +106,7 @@ func (nl *NodeList) GetNode(id common.NodeID) *Node {
 	return nil
 }
 
-func (nl *NodeList) encode() []byte {
+func (nl NodeList) encode() []byte {
 	np := protobufs.NodeListPb{}
 	for _, n := range nl.Current {
 		pn := protobufs.NodePb{
@@ -129,7 +129,7 @@ func (nl *NodeList) encode() []byte {
 	return buf
 }
 
-func (nl *NodeList) String() string {
+func (nl NodeList) String() string {
 	s := "NodeList{Current:"
 	for i, n := range nl.Current {
 		if i > 0 {

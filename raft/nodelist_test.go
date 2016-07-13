@@ -10,7 +10,7 @@ import (
 
 var _ = Describe("Node List tests", func() {
 	It("Encode empty  list", func() {
-		nl := &NodeList{}
+		nl := NodeList{}
 		buf := nl.encode()
 		rnl, err := decodeNodeList(buf)
 		Expect(err).Should(Succeed())
@@ -18,7 +18,7 @@ var _ = Describe("Node List tests", func() {
 	})
 
 	It("Encode basic list", func() {
-		nl := &NodeList{
+		nl := NodeList{
 			Current: []Node{
 				{NodeID: 1234, Address: "http://foo.com"},
 			},
@@ -32,7 +32,7 @@ var _ = Describe("Node List tests", func() {
 	})
 
 	It("Encode larger list", func() {
-		nl := &NodeList{
+		nl := NodeList{
 			Current: []Node{
 				{NodeID: 1234, Address: "http://foo.com"},
 				{NodeID: 2345, Address: "http://bar.com"},

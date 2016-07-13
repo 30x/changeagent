@@ -108,7 +108,7 @@ type Service struct {
 	localAddress         atomic.Value
 	state                int32
 	comm                 communication.Communication
-	nodeConfig           atomic.Value
+	nodeConfig           NodeList
 	raftConfig           Config
 	stor                 storage.Storage
 	loopCommands         chan LoopCommand
@@ -127,7 +127,7 @@ type Service struct {
 	membershipChangeMode int32
 	appliedTracker       *ChangeTracker
 	stateMachine         StateMachine
-	webHooks             atomic.Value
+	webHooks             []hooks.WebHook
 }
 
 /*
@@ -175,7 +175,7 @@ func StartRaft(
 		state:                int32(Follower),
 		comm:                 comm,
 		localAddress:         atomic.Value{},
-		nodeConfig:           atomic.Value{},
+		nodeConfig:           NodeList{},
 		raftConfig:           defaultConfig,
 		stor:                 stor,
 		stopChan:             make(chan chan bool, 1),
@@ -189,7 +189,7 @@ func StartRaft(
 		appliedTracker:       CreateTracker(),
 		stateMachine:         state,
 		membershipChangeMode: int32(Stable),
-		webHooks:             atomic.Value{},
+		webHooks:             []hooks.WebHook{},
 	}
 
 	var err error
@@ -256,10 +256,8 @@ func (r *Service) loadNodeConfig(stor storage.Storage) error {
 	}
 
 	if buf == nil {
-		glog.Info("No configuration detected: starting in standalone mode")
+		glog.Info("No cluster members detected: starting in standalone mode")
 		r.setState(Standalone)
-		emptyCfg := NodeList{}
-		r.nodeConfig.Store(&emptyCfg)
 		return nil
 	}
 
@@ -267,7 +265,7 @@ func (r *Service) loadNodeConfig(stor storage.Storage) error {
 	if err != nil {
 		return err
 	}
-	r.nodeConfig.Store(cfg)
+	r.setNodeConfig(cfg)
 	return nil
 }
 
@@ -295,16 +293,17 @@ func (r *Service) loadWebHooks(stor storage.Storage) error {
 	if err != nil {
 		return err
 	}
-
-	var webHooks []hooks.WebHook
-	if buf != nil {
-		webHooks, err = hooks.DecodeHooks(buf)
-		if err != nil {
-			return err
-		}
+	if buf == nil {
+		return nil
 	}
 
-	r.webHooks.Store(webHooks)
+	var webHooks []hooks.WebHook
+	webHooks, err = hooks.DecodeHooks(buf)
+	if err != nil {
+		return err
+	}
+
+	r.setWebHooks(webHooks)
 	return nil
 }
 
@@ -470,11 +469,7 @@ func (r *Service) GetLeaderID() common.NodeID {
 }
 
 func (r *Service) getLeader() *Node {
-	cfg := r.GetNodeConfig()
-	if cfg == nil {
-		return nil
-	}
-	return cfg.GetNode(r.GetLeaderID())
+	return r.getNode(r.GetLeaderID())
 }
 
 func (r *Service) setLeader(id common.NodeID) {
@@ -487,11 +482,9 @@ func (r *Service) setLeader(id common.NodeID) {
 }
 
 func (r *Service) getNode(id common.NodeID) *Node {
-	cfg := r.GetNodeConfig()
-	if cfg == nil {
-		return nil
-	}
-	return cfg.GetNode(id)
+	r.latch.Lock()
+	defer r.latch.Unlock()
+	return r.nodeConfig.GetNode(id)
 }
 
 /*
@@ -626,14 +619,16 @@ func (r *Service) handleJoinConfigEntry(entry *common.Entry) {
 }
 
 func (r *Service) applyWebHookChange(entry *common.Entry) {
-	hooks, err := hooks.DecodeHooksJSON(entry.Data)
+	h, err := hooks.DecodeHooksJSON(entry.Data)
 	if err != nil {
 		glog.Errorf("Error receiving web hook change data")
 		return
 	}
 
 	glog.Info("Updating the web hook configuration on the server")
-	r.setWebHooks(hooks)
+	buf := hooks.EncodeHooks(h)
+	r.stor.SetMetadata(WebHooks, buf)
+	r.setWebHooks(h)
 }
 
 /*
@@ -741,21 +736,22 @@ GetNodeConfig returns the current configuration of this raft node, which means
 the configuration that is currently running (as oppopsed to what
 has been proposed.
 */
-func (r *Service) GetNodeConfig() *NodeList {
-	val := r.nodeConfig.Load()
-	if val == nil {
-		return nil
-	}
-	return val.(*NodeList)
+func (r *Service) GetNodeConfig() NodeList {
+	r.latch.Lock()
+	defer r.latch.Unlock()
+	return r.nodeConfig
 }
 
-func (r *Service) setNodeConfig(newCfg *NodeList) error {
+func (r *Service) setNodeConfig(newCfg NodeList) error {
 	encoded := newCfg.encode()
 	err := r.stor.SetMetadata(NodeConfig, encoded)
 	if err != nil {
 		return err
 	}
-	r.nodeConfig.Store(newCfg)
+
+	r.latch.Lock()
+	r.nodeConfig = newCfg
+	r.latch.Unlock()
 	return nil
 }
 
@@ -804,13 +800,15 @@ GetWebHooks returns the set of WebHook configuration that is currently configure
 for this node.
 */
 func (r *Service) GetWebHooks() []hooks.WebHook {
-	return r.webHooks.Load().([]hooks.WebHook)
+	r.latch.Lock()
+	defer r.latch.Unlock()
+	return r.webHooks
 }
 
 func (r *Service) setWebHooks(h []hooks.WebHook) {
-	buf := hooks.EncodeHooks(h)
-	r.stor.SetMetadata(WebHooks, buf)
-	r.webHooks.Store(h)
+	r.latch.Lock()
+	r.webHooks = h
+	r.latch.Unlock()
 }
 
 // Used only in unit testing. Forces us to never become a leader.

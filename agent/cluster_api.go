@@ -146,9 +146,6 @@ func (a *ChangeAgent) handleRemoveClusterMember(resp http.ResponseWriter, req *h
 func (a *ChangeAgent) getClusterMembers() map[string]string {
 	m := make(map[string]string)
 	cfg := a.raft.GetNodeConfig()
-	if cfg == nil {
-		return m
-	}
 
 	nodes := cfg.GetUniqueNodes()
 	for _, n := range nodes {

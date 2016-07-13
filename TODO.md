@@ -8,6 +8,8 @@ Insert performance is inconsistent. It seems like many inserts take as long as t
 
 ## High Priority
 
+Switch to https://github.com/julienschmidt/httprouter for API.
+
 Graceful shutdown for HTTP transactions.
 
 Graceful leader step-down / nomination algorithm.

@@ -35,7 +35,7 @@ type RaftState struct {
 	State          string             `json:"state"`
 	Leader         string             `json:"leader"`
 	Term           uint64             `json:"term"`
-	NodeConfig     *raft.NodeList     `json:"nodeConfig"`
+	NodeConfig     raft.NodeList      `json:"nodeConfig"`
 	FirstIndex     uint64             `json:"firstIndex"`
 	LastIndex      uint64             `json:"lastIndex"`
 	AppliedIndex   uint64             `json:"appliedIndex"`

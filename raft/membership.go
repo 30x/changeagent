@@ -43,7 +43,7 @@ func (r *Service) InitializeCluster(addr string) error {
 	r.setClusterID(common.NodeID(id))
 	r.setState(Leader)
 
-	cfg := &NodeList{
+	cfg := NodeList{
 		Current: []Node{{Address: addr, NodeID: r.id}},
 	}
 	r.setNodeConfig(cfg)
@@ -235,7 +235,7 @@ func (r *Service) RemoveNodeForcibly(nodeID common.NodeID) error {
 		}
 	}
 
-	finalCfg := &NodeList{
+	finalCfg := NodeList{
 		Current: nextList,
 	}
 
