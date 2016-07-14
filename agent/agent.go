@@ -22,10 +22,11 @@ ChangeAgent is a server that implements the Raft protocol, plus the "changeagent
 API.
 */
 type ChangeAgent struct {
-	stor      storage.Storage
-	raft      *raft.Service
-	router    *mux.Router
-	uriPrefix string
+	stor       storage.Storage
+	raft       *raft.Service
+	router     *mux.Router
+	markedDown int32
+	uriPrefix  string
 }
 
 const (

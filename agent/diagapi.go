@@ -7,9 +7,12 @@ import (
 	"path"
 	"runtime"
 	"strconv"
+	"strings"
+	"sync/atomic"
 
 	"github.com/30x/changeagent/common"
 	"github.com/30x/changeagent/raft"
+	"github.com/mholt/binding"
 )
 
 const (
@@ -21,10 +24,24 @@ const (
 	cpuURI        = baseURI + "/cpu"
 	raftStateURI  = raftURI + "/state"
 	raftLeaderURI = raftURI + "/leader"
+	healthURI     = "/health"
 
 	indentPrefix = ""
 	indentSpace  = "  "
 )
+
+type healthReq struct {
+	up string
+}
+
+func (h *healthReq) FieldMap(req *http.Request) binding.FieldMap {
+	return binding.FieldMap{
+		&h.up: binding.Field{
+			Form:     "up",
+			Required: true,
+		},
+	}
+}
 
 /*
 RaftState represents the state of the Raft implementation and is used to generate
@@ -53,6 +70,8 @@ func (a *ChangeAgent) initDiagnosticAPI(prefix string) {
 	a.router.HandleFunc(prefix+stackURI, handleStackCall).Methods("GET")
 	a.router.HandleFunc(prefix+memURI, handleMemoryCall).Methods("GET")
 	a.router.HandleFunc(prefix+cpuURI, handleCPUCall).Methods("GET")
+	a.router.HandleFunc(prefix+healthURI, a.handleHealthCheck).Methods("GET")
+	a.router.HandleFunc(prefix+healthURI, a.handleHealthUpdate).Methods("PUT", "POST")
 }
 
 func (a *ChangeAgent) handleRootCall(resp http.ResponseWriter, req *http.Request) {
@@ -63,6 +82,7 @@ func (a *ChangeAgent) handleRootCall(resp http.ResponseWriter, req *http.Request
 	links["hooks"] = a.makeLink(req, "/hooks")
 	links["cluster"] = a.makeLink(req, "/cluster")
 	links["config"] = a.makeLink(req, "/config")
+	links["health"] = a.makeLink(req, "/health")
 
 	body, _ := json.MarshalIndent(&links, indentPrefix, indentSpace)
 
@@ -186,6 +206,34 @@ func handleCPUCall(resp http.ResponseWriter, req *http.Request) {
 	body, _ := json.MarshalIndent(&s, indentPrefix, indentSpace)
 	resp.Header().Set("Content-Type", jsonContent)
 	resp.Write(body)
+}
+
+func (a *ChangeAgent) handleHealthCheck(resp http.ResponseWriter, req *http.Request) {
+	resp.Header().Set("Content-Type", "text/plain")
+	markedDown := atomic.LoadInt32(&a.markedDown)
+	if markedDown == 0 {
+		// This will hang if the main loop is stuck somehow, so it's a good
+		// thing to call here.
+		a.raft.GetRaftStatus()
+		resp.Write([]byte("ok"))
+	} else {
+		resp.WriteHeader(http.StatusServiceUnavailable)
+		resp.Write([]byte("marked down"))
+	}
+}
+
+func (a *ChangeAgent) handleHealthUpdate(resp http.ResponseWriter, req *http.Request) {
+	healthReq := &healthReq{}
+	defer req.Body.Close()
+	bindingErr := binding.Bind(req, healthReq)
+	if bindingErr.Handle(resp) {
+		return
+	}
+	var down int32
+	if !strings.EqualFold(healthReq.up, "true") {
+		down = 1
+	}
+	atomic.StoreInt32(&a.markedDown, down)
 }
 
 func (a *ChangeAgent) makeLink(req *http.Request, path string) string {

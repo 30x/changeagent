@@ -4,6 +4,8 @@ import:
 - package: github.com/golang/protobuf
   version: master
   subpackages:
-  - /proto
+  - proto
 - package: github.com/gorilla/mux
 - package: github.com/mholt/binding
+- package: github.com/tylerb/graceful
+  version: ^1.2.10

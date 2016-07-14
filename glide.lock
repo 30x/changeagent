@@ -1,5 +1,5 @@
-hash: b49ac001455366062dfb9358fbc6452830cc1ed2cf9ffc23a406b8915101f3a1
-updated: 2016-07-13T16:33:32.939978191-07:00
+hash: e482c8bbdb3cc7a2a9250c181081c58702d4699de93af0fea15e6333e25d805d
+updated: 2016-07-13T16:40:19.939935534-07:00
 imports:
 - name: github.com/golang/glog
   version: 23def4e6c14b4da8ac2ed8007337bc5eb5007998
@@ -13,6 +13,8 @@ imports:
   version: 0eeaf8392f5b04950925b8a69fe70f110fa7cbfc
 - name: github.com/mholt/binding
   version: 89411c4ffb61f0ebef45d8bdb830103b358ef9fa
+- name: github.com/tylerb/graceful
+  version: d7d7a205e779a4738d38eda0671fff8bfc965f14
 testImports:
 - name: github.com/onsi/ginkgo
   version: 01a0bc330e324e78c3e84f199c552481e3395179

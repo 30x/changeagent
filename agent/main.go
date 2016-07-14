@@ -7,15 +7,16 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/signal"
-	"syscall"
+	"time"
 
 	"github.com/30x/changeagent/communication"
 	"github.com/golang/glog"
+	"github.com/tylerb/graceful"
 )
 
 const (
-	defaultPort = 8080
+	defaultPort             = 8080
+	gracefulShutdownTimeout = 60 * time.Second
 )
 
 func main() {
@@ -128,25 +129,16 @@ func runAgentMain() int {
 		defer secureListener.Close()
 	}
 
-	doneChan := make(chan bool, 1)
-	signalChan := make(chan os.Signal, 1)
-	signal.Notify(signalChan, syscall.SIGINT)
-	signal.Notify(signalChan, syscall.SIGTERM)
-
-	go func() {
-		sig := <-signalChan
-		glog.Infof("Got signal %v", sig)
-		doneChan <- true
-	}()
-
-	go http.Serve(listener, mux)
-
-	if secureListener != nil {
-		go http.Serve(secureListener, mux)
+	svr := &http.Server{
+		Handler: mux,
 	}
 
-	<-doneChan
-	glog.Infof("Shutting down.")
+	if secureListener != nil {
+		go graceful.Serve(svr, secureListener, gracefulShutdownTimeout)
+	}
+
+	graceful.Serve(svr, listener, gracefulShutdownTimeout)
+
 	return 0
 }
 
