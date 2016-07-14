@@ -24,6 +24,13 @@
 # on the ephemeral volume created by Docker, and will go away when the
 # container is stopped.)
 
+# To get a pre-built copy of changeagent:
+# Build this image
+# "docker run -d" this image
+# "docker cp /changeagent ./changeagent"
+# "docker stop" the image
+# You now have the executable
+
 # This image has Git, Glide, and rocksdb pre-built for us.
 FROM  gbrail/go-rocksdb:1.6.2-4.2
 
