@@ -2,17 +2,27 @@ package raft
 
 import (
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
-type changeWaiter struct {
+const (
+	closed = iota
+	newWaiter
+	cancelWaiter
+	update
+)
+
+type trackerUpdate struct {
+	updateType int
+	key        int32
 	change     uint64
-	resultChan chan changeResult
+	waiter     changeWaiter
 }
 
-type changeResult struct {
-	key    int
-	result uint64
+type changeWaiter struct {
+	change uint64
+	rc     chan uint64
 }
 
 /*
@@ -22,12 +32,9 @@ are notified when something changes. This work is done using a goroutine,
 which is simpler and faster than the equivalent using a condition variable.
 */
 type ChangeTracker struct {
-	updateChan chan uint64
-	waiterChan chan changeWaiter
-	cancelChan chan int
-	stopChan   chan bool
-	lastKey    int
-	waiters    map[int]changeWaiter
+	updateChan chan trackerUpdate
+	lastKey    int32
+	waiters    map[int32]changeWaiter
 	lastChange uint64
 }
 
@@ -39,10 +46,7 @@ CreateTracker creates a new change tracker with "lastChange" set to zero.
 */
 func CreateTracker() *ChangeTracker {
 	tracker := &ChangeTracker{
-		updateChan: make(chan uint64, 100),
-		waiterChan: make(chan changeWaiter, 100),
-		cancelChan: make(chan int, 100),
-		stopChan:   make(chan bool, 1),
+		updateChan: make(chan trackerUpdate, 100),
 	}
 	go tracker.run()
 	return tracker
@@ -68,7 +72,10 @@ func GetNamedTracker(name string) *ChangeTracker {
 Close stops the change tracker from delivering notifications.
 */
 func (t *ChangeTracker) Close() {
-	t.stopChan <- true
+	u := trackerUpdate{
+		updateType: closed,
+	}
+	t.updateChan <- u
 }
 
 /*
@@ -76,7 +83,11 @@ Update indicates that the current sequence has changed. Wake up any waiting
 waiters and tell them about it.
 */
 func (t *ChangeTracker) Update(change uint64) {
-	t.updateChan <- change
+	u := trackerUpdate{
+		updateType: update,
+		change:     change,
+	}
+	t.updateChan <- u
 }
 
 /*
@@ -84,17 +95,8 @@ Wait blocks the calling gorouting forever until the change tracker has reached a
 "curChange." Return the current value when that happens.
 */
 func (t *ChangeTracker) Wait(curChange uint64) uint64 {
-	resultChan := t.doWait(curChange)
-	firstResult := <-resultChan
-
-	if firstResult.key < 0 {
-		// Got a result already
-		return firstResult.result
-	}
-
-	// Need to wait for a second result
-	result := <-resultChan
-	return result.result
+	_, resultChan := t.doWait(curChange)
+	return <-resultChan
 }
 
 /*
@@ -102,34 +104,34 @@ TimedWait blocks the current gorouting until either a new value higher than
 "curChange" has been reached, or "maxWait" has been exceeded.
 */
 func (t *ChangeTracker) TimedWait(curChange uint64, maxWait time.Duration) uint64 {
-	resultChan := t.doWait(curChange)
-	firstResult := <-resultChan
-
-	if firstResult.key < 0 {
-		// Got a result already
-		return firstResult.result
-	}
-
-	// Need to wait for a second result
+	key, resultChan := t.doWait(curChange)
 	timer := time.NewTimer(maxWait)
 	select {
 	case result := <-resultChan:
-		return result.result
+		return result
 	case <-timer.C:
-		t.cancelChan <- firstResult.key
-		return firstResult.result
+		u := trackerUpdate{
+			updateType: cancelWaiter,
+			key:        key,
+		}
+		t.updateChan <- u
+		return 0
 	}
 }
 
-func (t *ChangeTracker) doWait(curChange uint64) chan changeResult {
-	resultChan := make(chan changeResult, 1)
-	w := changeWaiter{
-		change:     curChange,
-		resultChan: resultChan,
+func (t *ChangeTracker) doWait(curChange uint64) (int32, chan uint64) {
+	key := atomic.AddInt32(&t.lastKey, 1)
+	resultChan := make(chan uint64, 1)
+	u := trackerUpdate{
+		updateType: newWaiter,
+		key:        key,
+		waiter: changeWaiter{
+			change: curChange,
+			rc:     resultChan,
+		},
 	}
-	t.waiterChan <- w
-
-	return resultChan
+	t.updateChan <- u
+	return key, resultChan
 }
 
 /*
@@ -137,71 +139,47 @@ func (t *ChangeTracker) doWait(curChange uint64) chan changeResult {
  * for new sequences, and distributes them appropriately.
  */
 func (t *ChangeTracker) run() {
-	t.waiters = make(map[int]changeWaiter)
+	t.waiters = make(map[int32]changeWaiter)
 
 	running := true
 	for running {
-		select {
-		case update := <-t.updateChan:
-			t.handleUpdate(update)
-		case waiter := <-t.waiterChan:
-			t.handleWaiter(waiter)
-		case cancelKey := <-t.cancelChan:
-			t.handleCancel(cancelKey)
-		case <-t.stopChan:
+		up := <-t.updateChan
+		switch up.updateType {
+		case closed:
 			running = false
+		case update:
+			t.handleUpdate(up.change)
+		case cancelWaiter:
+			t.handleCancel(up.key)
+		case newWaiter:
+			t.handleWaiter(up)
 		}
 	}
 
 	// Close out all waiting waiters
 	for _, w := range t.waiters {
-		r := changeResult{
-			key:    -1,
-			result: t.lastChange,
-		}
-		w.resultChan <- r
+		w.rc <- t.lastChange
 	}
-
-	close(t.updateChan)
-	close(t.waiterChan)
-	close(t.cancelChan)
-	close(t.stopChan)
 }
 
 func (t *ChangeTracker) handleUpdate(change uint64) {
 	t.lastChange = change
 	for k, w := range t.waiters {
 		if change >= w.change {
-			r := changeResult{
-				key:    -1,
-				result: change,
-			}
-			w.resultChan <- r
+			w.rc <- change
 			delete(t.waiters, k)
 		}
 	}
 }
 
-func (t *ChangeTracker) handleWaiter(w changeWaiter) {
-	if t.lastChange >= w.change {
-		r := changeResult{
-			key:    -1,
-			result: t.lastChange,
-		}
-		w.resultChan <- r
-
+func (t *ChangeTracker) handleWaiter(u trackerUpdate) {
+	if t.lastChange >= u.waiter.change {
+		u.waiter.rc <- t.lastChange
 	} else {
-		key := t.lastKey
-		r := changeResult{
-			key:    key,
-			result: t.lastChange,
-		}
-		t.lastKey++
-		t.waiters[key] = w
-		w.resultChan <- r
+		t.waiters[u.key] = u.waiter
 	}
 }
 
-func (t *ChangeTracker) handleCancel(key int) {
+func (t *ChangeTracker) handleCancel(key int32) {
 	delete(t.waiters, key)
 }

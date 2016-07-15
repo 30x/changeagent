@@ -34,8 +34,7 @@ const (
 	// We may introduce additional change types in the future.
 	NormalChange = 0
 
-	commitTimeoutSeconds = 10
-	dbCacheSize          = 10 * 1024 * 1024
+	dbCacheSize = 10 * 1024 * 1024
 
 	plainTextContent = "text/plain"
 	jsonContent      = "application/json"
@@ -133,7 +132,7 @@ func (a *ChangeAgent) makeProposal(proposal *common.Entry) (*common.Entry, error
 	}
 	glog.V(2).Infof("Proposed new change with index %d", newIndex)
 
-	err = a.waitForCommit(newIndex)
+	err = a.raft.WaitForCommit(newIndex)
 	if err == nil {
 		newEntry := &common.Entry{
 			Index: newIndex,
@@ -142,17 +141,6 @@ func (a *ChangeAgent) makeProposal(proposal *common.Entry) (*common.Entry, error
 	}
 
 	return nil, err
-}
-
-// Wait for the new commit to be applied, or time out
-func (a *ChangeAgent) waitForCommit(ix uint64) error {
-	appliedIndex :=
-		a.raft.GetAppliedTracker().TimedWait(ix, time.Second*commitTimeoutSeconds)
-	glog.V(2).Infof("New index %d is now applied", appliedIndex)
-	if appliedIndex < ix {
-		return errors.New("Commit timeout")
-	}
-	return nil
 }
 
 /*

@@ -42,7 +42,7 @@ var _ = Describe("Change tracker", func() {
 
 	It("Timeout", func() {
 		blocked := tracker.TimedWait(3, 250*time.Millisecond)
-		Expect(blocked).Should(BeEquivalentTo(2))
+		Expect(blocked).Should(BeEquivalentTo(0))
 	})
 
 	It("Up to date", func() {
@@ -71,6 +71,20 @@ var _ = Describe("Change tracker", func() {
 		Expect(gotVal).Should(BeEquivalentTo(3))
 	})
 
+	It("Less up to date with timeout", func() {
+		doneChan := make(chan uint64, 1)
+
+		go func() {
+			new := tracker.TimedWait(4, 2*time.Second)
+			doneChan <- new
+		}()
+
+		tracker.Update(3)
+		tracker.Update(4)
+		gotVal := <-doneChan
+		Expect(gotVal).Should(BeEquivalentTo(4))
+	})
+
 	It("Up to date timeout", func() {
 		doneChan := make(chan uint64, 1)
 
@@ -82,7 +96,7 @@ var _ = Describe("Change tracker", func() {
 		time.Sleep(1 * time.Second)
 		tracker.Update(3)
 		gotVal := <-doneChan
-		Expect(gotVal).Should(BeEquivalentTo(2))
+		Expect(gotVal).Should(BeEquivalentTo(0))
 	})
 
 	It("Update", func() {

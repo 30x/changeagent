@@ -59,7 +59,7 @@ func (a *ChangeAgent) updateWebHooks(resp http.ResponseWriter, h []hooks.WebHook
 		return
 	}
 
-	err = a.waitForCommit(ix)
+	err = a.raft.WaitForCommit(ix)
 	if err == nil {
 		resp.Header().Set("Content-Type", jsonContent)
 		resp.Write(hooks.EncodeHooksJSON(h))

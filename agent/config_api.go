@@ -109,7 +109,7 @@ func (a *ChangeAgent) handleSetRaftConfig(resp http.ResponseWriter, req *http.Re
 		return
 	}
 
-	err = a.waitForCommit(ix)
+	err = a.raft.WaitForCommit(ix)
 	if err != nil {
 		writeError(resp, http.StatusInternalServerError, err)
 		return
