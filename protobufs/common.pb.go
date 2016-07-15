@@ -10,6 +10,7 @@ It is generated from these files:
 	communication.proto
 	nodelist.proto
 	config.proto
+	auth.proto
 
 It has these top-level messages:
 	EntryPb
@@ -24,6 +25,8 @@ It has these top-level messages:
 	NodeListPb
 	PurgeConfig
 	ConfigPb
+	UserPb
+	UserTablePb
 */
 package protobufs
 

@@ -1,5 +1,5 @@
-hash: e482c8bbdb3cc7a2a9250c181081c58702d4699de93af0fea15e6333e25d805d
-updated: 2016-07-13T16:40:19.939935534-07:00
+hash: 1eebf925b0899b6a4720b438e24bfe1c0b65d8b1a7224d3b8989bd0f5cf8d4ce
+updated: 2016-07-15T00:36:55.206742621-07:00
 imports:
 - name: github.com/golang/glog
   version: 23def4e6c14b4da8ac2ed8007337bc5eb5007998
@@ -15,6 +15,10 @@ imports:
   version: 89411c4ffb61f0ebef45d8bdb830103b358ef9fa
 - name: github.com/tylerb/graceful
   version: d7d7a205e779a4738d38eda0671fff8bfc965f14
+- name: golang.org/x/crypto
+  version: 10c26747e67d76ad4fafe6087c6f4073c3b22942
+  subpackages:
+  - pbkdf2
 testImports:
 - name: github.com/onsi/ginkgo
   version: 01a0bc330e324e78c3e84f199c552481e3395179
@@ -52,4 +56,4 @@ testImports:
   subpackages:
   - unix
 - name: gopkg.in/yaml.v2
-  version: a83829b6f1293c91addabc89d0571c246397bbf4
+  version: e4d366fc3c7938e2958e662b4258c7a89e1f0e3e

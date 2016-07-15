@@ -1,0 +1,11 @@
+package protobufs;
+
+message UserPb {
+  required string user = 1;
+  required bytes salt = 2;
+  required bytes password = 3;
+}
+
+message UserTablePb {
+  repeated UserPb users = 1;
+}
