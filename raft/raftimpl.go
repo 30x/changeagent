@@ -13,6 +13,7 @@ import (
 
 	"github.com/30x/changeagent/common"
 	"github.com/30x/changeagent/communication"
+	"github.com/30x/changeagent/config"
 	"github.com/30x/changeagent/hooks"
 	"github.com/30x/changeagent/storage"
 	"github.com/golang/glog"
@@ -29,23 +30,19 @@ const (
 	ClusterIDKey   = "clusterID"
 	LastAppliedKey = "lastApplied"
 	NodeConfig     = "nodeConfig"
-	RaftConfigKey  = "raftConfig"
-	WebHooks       = "webHooks"
 )
 
 const (
 	// MembershipChange denotes a special message type for membership changes.
 	MembershipChange = -1
-	// WebHookChange denotes a change in the WebHook configuration for the
-	// cluster.
-	WebHookChange = -2
-	// ConfigChange denotes a new RaftConfiguration object that describes various
-	// parameters about the implementation
-	ConfigChange = -3
 	// PurgeRequest denotes that the leader would like to propose purging all
 	// records older than the specified index. Body is just a change number
 	// encoded using a "varint".
+	// -2 and -3 was used in an old version
 	PurgeRequest = -4
+	// ConfigChange denotes a new configuration file that describes various
+	// parameters about the implementation
+	ConfigChange = -5
 
 	jsonContent = "application/json"
 )
@@ -109,7 +106,8 @@ type Service struct {
 	state                int32
 	comm                 communication.Communication
 	nodeConfig           NodeList
-	raftConfig           Config
+	configFile           string
+	raftConfig           *config.State
 	stor                 storage.Storage
 	loopCommands         chan LoopCommand
 	stopChan             chan chan bool
@@ -127,7 +125,6 @@ type Service struct {
 	membershipChangeMode int32
 	appliedTracker       *ChangeTracker
 	stateMachine         StateMachine
-	webHooks             []hooks.WebHook
 }
 
 /*
@@ -170,13 +167,15 @@ and others to communicate with other nodes.
 func StartRaft(
 	comm communication.Communication,
 	stor storage.Storage,
-	state StateMachine) (*Service, error) {
+	state StateMachine,
+	configFile string) (*Service, error) {
 	r := &Service{
 		state:                int32(Follower),
 		comm:                 comm,
 		localAddress:         atomic.Value{},
 		nodeConfig:           NodeList{},
-		raftConfig:           defaultConfig,
+		raftConfig:           config.GetDefaultConfig(),
+		configFile:           configFile,
 		stor:                 stor,
 		stopChan:             make(chan chan bool, 1),
 		loopCommands:         make(chan LoopCommand, 1),
@@ -189,7 +188,6 @@ func StartRaft(
 		appliedTracker:       CreateTracker(),
 		stateMachine:         state,
 		membershipChangeMode: int32(Stable),
-		webHooks:             []hooks.WebHook{},
 	}
 
 	var err error
@@ -210,11 +208,7 @@ func StartRaft(
 	if err != nil {
 		return nil, err
 	}
-	err = r.loadRaftConfig(stor)
-	if err != nil {
-		return nil, err
-	}
-	err = r.loadWebHooks(stor)
+	err = r.loadRaftConfig()
 	if err != nil {
 		return nil, err
 	}
@@ -269,42 +263,12 @@ func (r *Service) loadNodeConfig(stor storage.Storage) error {
 	return nil
 }
 
-func (r *Service) loadRaftConfig(stor storage.Storage) error {
-	buf, err := stor.GetMetadata(RaftConfigKey)
-	if err != nil {
-		return err
-	}
-
-	if buf == nil {
-		// Configuration already set to default
+func (r *Service) loadRaftConfig() error {
+	if r.configFile == "" {
 		return nil
 	}
 
-	cfg, err := decodeRaftConfig(buf)
-	if err != nil {
-		return err
-	}
-	r.setRaftConfig(cfg)
-	return nil
-}
-
-func (r *Service) loadWebHooks(stor storage.Storage) error {
-	buf, err := stor.GetMetadata(WebHooks)
-	if err != nil {
-		return err
-	}
-	if buf == nil {
-		return nil
-	}
-
-	var webHooks []hooks.WebHook
-	webHooks, err = hooks.DecodeHooks(buf)
-	if err != nil {
-		return err
-	}
-
-	r.setWebHooks(webHooks)
-	return nil
+	return r.raftConfig.LoadFile(r.configFile)
 }
 
 /*
@@ -567,8 +531,6 @@ func (r *Service) setLastApplied(t uint64) {
 	}
 
 	switch t := entry.Type; {
-	case t == WebHookChange:
-		r.applyWebHookChange(entry)
 
 	case t == MembershipChange:
 		r.applyMembershipChange(entry)
@@ -605,8 +567,6 @@ process that help replicate config to a new node.
 */
 func (r *Service) handleJoinConfigEntry(entry *common.Entry) {
 	switch t := entry.Type; {
-	case t == WebHookChange:
-		r.applyWebHookChange(entry)
 
 	case t == ConfigChange:
 		r.applyRaftConfigChange(entry)
@@ -618,17 +578,14 @@ func (r *Service) handleJoinConfigEntry(entry *common.Entry) {
 	}
 }
 
-func (r *Service) applyWebHookChange(entry *common.Entry) {
-	h, err := hooks.DecodeHooksJSON(entry.Data)
-	if err != nil {
-		glog.Errorf("Error receiving web hook change data")
-		return
+func (r *Service) applyRaftConfigChange(entry *common.Entry) {
+	r.raftConfig.Load(entry.Data)
+	if r.configFile != "" {
+		err := r.raftConfig.StoreFile(r.configFile)
+		if err != nil {
+			glog.Errorf("Unable to persist new configuration file: %s", err)
+		}
 	}
-
-	glog.Info("Updating the web hook configuration on the server")
-	buf := hooks.EncodeHooks(h)
-	r.stor.SetMetadata(WebHooks, buf)
-	r.setWebHooks(h)
 }
 
 /*
@@ -694,39 +651,42 @@ func (r *Service) GetRaftStatus() ProtocolStatus {
 }
 
 /*
-UpdateWebHooks updates the configuration of web hooks for the cluster by
-propagating a special change record to all the nodes. A web hook is a
-particular web service URI that the leader will invoke before trying to commit any
-new change -- if any one of the hooks fails, the leader will not make the change.
-*/
-func (r *Service) UpdateWebHooks(webHooks []hooks.WebHook) (uint64, error) {
-	glog.V(2).Infof("Starting update to %d web hooks", len(webHooks))
-	json := hooks.EncodeHooksJSON(webHooks)
-	entry := common.Entry{
-		Type:      WebHookChange,
-		Timestamp: time.Now(),
-		Data:      json,
-	}
-	return r.Propose(&entry)
-}
-
-/*
-UpdateRaftConfiguration updates configuration of various aspects of the
+UpdateConfiguration updates configuration of various aspects of the
 implementation. The configuration will be pushed to the other nodes just like
 any other change. It doesn't get actually applied until it gets proposed
-to the various other nodes.
+to the various other nodes. This configuration will replace the configuration
+files on every node in the cluster. The input is a set of YAML that matches
+the YAML configuration syntax, as a byte slice.
 */
-func (r *Service) UpdateRaftConfiguration(config Config) (uint64, error) {
-	err := config.validate()
+func (r *Service) UpdateConfiguration(cfg []byte) (uint64, error) {
+	testCfg := config.GetDefaultConfig()
+	err := testCfg.Load(cfg)
 	if err != nil {
 		return 0, err
 	}
+
+	return r.pushRaftConfiguration(cfg)
+}
+
+/*
+UpdateLiveConfiguration makes the current configuration of this node
+(as returned by GetRaftConfig) the live one across the cluster.
+It will also update the local configuration file.
+*/
+func (r *Service) UpdateLiveConfiguration() (uint64, error) {
+	cfg, err := r.raftConfig.Store()
+	if err != nil {
+		return 0, err
+	}
+	return r.pushRaftConfiguration(cfg)
+}
+
+func (r *Service) pushRaftConfiguration(cfg []byte) (uint64, error) {
 	glog.V(2).Info("Updating the configuration across the cluster")
-	buf := config.encode()
 	entry := common.Entry{
 		Type:      ConfigChange,
 		Timestamp: time.Now(),
-		Data:      buf,
+		Data:      cfg,
 	}
 	return r.Propose(&entry)
 }
@@ -759,31 +719,23 @@ func (r *Service) setNodeConfig(newCfg NodeList) error {
 GetRaftConfig returns details about the state of the node, including cluster
 status.
 */
-func (r *Service) GetRaftConfig() Config {
-	r.latch.Lock()
-	defer r.latch.Unlock()
+func (r *Service) GetRaftConfig() *config.State {
 	return r.raftConfig
-}
-
-func (r *Service) setRaftConfig(rc Config) {
-	r.latch.Lock()
-	r.raftConfig = rc
-	r.latch.Unlock()
 }
 
 /*
 getTimeouts returns the heartbeat timeout and election timeout, in order.
 */
 func (r *Service) getTimeouts() (time.Duration, time.Duration) {
-	r.latch.Lock()
-	defer r.latch.Unlock()
-	return r.raftConfig.HeartbeatTimeout, r.raftConfig.ElectionTimeout
+	r.raftConfig.RLock()
+	defer r.raftConfig.RUnlock()
+	return r.raftConfig.Internal().HeartbeatDuration, r.raftConfig.Internal().ElectionDuration
 }
 
 func (r *Service) getHeartbeatTimeout() time.Duration {
-	r.latch.Lock()
-	defer r.latch.Unlock()
-	return r.raftConfig.HeartbeatTimeout
+	r.raftConfig.RLock()
+	defer r.raftConfig.RUnlock()
+	return r.raftConfig.Internal().HeartbeatDuration
 }
 
 func (r *Service) getLocalAddress() string {
@@ -800,15 +752,9 @@ GetWebHooks returns the set of WebHook configuration that is currently configure
 for this node.
 */
 func (r *Service) GetWebHooks() []hooks.WebHook {
-	r.latch.Lock()
-	defer r.latch.Unlock()
-	return r.webHooks
-}
-
-func (r *Service) setWebHooks(h []hooks.WebHook) {
-	r.latch.Lock()
-	r.webHooks = h
-	r.latch.Unlock()
+	r.raftConfig.RLock()
+	defer r.raftConfig.RUnlock()
+	return r.raftConfig.WebHooks
 }
 
 // Used only in unit testing. Forces us to never become a leader.

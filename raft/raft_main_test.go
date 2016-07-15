@@ -123,7 +123,7 @@ func startRaft(listener *net.TCPListener, dir string) (*Service, error) {
 		return nil, err
 	}
 
-	raft, err := StartRaft(comm, stor, &dummyStateMachine{})
+	raft, err := StartRaft(comm, stor, &dummyStateMachine{}, "")
 	if err != nil {
 		return nil, err
 	}

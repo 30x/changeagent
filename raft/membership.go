@@ -6,7 +6,6 @@ import (
 
 	"github.com/30x/changeagent/common"
 	"github.com/30x/changeagent/communication"
-	"github.com/30x/changeagent/hooks"
 	"github.com/golang/glog"
 )
 
@@ -287,18 +286,10 @@ func (r *Service) catchUpNode(addr string) error {
 		Last:      true,
 	}
 
-	webHooks := r.GetWebHooks()
-	if len(webHooks) > 0 {
-		json := hooks.EncodeHooksJSON(webHooks)
-		entry := common.Entry{
-			Type:      WebHookChange,
-			Timestamp: time.Now(),
-			Data:      json,
-		}
-		joinReq.ConfigEntries = append(joinReq.ConfigEntries, entry)
+	cfgData, err := r.GetRaftConfig().Store()
+	if err != nil {
+		return err
 	}
-
-	cfgData := r.GetRaftConfig().encode()
 	cfgEntry := common.Entry{
 		Type:      ConfigChange,
 		Timestamp: time.Now(),

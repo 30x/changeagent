@@ -80,7 +80,7 @@ func clusterTest(useClusterPort, useSecureCluster, secureAPI bool) {
 	Expect(err).Should(Succeed())
 
 	agent1, err := StartChangeAgent(fmt.Sprintf("%s/data%d", DataDir, dataCount),
-		mux1, "", comm1)
+		mux1, "", comm1, "")
 	dataCount++
 	Expect(err).Should(Succeed())
 	defer agent1.Close()
@@ -107,7 +107,7 @@ func clusterTest(useClusterPort, useSecureCluster, secureAPI bool) {
 	Expect(err).Should(Succeed())
 
 	agent2, err := StartChangeAgent(fmt.Sprintf("%s/data%d", DataDir, dataCount),
-		mux2, "", comm2)
+		mux2, "", comm2, "")
 	dataCount++
 	Expect(err).Should(Succeed())
 	defer agent2.Close()

@@ -76,7 +76,7 @@ func startAgent(id uint64, dir string, listener *net.TCPListener) (*ChangeAgent,
 		return nil, err
 	}
 
-	agent, err := StartChangeAgent(dir, mux, uriPrefix, comm)
+	agent, err := StartChangeAgent(dir, mux, uriPrefix, comm, "")
 	if err != nil {
 		return nil, err
 	}

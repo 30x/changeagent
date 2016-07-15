@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/30x/changeagent/common"
+	"github.com/30x/changeagent/config"
 	"github.com/30x/changeagent/hooks"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -45,7 +46,8 @@ var _ = Describe("Raft Tests", func() {
 		wh := []hooks.WebHook{
 			hooks.WebHook{URI: fmt.Sprintf("http://%s", webHookAddr)},
 		}
-		ix, err := getLeader().UpdateWebHooks(wh)
+		getLeader().GetRaftConfig().WebHooks = wh
+		ix, err := getLeader().UpdateLiveConfiguration()
 		Expect(err).Should(Succeed())
 		waitForApply(ix, clusterSize, pollInterval)
 
@@ -59,7 +61,8 @@ var _ = Describe("Raft Tests", func() {
 
 		appendAndVerify("DontFailMe", clusterSize)
 
-		ix, err = getLeader().UpdateWebHooks([]hooks.WebHook{})
+		getLeader().GetRaftConfig().WebHooks = []hooks.WebHook{}
+		ix, err = getLeader().UpdateLiveConfiguration()
 		Expect(err).Should(Succeed())
 		waitForApply(ix, clusterSize, pollInterval)
 
@@ -72,12 +75,23 @@ var _ = Describe("Raft Tests", func() {
 		appendAndVerify("Purge 3", clusterSize)
 		appendAndVerify("Purge 4", clusterSize)
 
-		cfg := GetDefaultConfig()
-		cfg.MinPurgeRecords = 2
-		cfg.MinPurgeDuration = 100 * time.Millisecond
-
 		fmt.Fprintf(GinkgoWriter, "Updating raft configuration\n")
-		ix, err := getLeader().UpdateRaftConfiguration(cfg)
+		// Let's get and manipulate the YAML so we can test the "real" path
+		ldr := getLeader()
+		origCfgBytes, err := ldr.GetRaftConfig().Store()
+		Expect(err).Should(Succeed())
+
+		newCfg := config.GetDefaultConfig()
+		err = newCfg.Load(origCfgBytes)
+		Expect(err).Should(Succeed())
+		newCfg.MinPurgeRecords = 2
+		newCfg.MinPurgeDuration = "100ms"
+		err = newCfg.Validate()
+		Expect(err).Should(Succeed())
+		newCfgBytes, err := newCfg.Store()
+		Expect(err).Should(Succeed())
+
+		ix, err := ldr.UpdateConfiguration(newCfgBytes)
 		Expect(err).Should(Succeed())
 		Eventually(func() bool {
 			return verifyCommit(ix, clusterSize)
@@ -86,7 +100,7 @@ var _ = Describe("Raft Tests", func() {
 
 		for _, raft := range testRafts {
 			Expect(raft.GetRaftConfig().MinPurgeRecords).Should(BeEquivalentTo(2))
-			Expect(raft.GetRaftConfig().MinPurgeDuration).Should(Equal(100 * time.Millisecond))
+			Expect(raft.GetRaftConfig().MinPurgeDuration).Should(Equal("100ms"))
 		}
 
 		Eventually(func() bool {
@@ -95,7 +109,7 @@ var _ = Describe("Raft Tests", func() {
 		}, testTimeout, pollInterval).Should(BeTrue())
 
 		fmt.Fprintf(GinkgoWriter, "Replacing original raft configuration\n")
-		ix, err = getLeader().UpdateRaftConfiguration(GetDefaultConfig())
+		ix, err = ldr.UpdateConfiguration(origCfgBytes)
 		Expect(err).Should(Succeed())
 		Eventually(func() bool {
 			return verifyCommit(ix, clusterSize)

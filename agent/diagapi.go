@@ -79,7 +79,6 @@ func (a *ChangeAgent) handleRootCall(resp http.ResponseWriter, req *http.Request
 	// TODO convert links properly
 	links["changes"] = a.makeLink(req, "/changes")
 	links["diagnostics"] = a.makeLink(req, "/diagnostics")
-	links["hooks"] = a.makeLink(req, "/hooks")
 	links["cluster"] = a.makeLink(req, "/cluster")
 	links["config"] = a.makeLink(req, "/config")
 	links["health"] = a.makeLink(req, "/health")

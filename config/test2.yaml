@@ -1,0 +1,10 @@
+minPurgeRecords: 123
+minPurgeDuration: 1h
+electionTimeout: 10m
+heartbeatTimeout: 1s
+webHooks:
+- uri: http://foo.com
+  headers:
+    foo: bar
+- uri: http://bar.com
+

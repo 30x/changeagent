@@ -13,8 +13,8 @@ A Header is simply a key-value pair. Each web hook can optionally specify
 a set of headers that it will send on each request.
 */
 type Header struct {
-	Name  string `json:"name"`
-	Value string `json:"value"`
+	Name  string `json:"name",yaml:"name"`
+	Value string `json:"value",yaml:"value"`
 }
 
 /*
@@ -25,6 +25,6 @@ The target must return a status code in the "200" to indicate that the hook
 succeeded. Anything else will be interpreted as an error.
 */
 type WebHook struct {
-	URI     string            `json:"uri"`
-	Headers map[string]string `json:"headers,omitempty"`
+	URI     string            `json:"uri",yaml:"uri"`
+	Headers map[string]string `json:"headers,omitempty",yaml:"headers,omitempty"`
 }
