@@ -14,7 +14,7 @@ func TestAuth(t *testing.T) {
 }
 
 var _ = Describe("Authentication tests", func() {
-	var pw *AuthStore
+	var pw *Store
 
 	BeforeEach(func() {
 		pw = NewAuthStore()
@@ -23,10 +23,12 @@ var _ = Describe("Authentication tests", func() {
 	It("Empty", func() {
 		res := pw.Authenticate("foo", "bar")
 		Expect(res).ShouldNot(BeTrue())
+		Expect(pw.IsEmpty()).Should(BeTrue())
 	})
 
 	It("Add user", func() {
 		pw.SetUser("foo", "bar")
+		Expect(pw.IsEmpty()).ShouldNot(BeTrue())
 		res := pw.Authenticate("foo", "bar")
 		Expect(res).Should(BeTrue())
 		res = pw.Authenticate("foo", "baz")
@@ -35,6 +37,22 @@ var _ = Describe("Authentication tests", func() {
 		Expect(res).ShouldNot(BeTrue())
 		pw.DeleteUser("foo")
 		res = pw.Authenticate("foo", "bar")
+		Expect(res).ShouldNot(BeTrue())
+	})
+
+	It("Basic Auth", func() {
+		pw.SetUser("foo", "bar")
+		res := pw.AuthenticateBasic("Basic Zm9vOmJhcg==")
+		Expect(res).Should(BeTrue())
+		res = pw.AuthenticateBasic("Basic  Zm9vOmJhcg==")
+		Expect(res).Should(BeTrue())
+		res = pw.AuthenticateBasic("Basic Zm9vOmJheg==")
+		Expect(res).ShouldNot(BeTrue())
+		res = pw.AuthenticateBasic("Basic Zm9vYmFy")
+		Expect(res).ShouldNot(BeTrue())
+		res = pw.AuthenticateBasic("Basicck Zm9vOmJhcg==")
+		Expect(res).ShouldNot(BeTrue())
+		res = pw.AuthenticateBasic("Zm9vOmJhcg==")
 		Expect(res).ShouldNot(BeTrue())
 	})
 
@@ -68,7 +86,7 @@ var _ = Describe("Authentication tests", func() {
 	}, 10)
 })
 
-func testPass(u, p string, pw *AuthStore) bool {
+func testPass(u, p string, pw *Store) bool {
 	pw.SetUser(u, p)
 	return pw.Authenticate(u, p)
 }
