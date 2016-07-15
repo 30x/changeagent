@@ -10,6 +10,8 @@ Insert performance is inconsistent. It seems like many inserts take as long as t
 
 Switch to https://github.com/julienschmidt/httprouter for API.
 
+Add a PUT to change the address of a cluster member without removing it.
+
 Graceful leader step-down / nomination algorithm.
 
 Read-only method to get current change ID from master.

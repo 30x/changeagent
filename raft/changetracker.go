@@ -1,66 +1,48 @@
 package raft
 
 import (
-	"container/heap"
-	"math"
 	"sync"
 	"time"
 )
 
-/*
- * This module is like a condition variable in that it tracks a number,
- * and lets callers atomically wait if it hasn't changed since last time.
- * We could use a condition variable here but we're going to try and be
- * go-like and use channels instead. We have also done benchmarks that show that
- * having all state in a single goroutine is more efficient than relying
- * on condition variables.
- */
-
 type changeWaiter struct {
-	change  uint64
-	timeout time.Time
-	fired   bool
-	waiter  chan uint64
+	change     uint64
+	resultChan chan changeResult
 }
 
-type changeUpdate struct {
-	change uint64
-}
-
-type changeHeap struct {
-	items []changeWaiter
+type changeResult struct {
+	key    int
+	result uint64
 }
 
 /*
 A ChangeTracker allows clients to submit a change, and to wait for a change
 to occur. The overall effect is like a condition variable, in that waiters
-are notified when something changes.
+are notified when something changes. This work is done using a goroutine,
+which is simpler and faster than the equivalent using a condition variable.
 */
 type ChangeTracker struct {
-	updateChan chan changeUpdate
+	updateChan chan uint64
 	waiterChan chan changeWaiter
+	cancelChan chan int
 	stopChan   chan bool
+	lastKey    int
+	waiters    map[int]changeWaiter
 	lastChange uint64
-	waiters    *changeHeap
 }
 
 var changeTrackers = make(map[string]*ChangeTracker)
-var trackerLock = new(sync.Mutex)
-var timeMax = time.Unix(1<<40, 0)
+var trackerLock = &sync.Mutex{}
 
 /*
 CreateTracker creates a new change tracker with "lastChange" set to zero.
 */
 func CreateTracker() *ChangeTracker {
-	waiters := &changeHeap{}
-	heap.Init(waiters)
-
 	tracker := &ChangeTracker{
-		updateChan: make(chan changeUpdate, 1),
-		waiterChan: make(chan changeWaiter, 1),
+		updateChan: make(chan uint64, 100),
+		waiterChan: make(chan changeWaiter, 100),
+		cancelChan: make(chan int, 100),
 		stopChan:   make(chan bool, 1),
-		lastChange: 0,
-		waiters:    waiters,
 	}
 	go tracker.run()
 	return tracker
@@ -94,10 +76,7 @@ Update indicates that the current sequence has changed. Wake up any waiting
 waiters and tell them about it.
 */
 func (t *ChangeTracker) Update(change uint64) {
-	u := changeUpdate{
-		change: change,
-	}
-	t.updateChan <- u
+	t.updateChan <- change
 }
 
 /*
@@ -105,7 +84,17 @@ Wait blocks the calling gorouting forever until the change tracker has reached a
 "curChange." Return the current value when that happens.
 */
 func (t *ChangeTracker) Wait(curChange uint64) uint64 {
-	return t.doWait(curChange, timeMax)
+	resultChan := t.doWait(curChange)
+	firstResult := <-resultChan
+
+	if firstResult.key < 0 {
+		// Got a result already
+		return firstResult.result
+	}
+
+	// Need to wait for a second result
+	result := <-resultChan
+	return result.result
 }
 
 /*
@@ -113,21 +102,34 @@ TimedWait blocks the current gorouting until either a new value higher than
 "curChange" has been reached, or "maxWait" has been exceeded.
 */
 func (t *ChangeTracker) TimedWait(curChange uint64, maxWait time.Duration) uint64 {
-	timeout := time.Now().Add(maxWait)
-	return t.doWait(curChange, timeout)
+	resultChan := t.doWait(curChange)
+	firstResult := <-resultChan
+
+	if firstResult.key < 0 {
+		// Got a result already
+		return firstResult.result
+	}
+
+	// Need to wait for a second result
+	timer := time.NewTimer(maxWait)
+	select {
+	case result := <-resultChan:
+		return result.result
+	case <-timer.C:
+		t.cancelChan <- firstResult.key
+		return firstResult.result
+	}
 }
 
-func (t *ChangeTracker) doWait(curChange uint64, timeout time.Time) uint64 {
-	waitMe := make(chan uint64, 1)
+func (t *ChangeTracker) doWait(curChange uint64) chan changeResult {
+	resultChan := make(chan changeResult, 1)
 	w := changeWaiter{
-		change:  curChange,
-		waiter:  waitMe,
-		fired:   false,
-		timeout: timeout,
+		change:     curChange,
+		resultChan: resultChan,
 	}
 	t.waiterChan <- w
-	changed := <-waitMe
-	return changed
+
+	return resultChan
 }
 
 /*
@@ -135,103 +137,71 @@ func (t *ChangeTracker) doWait(curChange uint64, timeout time.Time) uint64 {
  * for new sequences, and distributes them appropriately.
  */
 func (t *ChangeTracker) run() {
+	t.waiters = make(map[int]changeWaiter)
+
 	running := true
-
 	for running {
-		now := time.Now()
-		var sleepTime time.Duration
-		if t.waiters.Len() == 0 {
-			sleepTime = math.MaxInt64
-		} else {
-			sleepTime = t.waiters.items[0].timeout.Sub(now)
-		}
-
-		if sleepTime <= 0 {
-			t.handleTimeout(now)
-
-		} else {
-			timer := time.NewTimer(sleepTime)
-			select {
-			case update := <-t.updateChan:
-				t.handleUpdate(update)
-			case waiter := <-t.waiterChan:
-				t.handleWaiter(waiter)
-			case <-timer.C:
-				t.handleTimeout(now)
-			case <-t.stopChan:
-				running = false
-			}
-			timer.Stop()
+		select {
+		case update := <-t.updateChan:
+			t.handleUpdate(update)
+		case waiter := <-t.waiterChan:
+			t.handleWaiter(waiter)
+		case cancelKey := <-t.cancelChan:
+			t.handleCancel(cancelKey)
+		case <-t.stopChan:
+			running = false
 		}
 	}
 
 	// Close out all waiting waiters
-	for i := 0; i < len(t.waiters.items); i++ {
-		w := t.waiters.items[i]
-		w.waiter <- t.lastChange
+	for _, w := range t.waiters {
+		r := changeResult{
+			key:    -1,
+			result: t.lastChange,
+		}
+		w.resultChan <- r
 	}
+
+	close(t.updateChan)
+	close(t.waiterChan)
+	close(t.cancelChan)
+	close(t.stopChan)
 }
 
-func (t *ChangeTracker) handleUpdate(u changeUpdate) {
-	// Need to cycle through all changes and only remove those that should be waiting
-	t.lastChange = u.change
-	i := 0
-	for i < len(t.waiters.items) {
-		w := t.waiters.items[i]
-		if (u.change >= w.change) && !w.fired {
-			// Removing screws up the heap, so just mark deleted here
-			t.waiters.items[i].fired = true
-			w.waiter <- u.change
-		} else {
-			i++
+func (t *ChangeTracker) handleUpdate(change uint64) {
+	t.lastChange = change
+	for k, w := range t.waiters {
+		if change >= w.change {
+			r := changeResult{
+				key:    -1,
+				result: change,
+			}
+			w.resultChan <- r
+			delete(t.waiters, k)
 		}
 	}
 }
 
 func (t *ChangeTracker) handleWaiter(w changeWaiter) {
 	if t.lastChange >= w.change {
-		w.waiter <- t.lastChange
-	} else {
-		heap.Push(t.waiters, w)
-	}
-}
-
-func (t *ChangeTracker) handleTimeout(now time.Time) {
-	for t.waiters.Len() > 0 {
-		it := t.waiters.items[0].timeout
-		if it == now || it.Before(now) {
-			w := t.waiters.Pop().(changeWaiter)
-			if !w.fired {
-				w.waiter <- t.lastChange
-			}
-		} else {
-			return
+		r := changeResult{
+			key:    -1,
+			result: t.lastChange,
 		}
+		w.resultChan <- r
+
+	} else {
+		key := t.lastKey
+		r := changeResult{
+			key:    key,
+			result: t.lastChange,
+		}
+		t.lastKey++
+		t.waiters[key] = w
+		w.resultChan <- r
 	}
 }
 
-// Implementation needed by the heap
-
-func (h *changeHeap) Len() int {
-	return len(h.items)
-}
-
-func (h *changeHeap) Less(i, j int) bool {
-	return h.items[i].timeout.Before(h.items[j].timeout)
-}
-
-func (h *changeHeap) Swap(i, j int) {
-	tmp := h.items[i]
-	h.items[i] = h.items[j]
-	h.items[j] = tmp
-}
-
-func (h *changeHeap) Push(val interface{}) {
-	h.items = append(h.items, val.(changeWaiter))
-}
-
-func (h *changeHeap) Pop() interface{} {
-	ret := h.items[0]
-	h.items = h.items[1:]
-	return ret
+func (t *ChangeTracker) handleCancel(key int) {
+	delete(t.waiters, key)
 }
