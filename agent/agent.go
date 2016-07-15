@@ -38,7 +38,10 @@ const (
 
 	plainTextContent = "text/plain"
 	jsonContent      = "application/json"
+	yamlContent      = "application/yaml"
 )
+
+var yamlContentRe = regexp.MustCompile("^application/yaml(;.*)?$|^text/yaml(;.*)?$")
 
 /*
 StartChangeAgent starts an instance of changeagent with its API listening on a specific
@@ -57,7 +60,8 @@ func StartChangeAgent(
 	dbFile string,
 	httpMux *http.ServeMux,
 	uriPrefix string,
-	comm communication.Communication) (*ChangeAgent, error) {
+	comm communication.Communication,
+	cfgFile string) (*ChangeAgent, error) {
 
 	if uriPrefix != "" {
 		if uriPrefix[len(uriPrefix)-1] == '/' {
@@ -79,7 +83,7 @@ func StartChangeAgent(
 		uriPrefix: uriPrefix,
 	}
 
-	raft, err := raft.StartRaft(comm, stor, agent)
+	raft, err := raft.StartRaft(comm, stor, agent, cfgFile)
 	if err != nil {
 		return nil, err
 	}
@@ -88,7 +92,6 @@ func StartChangeAgent(
 
 	agent.initDiagnosticAPI(uriPrefix)
 	agent.initChangesAPI(uriPrefix)
-	agent.initHooksAPI(uriPrefix)
 	agent.initClusterAPI(uriPrefix)
 	agent.initConfigAPI(uriPrefix)
 

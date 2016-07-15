@@ -27,6 +27,7 @@ func main() {
 func runAgentMain() int {
 	var port int
 	var securePort int
+	var cfgFile string
 	var dbDir string
 	var apiPrefix string
 	var help bool
@@ -41,6 +42,7 @@ func runAgentMain() int {
 	flag.IntVar(&port, "p", defaultPort, "Port to listen on")
 	flag.IntVar(&securePort, "sp", -1, "Port to listen on if TLS is configured")
 	flag.StringVar(&dbDir, "d", "", "Directory in which to place data. Required.")
+	flag.StringVar(&cfgFile, "f", "", "File to store changeagent configuration")
 	flag.BoolVar(&help, "h", false, "Print help message.")
 	flag.StringVar(&apiPrefix, "P", "", "API Path Prefix. Ex. \"foo\" means all APIs prefixed with \"/foo\"")
 	flag.StringVar(&key, "key", "", "TLS key file")
@@ -92,7 +94,7 @@ func runAgentMain() int {
 	}
 	defer comm.Close()
 
-	agent, err := StartChangeAgent(dbDir, mux, apiPrefix, comm)
+	agent, err := StartChangeAgent(dbDir, mux, apiPrefix, comm, cfgFile)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error starting agent: %s\n", err)
 		return 6

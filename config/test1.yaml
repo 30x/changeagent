@@ -1,0 +1,4 @@
+minPurgeRecords: 123
+minPurgeDuration: 1h
+electionTimeout: 10m
+heartbeatTimeout: 1s

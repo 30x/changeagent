@@ -11,11 +11,14 @@ import (
 
 func (r *Service) calculatePurgeDelay() time.Duration {
 	cfg := r.GetRaftConfig()
-	if !cfg.shouldPurgeRecords() {
+	if !cfg.ShouldPurgeRecords() {
 		return math.MaxInt64
 	}
 
-	switch d := cfg.MinPurgeDuration; {
+	cfg.RLock()
+	defer cfg.RUnlock()
+
+	switch d := cfg.Internal().PurgeDuration; {
 	case d < time.Minute:
 		return time.Second
 	case d < time.Hour:
@@ -31,7 +34,7 @@ func (r *Service) startPurge(minIndex uint64) {
 
 func (r *Service) runPurge(minIndex uint64) {
 	cfg := r.GetRaftConfig()
-	if !cfg.shouldPurgeRecords() {
+	if !cfg.ShouldPurgeRecords() {
 		return
 	}
 
@@ -57,7 +60,7 @@ func (r *Service) runPurge(minIndex uint64) {
 
 	purgeIndex, err := r.stor.CalculateTruncate(
 		uint64(cfg.MinPurgeRecords),
-		cfg.MinPurgeDuration,
+		cfg.Internal().PurgeDuration,
 		minIndex)
 	if err != nil {
 		glog.Errorf("Error calculating data to purge: %s", err)
