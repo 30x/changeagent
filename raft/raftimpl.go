@@ -7,6 +7,7 @@ import (
 	"math"
 	"math/big"
 	"math/rand"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -268,7 +269,15 @@ func (r *Service) loadRaftConfig() error {
 		return nil
 	}
 
-	return r.raftConfig.LoadFile(r.configFile)
+	_, err := os.Stat(r.configFile)
+	if err == nil {
+		// File exists and is readable
+		return r.raftConfig.LoadFile(r.configFile)
+	}
+
+	// File probably does not exist
+	glog.Infof("No configuration file found. Writing defaults to %s", r.configFile)
+	return r.raftConfig.StoreFile(r.configFile)
 }
 
 /*
