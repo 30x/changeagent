@@ -9,3 +9,7 @@ import:
 - package: github.com/mholt/binding
 - package: github.com/tylerb/graceful
   version: ^1.2.10
+- package: github.com/onsi/ginkgo
+  version: ^1.2.0
+- package: github.com/onsi/gomega
+  version: ^1.0.0
