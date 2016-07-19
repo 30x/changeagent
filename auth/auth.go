@@ -9,8 +9,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/30x/changeagent/protobufs"
-	"github.com/golang/protobuf/proto"
 	"golang.org/x/crypto/pbkdf2"
 )
 
@@ -78,56 +76,6 @@ func (a *Store) DeleteUser(user string) {
 	a.latch.Lock()
 	delete(a.users, user)
 	a.latch.Unlock()
-}
-
-/*
-DecodeAuthStore turns a set of bytes produced by the Encode function
-into a live auth store.
-*/
-func DecodeAuthStore(buf []byte) (*Store, error) {
-	var table protobufs.UserTablePb
-	err := proto.Unmarshal(buf, &table)
-	if err != nil {
-		return nil, err
-	}
-
-	as := NewAuthStore()
-
-	for _, u := range table.GetUsers() {
-		au := authUser{
-			salt: u.GetSalt(),
-			pass: u.GetPassword(),
-		}
-		as.users[u.GetUser()] = &au
-	}
-
-	return as, nil
-}
-
-/*
-Encode turns an auth store into a set of bytes that can be safely persisted.
-*/
-func (a *Store) Encode() []byte {
-	a.latch.RLock()
-	defer a.latch.RUnlock()
-
-	var users []*protobufs.UserPb
-	for user, u := range a.users {
-		pb := protobufs.UserPb{
-			User:     proto.String(user),
-			Password: u.pass,
-			Salt:     u.salt,
-		}
-		users = append(users, &pb)
-	}
-	table := protobufs.UserTablePb{
-		Users: users,
-	}
-	buf, err := proto.Marshal(&table)
-	if err != nil {
-		panic(err.Error())
-	}
-	return buf
 }
 
 /*
