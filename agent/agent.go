@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/30x/changeagent/auth"
 	"github.com/30x/changeagent/common"
 	"github.com/30x/changeagent/communication"
 	"github.com/30x/changeagent/raft"
@@ -25,6 +26,7 @@ type ChangeAgent struct {
 	stor       storage.Storage
 	raft       *raft.Service
 	router     *mux.Router
+	auth       *auth.Store
 	markedDown int32
 	uriPrefix  string
 }
@@ -34,7 +36,12 @@ const (
 	// We may introduce additional change types in the future.
 	NormalChange = 0
 
+	// Size, in bytes, of the RocksDB cache
 	dbCacheSize = 10 * 1024 * 1024
+	// How often to test the password file to see if it changes
+	passwdWatchTimeout = 5 * time.Second
+	// The realm to include in 401 responses
+	authRealm = "changeagent"
 
 	plainTextContent = "text/plain"
 	jsonContent      = "application/json"
@@ -61,7 +68,7 @@ func StartChangeAgent(
 	httpMux *http.ServeMux,
 	uriPrefix string,
 	comm communication.Communication,
-	cfgFile string) (*ChangeAgent, error) {
+	cfgFile, passwdFile string) (*ChangeAgent, error) {
 
 	if uriPrefix != "" {
 		if uriPrefix[len(uriPrefix)-1] == '/' {
@@ -95,7 +102,23 @@ func StartChangeAgent(
 	agent.initClusterAPI(uriPrefix)
 	agent.initConfigAPI(uriPrefix)
 
-	httpMux.Handle("/", agent.router)
+	if passwdFile == "" {
+		httpMux.Handle("/", agent.router)
+	} else {
+		httpAuth := auth.NewAuthStore()
+		err = httpAuth.Load(passwdFile)
+		if err != nil {
+			return nil, err
+		}
+		err = httpAuth.Watch(passwdWatchTimeout)
+		if err != nil {
+			return nil, err
+		}
+
+		httpMux.Handle("/",
+			httpAuth.CreateHandler(agent.router, authRealm))
+		agent.auth = httpAuth
+	}
 
 	return agent, nil
 }
@@ -106,6 +129,9 @@ Close stops changeagent.
 func (a *ChangeAgent) Close() {
 	a.raft.Close()
 	a.stor.Close()
+	if a.auth != nil {
+		a.auth.Close()
+	}
 }
 
 /*

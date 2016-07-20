@@ -84,6 +84,7 @@ func (s *Store) runWatcher(interval time.Duration, firstStat os.FileInfo) {
 				}
 			}
 		case <-s.stop:
+			tick.Stop()
 			return
 		}
 	}
