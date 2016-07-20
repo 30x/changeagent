@@ -1,8 +1,22 @@
 package auth
 
-// TODO load a file with lines using Scanner
-// Lines might be:
-// user:algorithm:base64-encoded-salt-and-password
-func (a *Store) Load([]byte buf) error {
+import (
+	"regexp"
 
+	"golang.org/x/crypto/bcrypt"
+)
+
+var bcryptRe = regexp.MustCompile("^\\$2y\\$([0-9]+)\\$(.+)")
+
+func matchEncoded(pw []byte, encoded string) bool {
+	match := bcryptRe.FindStringSubmatch(encoded)
+	if match == nil {
+		// Didn't come from htpasswd bcrypt
+		return false
+	}
+
+	hash := []byte(encoded)
+
+	err := bcrypt.CompareHashAndPassword(hash, pw)
+	return err == nil
 }

@@ -1,8 +1,9 @@
 package auth
 
 import (
+	"os"
 	"testing"
-	"testing/quick"
+	"time"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -14,79 +15,70 @@ func TestAuth(t *testing.T) {
 }
 
 var _ = Describe("Authentication tests", func() {
-	var pw *Store
-
-	BeforeEach(func() {
-		pw = NewAuthStore()
-	})
-
-	It("Empty", func() {
-		res := pw.Authenticate("foo", "bar")
-		Expect(res).ShouldNot(BeTrue())
-		Expect(pw.IsEmpty()).Should(BeTrue())
-	})
-
-	It("Add user", func() {
-		pw.SetUser("foo", "bar")
-		Expect(pw.IsEmpty()).ShouldNot(BeTrue())
-		res := pw.Authenticate("foo", "bar")
-		Expect(res).Should(BeTrue())
-		res = pw.Authenticate("foo", "baz")
-		Expect(res).ShouldNot(BeTrue())
-		res = pw.Authenticate("bar", "bar")
-		Expect(res).ShouldNot(BeTrue())
-		pw.DeleteUser("foo")
-		res = pw.Authenticate("foo", "bar")
-		Expect(res).ShouldNot(BeTrue())
-	})
-
-	It("Basic Auth", func() {
-		pw.SetUser("foo", "bar")
-		res := pw.AuthenticateBasic("Basic Zm9vOmJhcg==")
-		Expect(res).Should(BeTrue())
-		res = pw.AuthenticateBasic("Basic  Zm9vOmJhcg==")
-		Expect(res).Should(BeTrue())
-		res = pw.AuthenticateBasic("Basic Zm9vOmJheg==")
-		Expect(res).ShouldNot(BeTrue())
-		res = pw.AuthenticateBasic("Basic Zm9vYmFy")
-		Expect(res).ShouldNot(BeTrue())
-		res = pw.AuthenticateBasic("Basicck Zm9vOmJhcg==")
-		Expect(res).ShouldNot(BeTrue())
-		res = pw.AuthenticateBasic("Zm9vOmJhcg==")
-		Expect(res).ShouldNot(BeTrue())
-	})
-
-	It("Encode", func() {
-		pw.SetUser("foo", "bar")
-		pw.SetUser("user", "password123!")
-		enc := pw.Encode()
-		dec, err := DecodeAuthStore(enc)
+	It("Good file", func() {
+		s := NewAuthStore()
+		err := s.Load("./testfiles/pw1")
 		Expect(err).Should(Succeed())
-		res := dec.Authenticate("foo", "bar")
-		Expect(res).Should(BeTrue())
-		res = dec.Authenticate("user", "password123!")
-		Expect(res).Should(BeTrue())
+		Expect(s.Authenticate("foo@bar.com", "baz")).Should(BeTrue())
+		// Repeated authentication to test caching logic
+		Expect(s.Authenticate("foo@bar.com", "baz")).Should(BeTrue())
+		Expect(s.Authenticate("bar@bar.com", "foobarbazfoobarbaz")).Should(BeTrue())
+		Expect(s.Authenticate("bar@bar.com", "foobarbazfoobarbaz")).Should(BeTrue())
+		// Wrong PW
+		Expect(s.Authenticate("foo@bar.com", "bar")).ShouldNot(BeTrue())
+		// Not in the file
+		Expect(s.Authenticate("notthere", "atall")).ShouldNot(BeTrue())
+		// In the file but not bcrypt
+		Expect(s.Authenticate("bad@foo.com", "badpass")).ShouldNot(BeTrue())
+		Expect(s.Authenticate("bad2@foo.com", "badpass")).ShouldNot(BeTrue())
+		Expect(s.Authenticate("bad3@foo.com", "badpass")).ShouldNot(BeTrue())
 	})
 
-	It("Stress", func() {
-		err := quick.Check(func(u, p string) bool {
-			return testPass(u, p, pw)
-		}, nil)
+	It("Reload", func() {
+		s := NewAuthStore()
+		err := s.Load("./testfiles/pw1")
 		Expect(err).Should(Succeed())
+		Expect(s.Authenticate("foo@bar.com", "baz")).Should(BeTrue())
+
+		err = s.Load("./testfiles/pw2")
+		Expect(err).Should(Succeed())
+		Expect(s.Authenticate("foo@bar.com", "newpassword")).Should(BeTrue())
+		Expect(s.Authenticate("foo@bar.com", "baz")).Should(BeFalse())
+	})
+
+	It("Reload Automatically", func() {
+		err := os.Link("./testfiles/pw1", "./testfiles/tpw")
+		Expect(err).Should(Succeed())
+		defer os.Remove("./testfiles/tpw")
+
+		s := NewAuthStore()
+		err = s.Load("./testfiles/tpw")
+		Expect(err).Should(Succeed())
+		Expect(s.Authenticate("foo@bar.com", "baz")).Should(BeTrue())
+
+		err = s.Watch(100 * time.Millisecond)
+		Expect(err).Should(Succeed())
+
+		err = os.Remove("./testfiles/tpw")
+		Expect(err).Should(Succeed())
+		err = os.Link("./testfiles/pw2", "./testfiles/tpw")
+		Expect(err).Should(Succeed())
+
+		Eventually(func() bool {
+			return s.Authenticate("foo@bar.com", "newpassword")
+		}).Should(BeTrue())
 	})
 
 	Measure("Measure Lookup", func(b Benchmarker) {
-		pw.SetUser("user2", "password123!")
-		for i := 0; i < 100; i++ {
+		s := NewAuthStore()
+		err := s.Load("./testfiles/pw1")
+		Expect(err).Should(Succeed())
+
+		for i := 0; i < 1000; i++ {
 			b.Time("authenticate", func() {
-				ok := pw.Authenticate("user2", "password123!")
+				ok := s.Authenticate("foo@bar.com", "baz")
 				Expect(ok).Should(BeTrue())
 			})
 		}
-	}, 10)
+	}, 100)
 })
-
-func testPass(u, p string, pw *Store) bool {
-	pw.SetUser(u, p)
-	return pw.Authenticate(u, p)
-}
