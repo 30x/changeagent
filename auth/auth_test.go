@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"io"
 	"os"
 	"testing"
 	"time"
@@ -47,11 +48,13 @@ var _ = Describe("Authentication tests", func() {
 	})
 
 	It("Reload Automatically", func() {
-		err := os.Link("./testfiles/pw1", "./testfiles/tpw")
+		os.Remove("./testfiles/tpw")
+		err := copyFile("./testfiles/pw1", "./testfiles/tpw")
 		Expect(err).Should(Succeed())
 		defer os.Remove("./testfiles/tpw")
 
 		s := NewAuthStore()
+		defer s.Close()
 		err = s.Load("./testfiles/tpw")
 		Expect(err).Should(Succeed())
 		Expect(s.Authenticate("foo@bar.com", "baz")).Should(BeTrue())
@@ -59,14 +62,18 @@ var _ = Describe("Authentication tests", func() {
 		err = s.Watch(100 * time.Millisecond)
 		Expect(err).Should(Succeed())
 
+		time.Sleep(1 * time.Second)
 		err = os.Remove("./testfiles/tpw")
 		Expect(err).Should(Succeed())
-		err = os.Link("./testfiles/pw2", "./testfiles/tpw")
+		err = copyFile("./testfiles/pw2", "./testfiles/tpw")
 		Expect(err).Should(Succeed())
 
 		Eventually(func() bool {
+			if s.Authenticate("foo@bar.com", "baz") {
+				return false
+			}
 			return s.Authenticate("foo@bar.com", "newpassword")
-		}).Should(BeTrue())
+		}, 2*time.Second).Should(BeTrue())
 	})
 
 	Measure("Measure Lookup", func(b Benchmarker) {
@@ -82,3 +89,19 @@ var _ = Describe("Authentication tests", func() {
 		}
 	}, 100)
 })
+
+func copyFile(src, dst string) error {
+	sf, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer sf.Close()
+	df, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0666)
+	if err != nil {
+		return err
+	}
+	defer df.Close()
+
+	_, err = io.Copy(df, sf)
+	return err
+}

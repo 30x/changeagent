@@ -69,7 +69,6 @@ func (s *Store) Watch(interval time.Duration) error {
 }
 
 func (s *Store) runWatcher(interval time.Duration, firstStat os.FileInfo) {
-
 	tick := time.NewTicker(interval)
 	lastStat := firstStat
 
