@@ -7,14 +7,14 @@ import (
 	"strings"
 
 	"github.com/30x/changeagent/common"
-	"github.com/gorilla/mux"
+	"github.com/julienschmidt/httprouter"
 	"github.com/mholt/binding"
 )
 
 const (
 	clusterURI = "/cluster"
 	membersURI = clusterURI + "/members"
-	memberURI  = membersURI + "/{id}"
+	memberURI  = membersURI + "/:id"
 )
 
 /*
@@ -45,14 +45,16 @@ func (a *addressInfo) FieldMap(req *http.Request) binding.FieldMap {
 }
 
 func (a *ChangeAgent) initClusterAPI(prefix string) {
-	a.router.HandleFunc(prefix+clusterURI, a.handleGetCluster).Methods("GET")
-	a.router.HandleFunc(prefix+membersURI, a.handleGetClusterMembers).Methods("GET")
-	a.router.HandleFunc(prefix+memberURI, a.handleGetClusterMember).Methods("GET")
-	a.router.HandleFunc(prefix+memberURI, a.handleRemoveClusterMember).Methods("DELETE")
-	a.router.HandleFunc(prefix+membersURI, a.handleAddClusterMember).Methods("POST")
+	a.router.GET(prefix+clusterURI, a.handleGetCluster)
+	a.router.GET(prefix+membersURI, a.handleGetClusterMembers)
+	a.router.GET(prefix+memberURI, a.handleGetClusterMember)
+	a.router.DELETE(prefix+memberURI, a.handleRemoveClusterMember)
+	a.router.POST(prefix+membersURI, a.handleAddClusterMember)
+	a.router.PUT(prefix+membersURI, a.handleAddClusterMember)
 }
 
-func (a *ChangeAgent) handleGetCluster(resp http.ResponseWriter, req *http.Request) {
+func (a *ChangeAgent) handleGetCluster(
+	resp http.ResponseWriter, req *http.Request, params httprouter.Params) {
 	id := a.raft.GetClusterID()
 	info := ClusterInfo{
 		ID:      id.String(),
@@ -65,7 +67,8 @@ func (a *ChangeAgent) handleGetCluster(resp http.ResponseWriter, req *http.Reque
 	resp.Write(bod)
 }
 
-func (a *ChangeAgent) handleGetClusterMembers(resp http.ResponseWriter, req *http.Request) {
+func (a *ChangeAgent) handleGetClusterMembers(
+	resp http.ResponseWriter, req *http.Request, params httprouter.Params) {
 	members := a.getClusterMembers()
 	bod, _ := json.MarshalIndent(&members, indentPrefix, indentSpace)
 
@@ -73,8 +76,9 @@ func (a *ChangeAgent) handleGetClusterMembers(resp http.ResponseWriter, req *htt
 	resp.Write(bod)
 }
 
-func (a *ChangeAgent) handleGetClusterMember(resp http.ResponseWriter, req *http.Request) {
-	idStr := mux.Vars(req)["id"]
+func (a *ChangeAgent) handleGetClusterMember(
+	resp http.ResponseWriter, req *http.Request, params httprouter.Params) {
+	idStr := params.ByName("id")
 	id := common.ParseNodeID(idStr)
 	if id == 0 {
 		writeError(resp, http.StatusBadRequest, fmt.Errorf("Invalid Node ID: %s", idStr))
@@ -91,7 +95,8 @@ func (a *ChangeAgent) handleGetClusterMember(resp http.ResponseWriter, req *http
 	resp.Write([]byte(node.Address))
 }
 
-func (a *ChangeAgent) handleAddClusterMember(resp http.ResponseWriter, req *http.Request) {
+func (a *ChangeAgent) handleAddClusterMember(
+	resp http.ResponseWriter, req *http.Request, params httprouter.Params) {
 	addrInfo := &addressInfo{}
 	defer req.Body.Close()
 	bindingErr := binding.Bind(req, addrInfo)
@@ -108,14 +113,15 @@ func (a *ChangeAgent) handleAddClusterMember(resp http.ResponseWriter, req *http
 	}
 
 	if err == nil {
-		a.handleGetClusterMembers(resp, req)
+		a.handleGetClusterMembers(resp, req, params)
 	} else {
 		writeError(resp, http.StatusBadRequest, err)
 	}
 }
 
-func (a *ChangeAgent) handleRemoveClusterMember(resp http.ResponseWriter, req *http.Request) {
-	idStr := mux.Vars(req)["id"]
+func (a *ChangeAgent) handleRemoveClusterMember(
+	resp http.ResponseWriter, req *http.Request, params httprouter.Params) {
+	idStr := params.ByName("id")
 	id := common.ParseNodeID(idStr)
 	if id == 0 {
 		writeError(resp, http.StatusBadRequest, fmt.Errorf("Invalid Node ID: %s", idStr))
@@ -137,7 +143,7 @@ func (a *ChangeAgent) handleRemoveClusterMember(resp http.ResponseWriter, req *h
 	}
 
 	if err == nil {
-		a.handleGetClusterMembers(resp, req)
+		a.handleGetClusterMembers(resp, req, params)
 	} else {
 		writeError(resp, http.StatusInternalServerError, err)
 	}

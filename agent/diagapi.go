@@ -12,6 +12,7 @@ import (
 
 	"github.com/30x/changeagent/common"
 	"github.com/30x/changeagent/raft"
+	"github.com/julienschmidt/httprouter"
 	"github.com/mholt/binding"
 )
 
@@ -61,20 +62,22 @@ type RaftState struct {
 }
 
 func (a *ChangeAgent) initDiagnosticAPI(prefix string) {
-	a.router.HandleFunc(path.Join(prefix, "/"), a.handleRootCall).Methods("GET")
-	a.router.HandleFunc(prefix+baseURI, a.handleDiagRootCall).Methods("GET")
-	a.router.HandleFunc(prefix+idURI, a.handleIDCall).Methods("GET")
-	a.router.HandleFunc(prefix+raftStateURI, a.handleStateCall).Methods("GET")
-	a.router.HandleFunc(prefix+raftLeaderURI, a.handleLeaderCall).Methods("GET")
-	a.router.HandleFunc(prefix+raftURI, a.handleRaftInfo).Methods("GET")
-	a.router.HandleFunc(prefix+stackURI, handleStackCall).Methods("GET")
-	a.router.HandleFunc(prefix+memURI, handleMemoryCall).Methods("GET")
-	a.router.HandleFunc(prefix+cpuURI, handleCPUCall).Methods("GET")
-	a.router.HandleFunc(prefix+healthURI, a.handleHealthCheck).Methods("GET")
-	a.router.HandleFunc(prefix+healthURI, a.handleHealthUpdate).Methods("PUT", "POST")
+	a.router.GET(path.Join(prefix, "/"), a.handleRootCall)
+	a.router.GET(prefix+baseURI, a.handleDiagRootCall)
+	a.router.GET(prefix+idURI, a.handleIDCall)
+	a.router.GET(prefix+raftStateURI, a.handleStateCall)
+	a.router.GET(prefix+raftLeaderURI, a.handleLeaderCall)
+	a.router.GET(prefix+raftURI, a.handleRaftInfo)
+	a.router.GET(prefix+stackURI, handleStackCall)
+	a.router.GET(prefix+memURI, handleMemoryCall)
+	a.router.GET(prefix+cpuURI, handleCPUCall)
+	a.router.GET(prefix+healthURI, a.handleHealthCheck)
+	a.router.POST(prefix+healthURI, a.handleHealthUpdate)
+	a.router.PUT(prefix+healthURI, a.handleHealthUpdate)
 }
 
-func (a *ChangeAgent) handleRootCall(resp http.ResponseWriter, req *http.Request) {
+func (a *ChangeAgent) handleRootCall(
+	resp http.ResponseWriter, req *http.Request, params httprouter.Params) {
 	links := make(map[string]string)
 	// TODO convert links properly
 	links["changes"] = a.makeLink(req, "/changes")
@@ -89,7 +92,8 @@ func (a *ChangeAgent) handleRootCall(resp http.ResponseWriter, req *http.Request
 	resp.Write(body)
 }
 
-func (a *ChangeAgent) handleDiagRootCall(resp http.ResponseWriter, req *http.Request) {
+func (a *ChangeAgent) handleDiagRootCall(
+	resp http.ResponseWriter, req *http.Request, params httprouter.Params) {
 	o := make(map[string]string)
 	// TODO convert links properly
 	o["arch"] = runtime.GOARCH
@@ -106,22 +110,26 @@ func (a *ChangeAgent) handleDiagRootCall(resp http.ResponseWriter, req *http.Req
 	resp.Write(body)
 }
 
-func (a *ChangeAgent) handleIDCall(resp http.ResponseWriter, req *http.Request) {
+func (a *ChangeAgent) handleIDCall(
+	resp http.ResponseWriter, req *http.Request, params httprouter.Params) {
 	resp.Header().Set("Content-Type", plainTextContent)
 	resp.Write([]byte(a.raft.MyID().String()))
 }
 
-func (a *ChangeAgent) handleStateCall(resp http.ResponseWriter, req *http.Request) {
+func (a *ChangeAgent) handleStateCall(
+	resp http.ResponseWriter, req *http.Request, params httprouter.Params) {
 	resp.Header().Set("Content-Type", plainTextContent)
 	resp.Write([]byte(a.GetRaftState().String()))
 }
 
-func (a *ChangeAgent) handleLeaderCall(resp http.ResponseWriter, req *http.Request) {
+func (a *ChangeAgent) handleLeaderCall(
+	resp http.ResponseWriter, req *http.Request, params httprouter.Params) {
 	resp.Header().Set("Content-Type", plainTextContent)
 	resp.Write([]byte(a.getLeaderID().String()))
 }
 
-func (a *ChangeAgent) handleRaftInfo(resp http.ResponseWriter, req *http.Request) {
+func (a *ChangeAgent) handleRaftInfo(
+	resp http.ResponseWriter, req *http.Request, params httprouter.Params) {
 	status := a.raft.GetRaftStatus()
 	last, term := a.raft.GetLastIndex()
 	first, _ := a.raft.GetFirstIndex()
@@ -162,7 +170,8 @@ func (a *ChangeAgent) getLeaderID() common.NodeID {
 	return a.raft.GetLeaderID()
 }
 
-func handleStackCall(resp http.ResponseWriter, req *http.Request) {
+func handleStackCall(
+	resp http.ResponseWriter, req *http.Request, params httprouter.Params) {
 	stackBufLen := 64
 	for {
 		stackBuf := make([]byte, stackBufLen)
@@ -178,7 +187,8 @@ func handleStackCall(resp http.ResponseWriter, req *http.Request) {
 	}
 }
 
-func handleMemoryCall(resp http.ResponseWriter, req *http.Request) {
+func handleMemoryCall(
+	resp http.ResponseWriter, req *http.Request, params httprouter.Params) {
 	var stats runtime.MemStats
 	runtime.ReadMemStats(&stats)
 
@@ -195,7 +205,8 @@ func handleMemoryCall(resp http.ResponseWriter, req *http.Request) {
 	resp.Write(body)
 }
 
-func handleCPUCall(resp http.ResponseWriter, req *http.Request) {
+func handleCPUCall(
+	resp http.ResponseWriter, req *http.Request, params httprouter.Params) {
 	s := make(map[string]int64)
 	s["gomaxprocs"] = int64(runtime.GOMAXPROCS(-1))
 	s["numcpu"] = int64(runtime.NumCPU())
@@ -207,7 +218,8 @@ func handleCPUCall(resp http.ResponseWriter, req *http.Request) {
 	resp.Write(body)
 }
 
-func (a *ChangeAgent) handleHealthCheck(resp http.ResponseWriter, req *http.Request) {
+func (a *ChangeAgent) handleHealthCheck(
+	resp http.ResponseWriter, req *http.Request, params httprouter.Params) {
 	resp.Header().Set("Content-Type", "text/plain")
 	markedDown := atomic.LoadInt32(&a.markedDown)
 	if markedDown == 0 {
@@ -221,7 +233,8 @@ func (a *ChangeAgent) handleHealthCheck(resp http.ResponseWriter, req *http.Requ
 	}
 }
 
-func (a *ChangeAgent) handleHealthUpdate(resp http.ResponseWriter, req *http.Request) {
+func (a *ChangeAgent) handleHealthUpdate(
+	resp http.ResponseWriter, req *http.Request, params httprouter.Params) {
 	healthReq := &healthReq{}
 	defer req.Body.Close()
 	bindingErr := binding.Bind(req, healthReq)

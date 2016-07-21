@@ -15,7 +15,7 @@ import (
 	"github.com/30x/changeagent/raft"
 	"github.com/30x/changeagent/storage"
 	"github.com/golang/glog"
-	"github.com/gorilla/mux"
+	"github.com/julienschmidt/httprouter"
 )
 
 /*
@@ -25,7 +25,7 @@ API.
 type ChangeAgent struct {
 	stor       storage.Storage
 	raft       *raft.Service
-	router     *mux.Router
+	router     *httprouter.Router
 	auth       *auth.Store
 	markedDown int32
 	uriPrefix  string
@@ -86,7 +86,7 @@ func StartChangeAgent(
 
 	agent := &ChangeAgent{
 		stor:      stor,
-		router:    mux.NewRouter(),
+		router:    httprouter.New(),
 		uriPrefix: uriPrefix,
 	}
 

@@ -3,6 +3,8 @@ package main
 import (
 	"io/ioutil"
 	"net/http"
+
+	"github.com/julienschmidt/httprouter"
 )
 
 const (
@@ -10,11 +12,13 @@ const (
 )
 
 func (a *ChangeAgent) initConfigAPI(prefix string) {
-	a.router.HandleFunc(prefix+configURI, a.handleGetRaftConfig).Methods("GET")
-	a.router.HandleFunc(prefix+configURI, a.handleSetRaftConfig).Methods("PUT", "POST")
+	a.router.GET(prefix+configURI, a.handleGetRaftConfig)
+	a.router.POST(prefix+configURI, a.handleSetRaftConfig)
+	a.router.PUT(prefix+configURI, a.handleSetRaftConfig)
 }
 
-func (a *ChangeAgent) handleGetRaftConfig(resp http.ResponseWriter, req *http.Request) {
+func (a *ChangeAgent) handleGetRaftConfig(
+	resp http.ResponseWriter, req *http.Request, params httprouter.Params) {
 	cfg := a.raft.GetRaftConfig()
 	cfgBytes, err := cfg.Store()
 	if err != nil {
@@ -26,7 +30,8 @@ func (a *ChangeAgent) handleGetRaftConfig(resp http.ResponseWriter, req *http.Re
 	resp.Write(cfgBytes)
 }
 
-func (a *ChangeAgent) handleSetRaftConfig(resp http.ResponseWriter, req *http.Request) {
+func (a *ChangeAgent) handleSetRaftConfig(
+	resp http.ResponseWriter, req *http.Request, params httprouter.Params) {
 	contentType := req.Header.Get("Content-Type")
 	if !yamlContentRe.MatchString(contentType) {
 		resp.WriteHeader(http.StatusUnsupportedMediaType)
@@ -52,5 +57,5 @@ func (a *ChangeAgent) handleSetRaftConfig(resp http.ResponseWriter, req *http.Re
 		return
 	}
 
-	a.handleGetRaftConfig(resp, req)
+	a.handleGetRaftConfig(resp, req, params)
 }

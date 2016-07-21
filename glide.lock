@@ -1,5 +1,5 @@
-hash: 7b4eacb4b28d4dcf7f4de2923223e19103ffb7d849011820af526066440d5932
-updated: 2016-07-20T23:52:21.804661466-04:00
+hash: cfedca30bf70b6d3a4d71a2c48c1079942e8ace376d4a66f4466d93f94048546
+updated: 2016-07-21T00:29:42.681029369-04:00
 imports:
 - name: github.com/golang/glog
   version: 23def4e6c14b4da8ac2ed8007337bc5eb5007998
@@ -7,10 +7,8 @@ imports:
   version: 874264fbbb43f4d91e999fecb4b40143ed611400
   subpackages:
   - proto
-- name: github.com/gorilla/context
-  version: a8d44e7d8e4d532b6a27a02dd82abb31cc1b01bd
-- name: github.com/gorilla/mux
-  version: 0eeaf8392f5b04950925b8a69fe70f110fa7cbfc
+- name: github.com/julienschmidt/httprouter
+  version: fb79d6a91d3e4a9ecb6d945b218d78fc0d9b1939
 - name: github.com/mholt/binding
   version: 89411c4ffb61f0ebef45d8bdb830103b358ef9fa
 - name: github.com/onsi/ginkgo

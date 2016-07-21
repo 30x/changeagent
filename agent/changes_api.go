@@ -8,7 +8,7 @@ import (
 
 	"github.com/30x/changeagent/common"
 	"github.com/golang/glog"
-	"github.com/gorilla/mux"
+	"github.com/julienschmidt/httprouter"
 )
 
 const (
@@ -17,20 +17,21 @@ const (
 	defaultBlock = "0"
 
 	changesURI   = "/changes"
-	singleChange = changesURI + "/{change}"
+	singleChange = changesURI + "/:change"
 )
 
 func (a *ChangeAgent) initChangesAPI(prefix string) {
-	a.router.HandleFunc(prefix+changesURI, a.handlePostChanges).Methods("POST")
-	a.router.HandleFunc(prefix+changesURI, a.handleGetChanges).Methods("GET")
-	a.router.HandleFunc(prefix+singleChange, a.handleGetChange).Methods("GET")
+	a.router.POST(prefix+changesURI, a.handlePostChanges)
+	a.router.GET(prefix+changesURI, a.handleGetChanges)
+	a.router.GET(prefix+singleChange, a.handleGetChange)
 }
 
 /*
  * POST a new change. Change must be valid JSON. Result will include the index
  * of the change.
  */
-func (a *ChangeAgent) handlePostChanges(resp http.ResponseWriter, req *http.Request) {
+func (a *ChangeAgent) handlePostChanges(
+	resp http.ResponseWriter, req *http.Request, params httprouter.Params) {
 	if !isJSON(resp, req) {
 		return
 	}
@@ -61,7 +62,8 @@ func (a *ChangeAgent) handlePostChanges(resp http.ResponseWriter, req *http.Requ
  *     until there are some changes to return
  * Result will be an array of objects, with metadata plus original JSON data.
  */
-func (a *ChangeAgent) handleGetChanges(resp http.ResponseWriter, req *http.Request) {
+func (a *ChangeAgent) handleGetChanges(
+	resp http.ResponseWriter, req *http.Request, params httprouter.Params) {
 	qps := req.URL.Query()
 
 	limitStr := qps.Get("limit")
@@ -171,8 +173,9 @@ func (a *ChangeAgent) fetchEntries(
 	return nil, lastRawChange, err
 }
 
-func (a *ChangeAgent) handleGetChange(resp http.ResponseWriter, req *http.Request) {
-	idStr := mux.Vars(req)["change"]
+func (a *ChangeAgent) handleGetChange(
+	resp http.ResponseWriter, req *http.Request, params httprouter.Params) {
+	idStr := params.ByName("change")
 	id, err := strconv.ParseUint(idStr, 10, 64)
 	if err != nil {
 		writeError(resp, http.StatusBadRequest, errors.New("Invalid ID"))

@@ -5,7 +5,6 @@ import:
   version: master
   subpackages:
   - proto
-- package: github.com/gorilla/mux
 - package: github.com/mholt/binding
 - package: github.com/tylerb/graceful
   version: ^1.2.10
@@ -17,3 +16,4 @@ import:
 - package: github.com/onsi/gomega
   version: master
 - package: gopkg.in/yaml.v2
+- package: github.com/julienschmidt/httprouter
