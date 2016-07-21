@@ -1,5 +1,5 @@
-hash: d869e0f60f098ec8993d27c789a55b78a705e31d2117244174ab8cf65a8b6af4
-updated: 2016-07-18T21:21:57.550063002-07:00
+hash: 7b4eacb4b28d4dcf7f4de2923223e19103ffb7d849011820af526066440d5932
+updated: 2016-07-20T23:52:21.804661466-04:00
 imports:
 - name: github.com/golang/glog
   version: 23def4e6c14b4da8ac2ed8007337bc5eb5007998
@@ -49,8 +49,8 @@ imports:
 - name: golang.org/x/crypto
   version: 911fafb28f4ee7c7bd483539a6c96190bbbccc3f
   subpackages:
-  - pbkdf2
   - bcrypt
+  - blowfish
 - name: gopkg.in/yaml.v2
   version: e4d366fc3c7938e2958e662b4258c7a89e1f0e3e
 testImports: []

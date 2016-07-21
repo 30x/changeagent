@@ -11,7 +11,6 @@ import:
   version: ^1.2.10
 - package: golang.org/x/crypto
   subpackages:
-  - pbkdf2
   - bcrypt
 - package: github.com/onsi/ginkgo
   version: ^1.2.0
