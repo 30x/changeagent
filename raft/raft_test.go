@@ -46,7 +46,7 @@ var _ = Describe("Raft Tests", func() {
 		wh := []hooks.WebHook{
 			hooks.WebHook{URI: fmt.Sprintf("http://%s", webHookAddr)},
 		}
-		getLeader().GetRaftConfig().WebHooks = wh
+		getLeader().GetRaftConfig().SetWebHooks(wh)
 		ix, err := getLeader().UpdateLiveConfiguration()
 		Expect(err).Should(Succeed())
 		waitForApply(ix, clusterSize, pollInterval)
@@ -61,7 +61,7 @@ var _ = Describe("Raft Tests", func() {
 
 		appendAndVerify("DontFailMe", clusterSize)
 
-		getLeader().GetRaftConfig().WebHooks = []hooks.WebHook{}
+		getLeader().GetRaftConfig().SetWebHooks([]hooks.WebHook{})
 		ix, err = getLeader().UpdateLiveConfiguration()
 		Expect(err).Should(Succeed())
 		waitForApply(ix, clusterSize, pollInterval)
@@ -84,8 +84,8 @@ var _ = Describe("Raft Tests", func() {
 		newCfg := config.GetDefaultConfig()
 		err = newCfg.Load(origCfgBytes)
 		Expect(err).Should(Succeed())
-		newCfg.MinPurgeRecords = 2
-		newCfg.MinPurgeDuration = "100ms"
+		newCfg.SetMinPurgeRecords(2)
+		newCfg.SetMinPurgeDuration(100 * time.Millisecond)
 		err = newCfg.Validate()
 		Expect(err).Should(Succeed())
 		newCfgBytes, err := newCfg.Store()
@@ -99,8 +99,8 @@ var _ = Describe("Raft Tests", func() {
 		fmt.Fprintf(GinkgoWriter, "Updated raft configuration at index %d\n", ix)
 
 		for _, raft := range testRafts {
-			Expect(raft.GetRaftConfig().MinPurgeRecords).Should(BeEquivalentTo(2))
-			Expect(raft.GetRaftConfig().MinPurgeDuration).Should(Equal("100ms"))
+			Expect(raft.GetRaftConfig().MinPurgeRecords()).Should(BeEquivalentTo(2))
+			Expect(raft.GetRaftConfig().MinPurgeDuration()).Should(BeEquivalentTo(100 * time.Millisecond))
 		}
 
 		Eventually(func() bool {
@@ -123,8 +123,8 @@ var _ = Describe("Raft Tests", func() {
 		}).Should(BeTrue())
 
 		for _, raft := range testRafts {
-			Expect(raft.GetRaftConfig().MinPurgeRecords).Should(BeZero())
-			Expect(raft.GetRaftConfig().MinPurgeDuration).Should(BeZero())
+			Expect(raft.GetRaftConfig().MinPurgeRecords()).Should(BeZero())
+			Expect(raft.GetRaftConfig().MinPurgeDuration()).Should(BeZero())
 		}
 	})
 

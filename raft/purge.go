@@ -18,7 +18,7 @@ func (r *Service) calculatePurgeDelay() time.Duration {
 	cfg.RLock()
 	defer cfg.RUnlock()
 
-	switch d := cfg.Internal().PurgeDuration; {
+	switch d := cfg.MinPurgeDuration(); {
 	case d < time.Minute:
 		return time.Second
 	case d < time.Hour:
@@ -59,8 +59,8 @@ func (r *Service) runPurge(minIndex uint64) {
 	}
 
 	purgeIndex, err := r.stor.CalculateTruncate(
-		uint64(cfg.MinPurgeRecords),
-		cfg.Internal().PurgeDuration,
+		uint64(cfg.MinPurgeRecords()),
+		cfg.MinPurgeDuration(),
 		minIndex)
 	if err != nil {
 		glog.Errorf("Error calculating data to purge: %s", err)

@@ -615,7 +615,7 @@ two election timeouts, which means that updates will always work as long
 as the cluster is capable of electing a leader.
 */
 func (r *Service) WaitForCommit(ix uint64) error {
-	_, elTimeout := r.getTimeouts()
+	elTimeout := r.GetRaftConfig().ElectionTimeout()
 	propTimeout := elTimeout * 2
 	appliedIx := r.appliedTracker.TimedWait(ix, propTimeout)
 	if appliedIx < ix {
@@ -732,21 +732,6 @@ func (r *Service) GetRaftConfig() *config.State {
 	return r.raftConfig
 }
 
-/*
-getTimeouts returns the heartbeat timeout and election timeout, in order.
-*/
-func (r *Service) getTimeouts() (time.Duration, time.Duration) {
-	r.raftConfig.RLock()
-	defer r.raftConfig.RUnlock()
-	return r.raftConfig.Internal().HeartbeatDuration, r.raftConfig.Internal().ElectionDuration
-}
-
-func (r *Service) getHeartbeatTimeout() time.Duration {
-	r.raftConfig.RLock()
-	defer r.raftConfig.RUnlock()
-	return r.raftConfig.Internal().HeartbeatDuration
-}
-
 func (r *Service) getLocalAddress() string {
 	addr := r.localAddress.Load()
 	if addr == nil {
@@ -761,9 +746,7 @@ GetWebHooks returns the set of WebHook configuration that is currently configure
 for this node.
 */
 func (r *Service) GetWebHooks() []hooks.WebHook {
-	r.raftConfig.RLock()
-	defer r.raftConfig.RUnlock()
-	return r.raftConfig.WebHooks
+	return r.raftConfig.WebHooks()
 }
 
 // Used only in unit testing. Forces us to never become a leader.
@@ -820,7 +803,7 @@ func (r *Service) readLastApplied() uint64 {
 // Election timeout is the default timeout, plus or minus one heartbeat interval.
 // Use math.rand here, not crypto.rand, because it happens an awful lot.
 func (r *Service) randomElectionTimeout() time.Duration {
-	hbTimeout, elTimeout := r.getTimeouts()
+	hbTimeout, elTimeout := r.GetRaftConfig().Timeouts()
 	rge := int64(hbTimeout * 2)
 	min := int64(elTimeout - hbTimeout)
 	raftRandLock.Lock()

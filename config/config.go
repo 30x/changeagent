@@ -16,13 +16,15 @@ import (
 const (
 	// DefaultElectionTimeout is the election timeout out of the box.
 	// It may be modified using UpdateRaftConfig
-	DefaultElectionTimeout = "10s"
+	DefaultElectionTimeout  = "10s"
+	defaultElectionDuration = 10 * time.Second
 	// DefaultHeartbeatTimeout is the default heartbeat timeout. It may be
 	// modified using UpdateRaftConfig
-	DefaultHeartbeatTimeout = "2s"
+	DefaultHeartbeatTimeout  = "2s"
+	defaultHeartbeatDuration = 2 * time.Second
 
-	minElectionTimeout = 100 * time.Millisecond
-	minHeartbeatRatio  = 2
+	minHeartbeatTimeout = 100 * time.Millisecond
+	minHeartbeatRatio   = 2
 )
 
 /*
@@ -34,38 +36,134 @@ A State is also an RWMutex so that it can (and should) be locked and
 unlocked on each go-around.
 */
 type State struct {
-	latch    *sync.RWMutex
-	internal *InternalState
+	latch *sync.RWMutex
 
-	// MinPurgeRecords defines the minimum number of records that must be
-	// retained on a purge. Default is zero, which means no purging.
-	MinPurgeRecords uint32 `yaml:"minPurgeRecords"`
-	// MinPurgeDuration defines the minimum amount of time that a record must
-	// remain on the change list before being purged. Default is zero, which
-	// no purging.
-	MinPurgeDuration string `yaml:"minPurgeDuration"`
-	// ElectionTimeout is the amount of time a node will wait once it has heard
-	// from the current leader before it declares itself a candidate.
-	// It must always be a small multiple of HeartbeatTimeout.
-	ElectionTimeout string `yaml:"electionTimeout"`
-	// HeartbeatTimeout is the amount of time between heartbeat messages from the
-	// leader to other nodes.
-	HeartbeatTimeout string `yaml:"heartbeatTimeout"`
-	// WebHooks are a list of hooks that we might invoke before persisting a
-	// change
-	WebHooks []hooks.WebHook `yaml:"webHooks,omitempty"`
+	// PurgeDuration is parsed from MinPurgeDuration
+	purgeDuration time.Duration
+	// ElectionDuration is parsed from ElectionTimeout
+	electionDuration time.Duration
+	// HeartbeatDuration is parsed from HeartbeatTimeout
+	heartbeatDuration time.Duration
+	// minPurgeRecords comes straight from YAML
+	minPurgeRecords uint32
+	webHooks        []hooks.WebHook
+}
+
+// StoredState is the structure that is read from and written to YAML
+type StoredState struct {
+	MinPurgeRecords  uint32          `yaml:"minPurgeRecords"`
+	MinPurgeDuration string          `yaml:"minPurgeDuration"`
+	ElectionTimeout  string          `yaml:"electionTimeout"`
+	HeartbeatTimeout string          `yaml:"heartbeatTimeout"`
+	WebHooks         []hooks.WebHook `yaml:"webHooks,omitempty"`
 }
 
 /*
-InternalState holds stuff that's not persisted in YAML.
+MinPurgeRecords defines the minimum number of records that must be
+retained on a purge. Default is zero, which means no purging.
 */
-type InternalState struct {
-	// PurgeDuration is parsed from MinPurgeDuration
-	PurgeDuration time.Duration
-	// ElectionDuration is parsed from ElectionTimeout
-	ElectionDuration time.Duration
-	// HeartbeatDuration is parsed from HeartbeatTimeout
-	HeartbeatDuration time.Duration
+func (c *State) MinPurgeRecords() uint32 {
+	c.RLock()
+	defer c.RUnlock()
+	return c.minPurgeRecords
+}
+
+/*
+SetMinPurgeRecords updates MinPurgeRecords in a thread-safe way.
+*/
+func (c *State) SetMinPurgeRecords(v uint32) {
+	c.Lock()
+	c.minPurgeRecords = v
+	c.Unlock()
+}
+
+/*
+MinPurgeDuration defines the minimum amount of time that a record must
+remain on the change list before being purged. Default is zero, which
+no purging.
+*/
+func (c *State) MinPurgeDuration() time.Duration {
+	c.RLock()
+	defer c.RUnlock()
+	return c.purgeDuration
+}
+
+/*
+SetMinPurgeDuration updates MinPurgeDuration in a thread-safe way.
+*/
+func (c *State) SetMinPurgeDuration(d time.Duration) {
+	c.Lock()
+	c.purgeDuration = d
+	c.Unlock()
+}
+
+/*
+ElectionTimeout is the amount of time a node will wait once it has heard
+from the current leader before it declares itself a candidate.
+It must always be a small multiple of HeartbeatTimeout.
+*/
+func (c *State) ElectionTimeout() time.Duration {
+	c.RLock()
+	defer c.RUnlock()
+	return c.electionDuration
+}
+
+/*
+SetElectionTimeout updates ElectionTimeout in a thread-safe way.
+*/
+func (c *State) SetElectionTimeout(d time.Duration) {
+	c.Lock()
+	c.electionDuration = d
+	c.Unlock()
+}
+
+/*
+HeartbeatTimeout is the amount of time between heartbeat messages from the
+leader to other nodes.
+*/
+func (c *State) HeartbeatTimeout() time.Duration {
+	c.RLock()
+	defer c.RUnlock()
+	return c.heartbeatDuration
+}
+
+/*
+SetHeartbeatTimeout updates HeartbeatTimeout in a thread-safe way.
+*/
+func (c *State) SetHeartbeatTimeout(d time.Duration) {
+	c.Lock()
+	c.heartbeatDuration = d
+	c.Unlock()
+}
+
+/*
+Timeouts is a quick way to get the election and heartbeat timeouts in
+one call. The first one returned is the heartbeat timeout, then election
+timeout.
+*/
+func (c *State) Timeouts() (time.Duration, time.Duration) {
+	c.RLock()
+	defer c.RUnlock()
+	return c.heartbeatDuration, c.electionDuration
+}
+
+/*
+WebHooks are a list of hooks that we might invoke before persisting a
+change
+*/
+func (c *State) WebHooks() []hooks.WebHook {
+	c.RLock()
+	defer c.RUnlock()
+	return c.webHooks
+}
+
+/*
+SetWebHooks updates the web hooks in a thread-safe way.
+*/
+func (c *State) SetWebHooks(h []hooks.WebHook) {
+	c.Lock()
+	c.webHooks = h
+	c.Unlock()
 }
 
 /*
@@ -74,37 +172,49 @@ GetDefaultConfig should be used as the basis for any configuration changes.
 func GetDefaultConfig() *State {
 	cfg := new(State)
 	cfg.latch = &sync.RWMutex{}
-	cfg.internal = &InternalState{}
 
 	cfg.Lock()
-	cfg.ElectionTimeout = DefaultElectionTimeout
-	cfg.HeartbeatTimeout = DefaultHeartbeatTimeout
-	cfg.Validate()
+	cfg.electionDuration = defaultElectionDuration
+	cfg.heartbeatDuration = defaultHeartbeatDuration
 	cfg.Unlock()
 	return cfg
-}
-
-/*
-Internal returns another set of config params that aren't directly persisted
-to YAML but parsed instead.
-*/
-func (c *State) Internal() *InternalState {
-	return c.internal
 }
 
 /*
 Load replaces the current configuration from a bunch of YAML.
 */
 func (c *State) Load(buf []byte) error {
-	c.Lock()
-	defer c.Unlock()
-
-	c.WebHooks = nil
-
-	err := yaml.Unmarshal(buf, c)
+	var stored StoredState
+	err := yaml.Unmarshal(buf, &stored)
 	if err != nil {
 		return err
 	}
+
+	c.Lock()
+	defer c.Unlock()
+
+	if stored.MinPurgeDuration != "" {
+		c.purgeDuration, err = time.ParseDuration(stored.MinPurgeDuration)
+		if err != nil {
+			return fmt.Errorf("Error parsing minPurgeDuration: %s", err)
+		}
+	}
+	if stored.ElectionTimeout != "" {
+		c.electionDuration, err = time.ParseDuration(stored.ElectionTimeout)
+		if err != nil {
+			return fmt.Errorf("Error parsing electionTimeout: %s", err)
+		}
+	}
+	if stored.HeartbeatTimeout != "" {
+		c.heartbeatDuration, err = time.ParseDuration(stored.HeartbeatTimeout)
+		if err != nil {
+			return fmt.Errorf("Error parsing heartbeatTimeout: %s", err)
+		}
+	}
+
+	c.minPurgeRecords = stored.MinPurgeRecords
+	c.webHooks = stored.WebHooks
+
 	err = c.Validate()
 	if err != nil {
 		return err
@@ -137,7 +247,14 @@ func (c *State) Store() ([]byte, error) {
 	c.RLock()
 	defer c.RUnlock()
 
-	return yaml.Marshal(c)
+	stored := StoredState{
+		MinPurgeRecords:  c.minPurgeRecords,
+		ElectionTimeout:  fmt.Sprintf("%s", c.electionDuration),
+		HeartbeatTimeout: fmt.Sprintf("%s", c.heartbeatDuration),
+		MinPurgeDuration: fmt.Sprintf("%s", c.purgeDuration),
+		WebHooks:         c.webHooks,
+	}
+	return yaml.Marshal(&stored)
 }
 
 /*
@@ -165,7 +282,7 @@ set to cause automatic purging to happen.
 func (c *State) ShouldPurgeRecords() bool {
 	c.RLock()
 	defer c.RUnlock()
-	return c.MinPurgeRecords > 0 && c.internal.PurgeDuration > 0
+	return c.minPurgeRecords > 0 && c.purgeDuration > 0
 }
 
 /*
@@ -173,32 +290,12 @@ Validate parses some of the strings in the configuration and it also
 returns an error if basic parameters are not met.
 */
 func (c *State) Validate() error {
-	var err error
-	if c.MinPurgeDuration != "" {
-		c.internal.PurgeDuration, err = time.ParseDuration(c.MinPurgeDuration)
-		if err != nil {
-			return fmt.Errorf("Error parsing minPurgeDuration: %s", err)
-		}
+	if c.heartbeatDuration < minHeartbeatTimeout {
+		return fmt.Errorf("Heartbeat timeout must be at least %s", minHeartbeatTimeout)
 	}
-	if c.ElectionTimeout != "" {
-		c.internal.ElectionDuration, err = time.ParseDuration(c.ElectionTimeout)
-		if err != nil {
-			return fmt.Errorf("Error parsing electionTimeout: %s", err)
-		}
-	}
-	if c.HeartbeatTimeout != "" {
-		c.internal.HeartbeatDuration, err = time.ParseDuration(c.HeartbeatTimeout)
-		if err != nil {
-			return fmt.Errorf("Error parsing heartbeatTimeout: %s", err)
-		}
-	}
-
-	if c.internal.ElectionDuration <= minElectionTimeout {
-		return fmt.Errorf("Heartbeat timeout must be at least %s", minElectionTimeout)
-	}
-	if c.internal.ElectionDuration < (c.internal.HeartbeatDuration * minHeartbeatRatio) {
+	if c.electionDuration < (c.heartbeatDuration * minHeartbeatRatio) {
 		return fmt.Errorf("Election timeout %s must be at least %s",
-			c.internal.ElectionDuration, c.internal.HeartbeatDuration*minHeartbeatRatio)
+			c.electionDuration, c.heartbeatDuration*minHeartbeatRatio)
 	}
 	return nil
 }

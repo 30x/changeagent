@@ -1,4 +1,4 @@
-i# ChangeAgent
+# ChangeAgent
 
 ChangeAgent is a small distributed data store that is especially well-suited for
 tracking changes to data and distributing them to other systems. It has the
