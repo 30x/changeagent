@@ -3,7 +3,6 @@ package raft
 import (
 	"fmt"
 	"math/rand"
-	"runtime"
 	"sync/atomic"
 	"time"
 
@@ -260,9 +259,6 @@ func trackerStress(producers, consumers int, max uint64) {
 			fmt.Fprintf(GinkgoWriter,
 				"Test timed out after %d producers and %d consumers\n",
 				prodCount, consCount)
-			buf := make([]byte, 1024*1024)
-			stackLen := runtime.Stack(buf, true)
-			fmt.Println(string(buf[:stackLen]))
 			Expect(false).Should(BeTrue())
 			return
 		}
