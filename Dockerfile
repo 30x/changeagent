@@ -41,7 +41,8 @@ RUN \
  && (cd /go/src/github.com/30x/changeagent; make clean all) \
  && cp /go/src/github.com/30x/changeagent/changeagent / \
  && mkdir /data \
- && mkdir /keys
+ && mkdir /keys \
+ && rm -r /go
 
 EXPOSE 8080 8443 9080
 
