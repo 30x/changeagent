@@ -8,7 +8,15 @@ Insert performance is inconsistent. It seems like many inserts take as long as t
 
 ## High Priority
 
-Switch to https://github.com/julienschmidt/httprouter for API.
+Implement stress test for lots of records and lots of tags.
+
+Test and implement indexing for tags.
+
+Way to publish with lower quorum level, queuing on local node if leader
+cannot be reached. Also publish without waiting for leader. For example:
+	"local": Local queue
+	"one": Publish to leader, don't wait for consensus.
+	"quorum": Publish to leader, wait for consensus.
 
 Add a PUT to change the address of a cluster member without removing it.
 

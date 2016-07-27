@@ -93,10 +93,10 @@ func DecodeEntry(buf []byte) (*Entry, error) {
 }
 
 /*
-MatchesTags returns true if the specified entry contains all the tags in the
-"tags" array.
+MatchesAllTags returns true if the specified entry contains all the tags in the
+"tags" array. It will always return true for an empty "tags" array.
 */
-func (e *Entry) MatchesTags(tags []string) bool {
+func (e *Entry) MatchesAllTags(tags []string) bool {
 	for _, tag := range tags {
 		if !e.MatchesTag(tag) {
 			return false
@@ -106,10 +106,27 @@ func (e *Entry) MatchesTags(tags []string) bool {
 }
 
 /*
+MatchesAnyTag returns true if the specified entry contains any one of the tags
+in the "tags" array. It will always return true for an empty "tags" array.
+*/
+func (e *Entry) MatchesAnyTag(tags []string) bool {
+	if len(tags) == 0 {
+		return true
+	}
+	for _, tag := range tags {
+		if e.MatchesTag(tag) {
+			return true
+		}
+	}
+	return false
+}
+
+/*
 MatchesTag returns true if the specified entry contains the tag from the "tag"
 argument.
 */
 func (e *Entry) MatchesTag(tag string) bool {
+
 	for _, etag := range e.Tags {
 		if tag == etag {
 			return true

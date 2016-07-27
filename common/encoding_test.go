@@ -44,20 +44,37 @@ var _ = Describe("Encoding Tests", func() {
 			Tags:  []string{"one", "two"},
 		}
 
-		Expect(e1.MatchesTags([]string{})).Should(BeTrue())
-		Expect(e1.MatchesTags([]string{"one"})).Should(BeFalse())
-		Expect(e1.MatchesTags([]string{"one", "two"})).Should(BeFalse())
-		Expect(e1.MatchesTags([]string{"one", "two", "three"})).Should(BeFalse())
+		Expect(e1.MatchesAllTags([]string{})).Should(BeTrue())
+		Expect(e1.MatchesAllTags([]string{"one"})).Should(BeFalse())
+		Expect(e1.MatchesAllTags([]string{"one", "two"})).Should(BeFalse())
+		Expect(e1.MatchesAllTags([]string{"one", "two", "three"})).Should(BeFalse())
 
-		Expect(e2.MatchesTags([]string{})).Should(BeTrue())
-		Expect(e2.MatchesTags([]string{"one"})).Should(BeTrue())
-		Expect(e2.MatchesTags([]string{"one", "two"})).Should(BeFalse())
-		Expect(e2.MatchesTags([]string{"one", "two", "three"})).Should(BeFalse())
+		Expect(e2.MatchesAllTags([]string{})).Should(BeTrue())
+		Expect(e2.MatchesAllTags([]string{"one"})).Should(BeTrue())
+		Expect(e2.MatchesAllTags([]string{"one", "two"})).Should(BeFalse())
+		Expect(e2.MatchesAllTags([]string{"one", "two", "three"})).Should(BeFalse())
 
-		Expect(e3.MatchesTags([]string{})).Should(BeTrue())
-		Expect(e3.MatchesTags([]string{"one"})).Should(BeTrue())
-		Expect(e3.MatchesTags([]string{"one", "two"})).Should(BeTrue())
-		Expect(e3.MatchesTags([]string{"one", "two", "three"})).Should(BeFalse())
+		Expect(e3.MatchesAllTags([]string{})).Should(BeTrue())
+		Expect(e3.MatchesAllTags([]string{"one"})).Should(BeTrue())
+		Expect(e3.MatchesAllTags([]string{"one", "two"})).Should(BeTrue())
+		Expect(e3.MatchesAllTags([]string{"one", "two", "three"})).Should(BeFalse())
+
+		Expect(e1.MatchesAnyTag([]string{})).Should(BeTrue())
+		Expect(e1.MatchesAnyTag([]string{"one"})).Should(BeFalse())
+		Expect(e1.MatchesAnyTag([]string{"one", "two"})).Should(BeFalse())
+		Expect(e1.MatchesAnyTag([]string{"one", "two", "three"})).Should(BeFalse())
+
+		Expect(e2.MatchesAnyTag([]string{})).Should(BeTrue())
+		Expect(e2.MatchesAnyTag([]string{"one"})).Should(BeTrue())
+		Expect(e2.MatchesAnyTag([]string{"one", "two"})).Should(BeTrue())
+		Expect(e2.MatchesAnyTag([]string{"one", "two", "three"})).Should(BeTrue())
+
+		Expect(e3.MatchesAnyTag([]string{})).Should(BeTrue())
+		Expect(e3.MatchesAnyTag([]string{"one"})).Should(BeTrue())
+		Expect(e3.MatchesAnyTag([]string{"two"})).Should(BeTrue())
+		Expect(e3.MatchesAnyTag([]string{"two", "one"})).Should(BeTrue())
+		Expect(e3.MatchesAnyTag([]string{"one", "two", "three"})).Should(BeTrue())
+		Expect(e3.MatchesAnyTag([]string{"four"})).Should(BeFalse())
 	})
 })
 

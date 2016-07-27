@@ -47,8 +47,9 @@ can run stand-alone as a quick and simple way to track change lists, but
 for most use cases, servers should be clustered.
 
 Clustering is implemented using [Raft](https://raft.github.io/). This makes changeagent
-a fairly straightforward use case, since Raft is designed to maintain a consistently
-ordered list of entries among a cluster of servers.
+a fairly straightforward implementation of Raft, since Raft is designed to maintain a consistently
+ordered list of entries among a cluster of servers, which is pretty much all that
+changeagent does.
 
 ## Characteristics
 
@@ -115,7 +116,8 @@ new:
     $ curl "http://localhost:9000/changes?since=16&block=5"
     {"changes":[],"atStart":false,"atEnd":true}
 
-Post a change that includes two tags:
+Post a change that includes two tags. Tags are always specified in an array
+so that each entry can have multiple tags.
 
     curl http://localhost:9000/changes      \
       -H "Content-Type: application/json"   \
@@ -128,43 +130,13 @@ Retrieve up to 10 changes including only ones that have the tag "testTag":
       "tags":["testTag","testTag2"],"data":{"Hello":"world","seq":12}}],
       "atStart":true,"atEnd":true}
 
-# Web Hook Support
+It is also possible to include multiple "tag" query parameters on an API
+call. In that case, all the tags are ORed together. In other words,
+changes will be included in the response if they include any of the tags
+specified by a "tag" parameter.
 
-changeagent supports optional web hooks. These web hooks are designed to support
-use cases in which we wish to validate a set of changes before putting them
-in the change log. They can also be used to update another system, and ensure
-that a record is placed in the change log only if that update succeeds.
-
-In other words, changeagent supports an optional list of URIs that the leader will
-invoke before submitting any change to the distributed log.
-
-Register a single web hook at "localhost:9010":
-
-    curl http://localhost:9000/hooks \
-    -H "Content-Type: application/json" \
-    -d '[{"uri":"http://localhost:9010"}]'
-
-Once a web hook is registered, then the leader will invoke the specified URI
-before making any change. If the web hook returns anything other than a
-"20x" response, (i.e. anything >= 200 and < 300) then the change will fail.
-
-Web Hooks also support headers. For example, the hook below passes the
-"X-Apigee-Test" header on every request.
-
-    curl http://localhost:9000/hooks \
-    -H "Content-Type: application/json" \
-    -d [{"uri":"http://localhost:9010", "headers":{"X-Apigee-Test":"ing"}}]'
-
-Note that the data passed in to the "/hooks" URI is an array. That way the server
-can support more than one webhook. If more than one webhook is configured, then the
-leader will invoke all the webhooks, in parallel, before making any change. If
-any one webhook returns an error, then the change will be aborted.
-
-To change the webhook configuration, POST to "/hooks" again. To delete all
-webhooks, DELETE the same path.
-
-Webhook configuration is persisted across the cluster and is available on all
-nodes after a restart.
+(On the other hand, if no tags are specified, then all changes will be
+included in the response.)
 
 # Running on Docker
 
@@ -296,6 +268,204 @@ And correspondingly, to delete a cluster node:
     curl http://localhost:9000/cluster/members/MEMBERID -X DELETE
 
 Deleted nodes retain their data, but they go back to being standalone nodes.
+
+# Additional Features
+
+## Authorization
+
+Changeagent supports HTTP Basic authentication using the optional "-pw" command
+line flag. If set, this flag must point to a valid password file created
+using the "htpasswd" utility.
+
+The password file is read when changeagent starts, and then is polled every
+five seconds and reloaded if the file changes. Polling happens automatically
+and in a thread-safe way. There is no other way to update the password file.
+
+The password file supports *only* password entries encrypted using bcrypt.
+
+To create a new password file called "passwd" containing the password for the user "foo," for
+instance, type:
+
+    htpasswd -cB passwd foo
+
+and then, to add an entry for the user "bar" later, type:
+
+    htpasswd -B passwd bar
+
+("htpasswd" is a part of the Apache HTTP server. On Mac, it should show up
+if you use Homebrew to install "httpd24".)
+
+## Cluster Port
+
+Normally, the "-p" argument to changeagent specifies what port the server
+will listen on. However, it is possible to configure the server to listen for
+inter-cluster traffic on a different port.
+
+The "-cp" option does this -- if specified, then inter-cluster communication uses
+the separate port.
+
+## TLS Support
+
+All configuration of changeagent may be secured using TLS. The TLS key,
+certificate, and port may be specified separately, and a different set of keys
+may be used for each.
+
+For regular API communications, there are two basic configurations.
+
+To ensure that incoming API calls are secured using TLS, but without validating
+the client certificate, specify a TLS client certificate and private key, and
+use the "-cp" option to specify which port listens using TLS. Also,
+in this mode you must use a separate cluster port. Cluster communications will
+not use TLS in this configuration.
+
+It is possible to use both the "-p" and "-cp" options so that the server
+listens for TLS and non-TLS connections at the same time.
+
+For instance, assuming that the TLS key and certificate are secured using
+"cacert.pem" and "cakey.pem":
+
+    changeagent -sp 8443 -cp 9000 -cert cacert.pem -key cakey.pem
+
+To additionally require that clients use a client-side certificate, and to
+verify that the certificate was issued by a particular CA, add the "-cas"
+option:
+
+    changeagent -sp 8443 -cp 9000 -cert cacert.pem -key cakey.pem -cas cacerts.pem
+
+To secure inter-cluster communication, you need to specify the key and cert for
+inter-cluster TLS, and must also specify the CA. Each changeagent in the cluster
+need not have the same key, but all agents in the cluster must use certificates
+that are signed by one of the CAs known to all servers, or else the cluster
+will not be able to communicate:
+
+    changagent -p 8000 -cp 9443 -ckey clusterkey.pem -ccert clustercert.pem -cca clusterca.pem
+
+And finally, it's possible to combine all this together:
+
+    changeagent -sp 8443 -cp 9443 -cert cacert.pem -key cakey.pem -cas cacerts.pem \
+      -ckey clusterkey.pem -ccert clustercert.pem -cca clusterca.pem
+
+## Configuration
+
+There are a few tunable configuration parameters. A sample configuration file
+is shown below:
+
+    minPurgeRecords: 0
+    minPurgeDuration: "0"
+    electionTimeout: 10s
+    heartbeatTimeout: 2s
+
+The configuration file name is passed to changeagent using the "-f" argument.
+If there is no file there when the server is first started, a default
+configuration is written to the file.
+
+The "/config" URI path also allows access to the configuration file. GET returns
+the current configuration, and PUT may be used to replace the configuration.
+When configuration is replaced, the change is propagated across the cluster.
+That way a configuration change may be made consistent on all nodes.
+
+The following configuration parameters are supported:
+
+* heartbeatTimeout: The amount of time between heartbeat messages from the
+cluster leader to the rest of the members. A shorter timeout means that
+a failed leader will be detected more quickly, but a too-short timeout
+will result in a "flapping" cluster.
+* electionTimeout: The amount of time that a node will wait after receiving
+a heartbeat from the leader before deciding that the leader is down and
+becoming a candidate. This value must be at least twice the heartbeat
+timeout.
+* minPurgeDuration: If this is set *and* minPurgeRecords is set, then
+records that are older than this duration may be automatically removed
+from the database, as long as at least "minPurgeRecords" remain.
+* minPurgeRecords: Must be set greater than zero
+along with minPurgeDuration to specify the minimum amount of records that must
+remain in the database after a purge.
+
+All of the "duration" parameters take a duration as parsed by the function
+"time.ParseDuration" in Go. To quote that doc:
+
+    A duration string is a possibly signed sequence of decimal numbers, each
+    with optional fraction and a unit suffix, such as "300ms", "-1.5h" or
+    "2h45m". Valid time units are "ns", "us" (or "µs"), "ms", "s", "m", "h".
+
+## Logging
+
+Logging is provided by the [glog](https://github.com/golang/glog) package.
+By default, logs are written to a log file, but most of the time we use
+the "-logtostderr" option to ensure that they are written to standard
+error output instead.
+
+To see exhaustive debug information about everything that changeagent does,
+increase the log level to 3 or higher. For instance "-v 5" will produce a lot
+of debugging output.
+
+## Health Check API
+
+The /health URI path will return a 200 response and the text "ok". This
+API is the correct API for a load balancer to use when implementing a health check.
+
+To mark down the server, PUT the value "up=false" to the /health endpoint, like this:
+
+    curl http://localhost:9000/health -d 'up=false' -X PUT
+
+Similarly, "up=true" marks it back up. Once the server has been marked down,
+GET requests to /health will return 503 (Service Unavailable) instead of 200.
+This does not start the server from responding to HTTP requests, but it will
+tell the load balancer to stop sending new traffic.
+
+Finally, even if authentication is enabled, GET requests to /health do
+not require authentication.
+
+So, in order to perform a rolling restart of a cluster without interrupting
+API calls:
+
+0) Ensure that the load balancer has a health check configured that will
+"GET /health" and mark the server down unless the response code is 200.
+1) For each node in the cluster...
+2) PUT "up=false" to /health so that the load balancer will see the health
+check fail.
+3) Wait for at least as long as the load balancer's health-check timeout so that
+we are sure that the server has been marked down.
+4) Kill the server process. The server will wait up to 60 seconds for running
+API calls to complete before exiting.
+5) Do whatever you need to do and restart the server.
+
+## Diagnostics API
+
+There are a series of diagnostics APIs available under the "/diagnostics"
+URI path. Calling "/diagnostics" will return a set of hyperlinks to the
+currently-enabled diagnostics.
+
+## Web Hook Support
+
+changeagent supports optional web hooks. These web hooks are designed to support
+use cases in which we wish to validate a set of changes before putting them
+in the change log. They can also be used to update another system, and ensure
+that a record is placed in the change log only if that update succeeds.
+
+In other words, changeagent supports an optional list of URIs that the leader will
+invoke before submitting any change to the distributed log. The API call
+made to the webhook will include the original request, in JSON format.
+If the web hook returns anything other than a 200 response code, then the
+change will be rejected.
+
+Web hooks are configured using the configuration file mentioned previously.
+Here is a sample set of configuration file entries that enable webhooks:
+
+    minPurgeRecords: 123
+    minPurgeDuration: 1h
+    electionTimeout: 10m
+    heartbeatTimeout: 1s
+    webHooks:
+    - uri: http://foo.com
+      headers:
+        foo: bar
+    - uri: http://bar.com
+
+In other words, in YAML language, wen hooks are expressed by a list of
+objects. Each one has a required "uri" parameter, and an optional
+map called "headers" that specifies HTTP request headers that should
+be sent to the web hook.
 
 # Rationale
 

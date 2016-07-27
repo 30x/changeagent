@@ -18,6 +18,10 @@ var _ = Describe("Node ID Test", func() {
 		err := quick.Check(testID, nil)
 		Expect(err).Should(Succeed())
 	})
+	It("Invalid node ID", func() {
+		Expect(ParseNodeID("!foo!")).Should(BeZero())
+		Expect(ParseNodeID("")).Should(BeZero())
+	})
 })
 
 func testID(id uint64) bool {

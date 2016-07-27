@@ -70,27 +70,31 @@ var _ = Describe("Changes API Test", func() {
 		tagChanges = getChanges(0, 100, 0, []string{"tagone"})
 		Expect(tagChanges).Should(MatchRegexp(respExpected))
 
-		// If we look for non-matching tags when we should get back nothing
-		tagChanges = getChanges(0, 100, 0, []string{"tagone", "tagtwo"})
+		// If we look for a non-matching tag when we should get back nothing
+		tagChanges = getChanges(0, 100, 0, []string{"tagtwo"})
 		Expect(tagChanges).Should(MatchRegexp("^{\"changes\":\\[\\]"))
 	})
 
 	It("POST with two tags", func() {
-		changes := postChanges(1, []string{"tagone", "tagtwo"})
+		changes := postChanges(1, []string{"newtagone"})
+		fmt.Fprintf(GinkgoWriter, "first changes: %v\n", changes)
+		firstChange := changes[0]
+		changes = postChanges(1, []string{"newtagtwo"})
+		fmt.Fprintf(GinkgoWriter, "next changes: %v\n", changes)
 		lastNewChange = changes[0]
 
-		// Response comes back just this one with the tags in it
+		// Those two changes are the last two in the log
 		respExpected :=
-			fmt.Sprintf("^{\"changes\":[{\"_id\":%d,\"_ts\":[0-9]+,\"tags\":\\[\"tagone\",\"tagtwo\"\\],\"data\":{\"hello\":\"world!\",\"count\":1}}]", lastNewChange)
-		tagChanges := getChanges(lastNewChange-1, 1, 0, nil)
+			fmt.Sprintf("^{\"changes\":[{\"_id\":%d,\"_ts\":[0-9]+,\"tags\":\\[\"newtagone\"\\],\"data\":{\"hello\":\"world!\",\"count\":1}},{\"_id\":%d,\"_ts\":[0-9]+,\"tags\":\\[\"newtagtwo\"\\],\"data\":{\"hello\":\"world!\",\"count\":1}}]", firstChange, firstChange+1)
+		tagChanges := getChanges(firstChange-1, 2, 0, nil)
 		Expect(tagChanges).Should(MatchRegexp(respExpected))
 
-		// Requesting all changes should give us only the one with the tags on it
-		tagChanges = getChanges(0, 100, 0, []string{"tagone", "tagtwo"})
+		// Requesting all changes should give us only the one with the new tags on it
+		tagChanges = getChanges(0, 100, 0, []string{"newtagone", "newtagtwo"})
 		Expect(tagChanges).Should(MatchRegexp(respExpected))
 
-		// If we look for non-matching tags when we should get back nothing
-		tagChanges = getChanges(0, 100, 0, []string{"tagthree"})
+		// If we look for a non-matching tag when we should get back nothing
+		tagChanges = getChanges(0, 100, 0, []string{"newtagthree"})
 		Expect(tagChanges).Should(MatchRegexp("^{\"changes\":\\[\\]"))
 	})
 
@@ -405,6 +409,7 @@ func getChanges(since uint64, limit int, block int, tags []string) []byte {
 	for _, tag := range tags {
 		url += fmt.Sprintf("&tag=%s", tag)
 	}
+	fmt.Fprintf(GinkgoWriter, "GET %s\n", url)
 	gr, err := http.Get(url)
 	Expect(err).Should(Succeed())
 	defer gr.Body.Close()

@@ -161,7 +161,7 @@ func (a *ChangeAgent) fetchEntries(
 			if tags == nil {
 				return true
 			}
-			return e.MatchesTags(tags)
+			return e.MatchesAnyTag(tags)
 		})
 
 	if err == nil {

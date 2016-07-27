@@ -117,15 +117,15 @@ func StartChangeAgent(
 
 		// Require authentication for all API calls except /health
 		authHandler := httpAuth.CreateHandler(agent.router, authRealm)
-		httpMux.HandleFunc("/",
+		httpMux.HandleFunc("/health",
 			func(resp http.ResponseWriter, req *http.Request) {
-				if req.URL.Path == "/health" {
+				if req.Method == http.MethodGet {
 					agent.router.ServeHTTP(resp, req)
 				} else {
 					authHandler.ServeHTTP(resp, req)
 				}
 			})
-
+		httpMux.Handle("/", authHandler)
 		agent.auth = httpAuth
 	}
 
