@@ -1,10 +1,14 @@
-hash: cfedca30bf70b6d3a4d71a2c48c1079942e8ace376d4a66f4466d93f94048546
-updated: 2016-07-21T00:29:42.681029369-04:00
+hash: 3a2dc6cccfdccc2ff441e93ed6f9f2e356cd9b6a9a704d79bdce092dc9958e23
+updated: 2016-07-29T14:52:14.683143595-07:00
 imports:
+- name: github.com/golang/gddo
+  version: b828973d90f4eab765195d0a64daf0f661082396
+  subpackages:
+  - httputil
 - name: github.com/golang/glog
   version: 23def4e6c14b4da8ac2ed8007337bc5eb5007998
 - name: github.com/golang/protobuf
-  version: 874264fbbb43f4d91e999fecb4b40143ed611400
+  version: c3cefd437628a0b7d31b34fe44b3a7a540e98527
   subpackages:
   - proto
 - name: github.com/julienschmidt/httprouter
@@ -43,12 +47,16 @@ imports:
   - matchers/support/goraph/node
   - matchers/support/goraph/util
 - name: github.com/tylerb/graceful
-  version: d7d7a205e779a4738d38eda0671fff8bfc965f14
+  version: c838c13b2beeea4f4f54496da96a3a6ae567c37a
 - name: golang.org/x/crypto
   version: 911fafb28f4ee7c7bd483539a6c96190bbbccc3f
   subpackages:
   - bcrypt
   - blowfish
+- name: google.golang.org/cloud
+  version: 30fab6304c9888af49f1884cf4eddad7027e2e7b
+  subpackages:
+  - compute/metadata
 - name: gopkg.in/yaml.v2
   version: e4d366fc3c7938e2958e662b4258c7a89e1f0e3e
 testImports: []

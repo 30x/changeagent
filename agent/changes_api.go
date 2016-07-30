@@ -134,8 +134,17 @@ func (a *ChangeAgent) handleGetChanges(
 		}
 	}
 
-	resp.Header().Set("Content-Type", jsonContent)
-	marshalChanges(entries, atStart, atEnd, resp)
+	contentType := isHTML(req)
+	resp.Header().Set("Content-Type", contentType)
+
+	if contentType == jsonContent {
+		marshalChanges(entries, atStart, atEnd, resp)
+	} else {
+		err := changesTemplate.Execute(resp, entries)
+		if err != nil {
+			writeError(resp, http.StatusInternalServerError, err)
+		}
+	}
 }
 
 func (a *ChangeAgent) fetchEntries(

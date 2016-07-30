@@ -17,3 +17,9 @@ import:
   version: master
 - package: gopkg.in/yaml.v2
 - package: github.com/julienschmidt/httprouter
+- package: github.com/golang/gddo
+  subpackages:
+  - httputil
+- package: google.golang.org/cloud
+  subpackages:
+  - compute/metadata

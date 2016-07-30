@@ -12,6 +12,7 @@ import (
 
 	"github.com/30x/changeagent/common"
 	"github.com/30x/changeagent/raft"
+	"github.com/golang/gddo/httputil"
 	"github.com/julienschmidt/httprouter"
 	"github.com/mholt/binding"
 )
@@ -86,28 +87,48 @@ func (a *ChangeAgent) handleRootCall(
 	links["config"] = a.makeLink(req, "/config")
 	links["health"] = a.makeLink(req, "/health")
 
-	body, _ := json.MarshalIndent(&links, indentPrefix, indentSpace)
+	contentType := isHTML(req)
+	resp.Header().Set("Content-Type", contentType)
 
-	resp.Header().Set("Content-Type", jsonContent)
-	resp.Write(body)
+	if contentType == jsonContent {
+		body, _ := json.MarshalIndent(&links, indentPrefix, indentSpace)
+		resp.Write(body)
+	} else {
+		err := rootTemplate.Execute(resp, &links)
+		if err != nil {
+			writeError(resp, http.StatusInternalServerError, err)
+		}
+	}
 }
 
 func (a *ChangeAgent) handleDiagRootCall(
 	resp http.ResponseWriter, req *http.Request, params httprouter.Params) {
-	o := make(map[string]string)
+	o := make(map[string]interface{})
 	// TODO convert links properly
 	o["arch"] = runtime.GOARCH
 	o["os"] = runtime.GOOS
 	o["maxprocs"] = strconv.Itoa(runtime.GOMAXPROCS(-1))
-	o["id"] = a.makeLink(req, idURI)
-	o["stack"] = a.makeLink(req, stackURI)
-	o["raft"] = a.makeLink(req, raftURI)
-	o["memory"] = a.makeLink(req, memURI)
-	o["cpu"] = a.makeLink(req, cpuURI)
-	body, _ := json.MarshalIndent(&o, indentPrefix, indentSpace)
 
-	resp.Header().Set("Content-Type", jsonContent)
-	resp.Write(body)
+	l := make(map[string]string)
+	o["links"] = l
+	l["id"] = a.makeLink(req, idURI)
+	l["stack"] = a.makeLink(req, stackURI)
+	l["raft"] = a.makeLink(req, raftURI)
+	l["memory"] = a.makeLink(req, memURI)
+	l["cpu"] = a.makeLink(req, cpuURI)
+
+	contentType := isHTML(req)
+	resp.Header().Set("Content-Type", contentType)
+
+	if contentType == jsonContent {
+		body, _ := json.MarshalIndent(&o, indentPrefix, indentSpace)
+		resp.Write(body)
+	} else {
+		err := diagTemplate.Execute(resp, &o)
+		if err != nil {
+			writeError(resp, http.StatusInternalServerError, err)
+		}
+	}
 }
 
 func (a *ChangeAgent) handleIDCall(
@@ -153,14 +174,18 @@ func (a *ChangeAgent) handleRaftInfo(
 		state.PeerIndices = &pis
 	}
 
-	body, err := json.MarshalIndent(&state, indentPrefix, indentSpace)
-	if err != nil {
-		writeError(resp, 500, err)
-		return
-	}
+	contentType := isHTML(req)
+	resp.Header().Set("Content-Type", contentType)
 
-	resp.Header().Set("Content-Type", jsonContent)
-	resp.Write(body)
+	if contentType == jsonContent {
+		body, _ := json.MarshalIndent(&state, indentPrefix, indentSpace)
+		resp.Write(body)
+	} else {
+		err := diagRaftTemplate.Execute(resp, &state)
+		if err != nil {
+			writeError(resp, http.StatusInternalServerError, err)
+		}
+	}
 }
 
 func (a *ChangeAgent) getLeaderID() common.NodeID {
@@ -181,7 +206,7 @@ func handleStackCall(
 			stackBufLen *= 2
 		} else {
 			resp.Header().Set("Content-Type", plainTextContent)
-			resp.Write(stackBuf)
+			resp.Write(stackBuf[:stackLen])
 			return
 		}
 	}
@@ -200,9 +225,18 @@ func handleMemoryCall(
 	s["mallocs"] = stats.Mallocs
 	s["frees"] = stats.Frees
 
-	body, _ := json.MarshalIndent(&s, indentPrefix, indentSpace)
-	resp.Header().Set("Content-Type", jsonContent)
-	resp.Write(body)
+	contentType := isHTML(req)
+	resp.Header().Set("Content-Type", contentType)
+
+	if contentType == jsonContent {
+		body, _ := json.MarshalIndent(&s, indentPrefix, indentSpace)
+		resp.Write(body)
+	} else {
+		err := diagStatsTemplate.Execute(resp, &s)
+		if err != nil {
+			writeError(resp, http.StatusInternalServerError, err)
+		}
+	}
 }
 
 func handleCPUCall(
@@ -213,9 +247,18 @@ func handleCPUCall(
 	s["numcgocall"] = runtime.NumCgoCall()
 	s["numgoroutine"] = int64(runtime.NumGoroutine())
 
-	body, _ := json.MarshalIndent(&s, indentPrefix, indentSpace)
-	resp.Header().Set("Content-Type", jsonContent)
-	resp.Write(body)
+	contentType := isHTML(req)
+	resp.Header().Set("Content-Type", contentType)
+
+	if contentType == jsonContent {
+		body, _ := json.MarshalIndent(&s, indentPrefix, indentSpace)
+		resp.Write(body)
+	} else {
+		err := diagStatsTemplate.Execute(resp, &s)
+		if err != nil {
+			writeError(resp, http.StatusInternalServerError, err)
+		}
+	}
 }
 
 func (a *ChangeAgent) handleHealthCheck(
@@ -257,4 +300,9 @@ func (a *ChangeAgent) makeLink(req *http.Request, path string) string {
 	}
 
 	return fmt.Sprintf("%s://%s%s%s", proto, req.Host, a.uriPrefix, path)
+}
+
+func isHTML(req *http.Request) string {
+	return httputil.NegotiateContentType(req,
+		[]string{jsonContent, htmlContent}, jsonContent)
 }

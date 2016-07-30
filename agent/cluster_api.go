@@ -1,12 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
 
 	"github.com/30x/changeagent/common"
+	"github.com/golang/gddo/httputil"
 	"github.com/julienschmidt/httprouter"
 	"github.com/mholt/binding"
 )
@@ -69,15 +71,30 @@ func (a *ChangeAgent) handleGetCluster(
 
 func (a *ChangeAgent) handleGetClusterMembers(
 	resp http.ResponseWriter, req *http.Request, params httprouter.Params) {
+	contentType := httputil.NegotiateContentType(req,
+		[]string{jsonContent, plainTextContent}, jsonContent)
 	members := a.getClusterMembers()
-	bod, _ := json.MarshalIndent(&members, indentPrefix, indentSpace)
 
-	resp.Header().Set("Content-Type", jsonContent)
+	var bod []byte
+
+	if contentType == jsonContent {
+		bod, _ = json.MarshalIndent(&members, indentPrefix, indentSpace)
+	} else {
+		buf := &bytes.Buffer{}
+		for k, v := range members {
+			fmt.Fprintf(buf, "%s %s\n", k, v)
+		}
+		bod = buf.Bytes()
+	}
+
+	resp.Header().Set("Content-Type", contentType)
 	resp.Write(bod)
 }
 
 func (a *ChangeAgent) handleGetClusterMember(
 	resp http.ResponseWriter, req *http.Request, params httprouter.Params) {
+	contentType := httputil.NegotiateContentType(req,
+		[]string{jsonContent, plainTextContent}, jsonContent)
 	idStr := params.ByName("id")
 	id := common.ParseNodeID(idStr)
 	if id == 0 {
@@ -91,8 +108,14 @@ func (a *ChangeAgent) handleGetClusterMember(
 		return
 	}
 
-	resp.Header().Set("Content-Type", plainTextContent)
-	resp.Write([]byte(node.Address))
+	var s string
+	if contentType == jsonContent {
+		s = fmt.Sprintf("{\"address\":\"%s\"}", node.Address)
+	} else {
+		s = node.Address
+	}
+	resp.Header().Set("Content-Type", contentType)
+	resp.Write([]byte(s))
 }
 
 func (a *ChangeAgent) handleAddClusterMember(

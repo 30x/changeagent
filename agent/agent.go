@@ -46,6 +46,7 @@ const (
 	plainTextContent = "text/plain"
 	jsonContent      = "application/json"
 	yamlContent      = "application/yaml"
+	htmlContent      = "text/html"
 )
 
 var yamlContentRe = regexp.MustCompile("^application/yaml(;.*)?$|^text/yaml(;.*)?$")
